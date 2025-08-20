@@ -1,0 +1,19 @@
+= next.orly.dev
+:toc:
+:note-caption: note 👉
+
+image:https://img.shields.io/badge/godoc-documentation-blue.svg[Documentation,link=https://pkg.go.dev/next.orly.dev]
+image:https://img.shields.io/badge/donate-geyser_crowdfunding_project_page-orange.svg[Support this project,link=https://geyser.fund/project/orly]
+zap me: ⚡️mlekudev@getalby.com
+follow me on link:https://jumble.social/users/npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku[nostr]
+
+== about
+
+ORLY is a nostr relay written from the ground up to be performant, low latency, and built with a number of features designed to make it well suited for
+
+- personal relays
+- small community relays
+- business deployments and RaaS (Relay as a Service) with a nostr-native NWC client to allow accepting payments through NWC capable lightning nodes
+- high availability clusters for reliability and/or providing a unified data set across multiple regions
+
+ORLY uses a fast embedded link:https://github.com/hypermodeinc/badger[badger] database with a database designed for high performance querying and event storage.
