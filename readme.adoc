@@ -19,3 +19,5 @@ ORLY is a nostr relay written from the ground up to be performant, low latency, 
 - high availability clusters for reliability and/or providing a unified data set across multiple regions
 
 ORLY uses a fast embedded link:https://github.com/hypermodeinc/badger[badger] database with a database designed for high performance querying and event storage.
+
+On linux platforms, it uses https://github.com/bitcoin/secp256k1[libsecp256k1]-enabled signature and signature verification (see link:pkg/p256k/README.md[here]).
