@@ -19,8 +19,8 @@ type K struct {
 	K uint16
 }
 
-// New creates a new kind.K with a provided integer value. Note that anything larger than 2^16
-// will be truncated.
+// New creates a new kind.K with a provided integer value. Note that anything
+// larger than 2^16 will be truncated.
 func New[V constraints.Integer](k V) (ki *K) { return &K{uint16(k)} }
 
 // ToInt returns the value of the kind.K as an int.
@@ -55,7 +55,8 @@ func (k *K) ToU64() uint64 {
 	return uint64(k.K)
 }
 
-// Name returns the human readable string describing the semantics of the kind.K.
+// Name returns the human readable string describing the semantics of the
+// kind.K.
 func (k *K) Name() string { return GetString(k) }
 
 // Equal checks if
@@ -76,8 +77,8 @@ var Privileged = []*K{
 	PrivateDirectMessage,
 }
 
-// IsPrivileged returns true if the type is the kind of message nobody else than the pubkeys in
-// the event and p tags of the event are party to.
+// IsPrivileged returns true if the type is the kind of message nobody else than
+// the pubkeys in the event and p tags of the event are party to.
 func (k *K) IsPrivileged() (is bool) {
 	for i := range Privileged {
 		if k.Equal(Privileged[i]) {
@@ -87,8 +88,11 @@ func (k *K) IsPrivileged() (is bool) {
 	return
 }
 
-// Marshal renders the kind.K into bytes containing the ASCII string form of the kind number.
-func (k *K) Marshal(dst []byte) (b []byte) { return ints.New(k.ToU64()).Marshal(dst) }
+// Marshal renders the kind.K into bytes containing the ASCII string form of the
+// kind number.
+func (k *K) Marshal(dst []byte) (b []byte) {
+	return ints.New(k.ToU64()).Marshal(dst)
+}
 
 // Unmarshal decodes a byte string into a kind.K.
 func (k *K) Unmarshal(b []byte) (r []byte, err error) {

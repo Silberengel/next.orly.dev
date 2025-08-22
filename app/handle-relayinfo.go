@@ -25,9 +25,9 @@ import (
 // The function constructs a relay information document using either the
 // Informer interface implementation or predefined server configuration. It
 // returns this document as a JSON response to the client.
-func (l *Listener) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set("Content-Type", "application/json")
-	log.I.Ln("handling relay information document")
+	log.D.Ln("handling relay information document")
 	var info *relayinfo.T
 	supportedNIPs := relayinfo.GetList(
 		relayinfo.BasicProtocol,
@@ -47,14 +47,14 @@ func (l *Listener) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	sort.Sort(supportedNIPs)
 	log.T.Ln("supported NIPs", supportedNIPs)
 	info = &relayinfo.T{
-		Name:        l.Config.AppName,
+		Name:        s.Config.AppName,
 		Description: version.Description,
 		Nips:        supportedNIPs,
 		Software:    version.URL,
 		Version:     version.V,
 		Limitation:  relayinfo.Limits{
-			// AuthRequired:     l.C.AuthRequired,
-			// RestrictedWrites: l.C.AuthRequired,
+			// AuthRequired:     s.C.AuthRequired,
+			// RestrictedWrites: s.C.AuthRequired,
 		},
 		Icon: "https://cdn.satellite.earth/ac9778868fbf23b63c47c769a74e163377e6ea94d3f0f31711931663d035c4f6.png",
 	}

@@ -63,11 +63,12 @@ func NostrUnescape(dst []byte) (b []byte) {
 			c := dst[r]
 			switch {
 
-			// nip-01 specifies the following single letter C-style escapes for control
-			// codes under 0x20.
+			// nip-01 specifies the following single letter C-style escapes for
+			// control codes under 0x20.
 			//
-			// no others are specified but must be preserved, so only these can be
-			// safely decoded at runtime as they must be re-encoded when marshalled.
+			// no others are specified but must be preserved, so only these can
+			// be safely decoded at runtime as they must be re-encoded when
+			// marshalled.
 			case c == '"':
 				dst[w] = '"'
 				w++
@@ -90,8 +91,8 @@ func NostrUnescape(dst []byte) (b []byte) {
 				dst[w] = '\r'
 				w++
 
-				// special cases for non-nip-01 specified json escapes (must be preserved for ID
-				// generation).
+				// special cases for non-nip-01 specified json escapes (must be
+				// preserved for ID generation).
 			case c == 'u':
 				dst[w] = '\\'
 				w++
@@ -103,7 +104,8 @@ func NostrUnescape(dst []byte) (b []byte) {
 				dst[w] = '/'
 				w++
 
-			// special case for octal escapes (must be preserved for ID generation).
+			// special case for octal escapes (must be preserved for ID
+			// generation).
 			case c >= '0' && c <= '9':
 				dst[w] = '\\'
 				w++

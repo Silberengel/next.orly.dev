@@ -19,7 +19,7 @@ func Run(ctx context.Context, cfg *config.C) (quit chan struct{}) {
 		}
 	}()
 	// start listener
-	l := &Listener{
+	l := &Server{
 		Config: cfg,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)

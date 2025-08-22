@@ -1,7 +1,26 @@
 package event
 
+import (
+	"fmt"
+	"io"
+
+	"github.com/templexxx/xhex"
+	"lol.mleku.dev/chk"
+	"lol.mleku.dev/errorf"
+	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/text"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
+)
+
 // E is the primary datatype of nostr. This is the form of the structure that
-// defines its JSON string-based format.
+// defines its JSON string-based format. Always use New() and Free() to create
+// and free event.E.
 type E struct {
 
 	// ID is the SHA256 hash of the canonical encoding of the event in binary format
@@ -19,7 +38,7 @@ type E struct {
 
 	// Tags are a list of tags, which are a list of strings usually structured
 	// as a 3-layer scheme indicating specific features of an event.
-	Tags [][]byte
+	Tags *tag.S
 
 	// Content is an arbitrary string that can contain anything, but usually
 	// conforming to a specification relating to the Kind and the Tags.
@@ -28,6 +47,305 @@ type E struct {
 	// Sig is the signature on the ID hash that validates as coming from the
 	// Pubkey in binary format.
 	Sig []byte
+
+	// b is the decode buffer for the event.E. this is where the UnmarshalJSON will
+	// source the memory to store all of the fields except for the tags.
+	b bufpool.B
+}
+
+var (
+	jId        = []byte("id")
+	jPubkey    = []byte("pubkey")
+	jCreatedAt = []byte("created_at")
+	jKind      = []byte("kind")
+	jTags      = []byte("tags")
+	jContent   = []byte("content")
+	jSig       = []byte("sig")
+)
+
+// New returns a new event.E. The returned event.E should be freed with Free()
+// to return the unmarshalling buffer to the bufpool.
+func New() *E {
+	return &E{
+		b: bufpool.Get(),
+	}
+}
+
+// Free returns the event.E to the pool, as well as nilling all of the fields.
+// This should hint to the GC that the event.E can be freed, and the memory
+// reused. The decode buffer will be returned to the pool for reuse.
+func (ev *E) Free() {
+	bufpool.Put(ev.b)
+	ev.ID = nil
+	ev.Pubkey = nil
+	ev.Tags = nil
+	ev.Content = nil
+	ev.Sig = nil
+	ev.b = nil
+}
+
+// MarshalJSON marshals an event.E into a JSON byte string.
+//
+// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
+func (ev *E) MarshalJSON() (b []byte, err error) {
+	b = bufpool.Get()
+	b = b[:0]
+	b = append(b, '{')
+	b = append(b, '"')
+	b = append(b, jId...)
+	b = append(b, `":"`...)
+	b = b[:len(b)+2*sha256.Size]
+	xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
+	b = append(b, `","`...)
+	b = append(b, jPubkey...)
+	b = append(b, `":"`...)
+	b = b[:len(b)+2*schnorr.PubKeyBytesLen]
+	xhex.Encode(b[len(b)-2*schnorr.PubKeyBytesLen:], ev.Pubkey)
+	b = append(b, `","`...)
+	b = append(b, jCreatedAt...)
+	b = append(b, `":`...)
+	b = ints.New(ev.CreatedAt).Marshal(b)
+	b = append(b, `,"`...)
+	b = append(b, jKind...)
+	b = append(b, `":`...)
+	b = ints.New(ev.Kind).Marshal(b)
+	b = append(b, `,"`...)
+	b = append(b, jTags...)
+	b = append(b, `":[`...)
+	lts := len(*ev.Tags) - 1
+	for i, tt := range *ev.Tags {
+		b = append(b, '[')
+		lt := len(tt.T) - 1
+		for j, t := range tt.T {
+			b = append(b, '"')
+			b = append(b, t...)
+			b = append(b, '"')
+			if j < lt {
+				b = append(b, ',')
+			}
+		}
+		b = append(b, ']')
+		if i < lts {
+			b = append(b, ',')
+		}
+	}
+	b = append(b, `],"`...)
+	b = append(b, jContent...)
+	b = append(b, `":"`...)
+	// it can happen the slice has insufficient capacity to hold the content AND
+	// the signature at this point, because the signature encoder must have
+	// sufficient capacity pre-allocated as it does not append to the buffer.
+	// unlike every other encoding function up to this point.
+	if cap(b) < len(b)+len(ev.Content)+7+256+2 {
+		b2 := make([]byte, len(b)+len(ev.Content)*2+7+256+2)
+		copy(b2, b)
+		b2 = b2[:len(b)]
+		// return the old buffer to the pool for reuse.
+		bufpool.PutBytes(b)
+		b = b2
+	}
+	b = text.NostrEscape(b, ev.Content)
+	b = append(b, `","`...)
+	b = append(b, jSig...)
+	b = append(b, `":"`...)
+	b = b[:len(b)+2*schnorr.SignatureSize]
+	xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
+	b = append(b, `"}`...)
+	return
+}
+
+// UnmarshalJSON unmarshalls a JSON string into an event.E.
+//
+// Call ev.Free() to return the provided buffer to the bufpool afterwards.
+func (ev *E) UnmarshalJSON(b []byte) (err error) {
+	key := make([]byte, 0, 9)
+	for ; len(b) > 0; b = b[1:] {
+		// Skip whitespace
+		if isWhitespace(b[0]) {
+			continue
+		}
+		if b[0] == '{' {
+			b = b[1:]
+			goto BetweenKeys
+		}
+	}
+	goto eof
+BetweenKeys:
+	for ; len(b) > 0; b = b[1:] {
+		// Skip whitespace
+		if isWhitespace(b[0]) {
+			continue
+		}
+		if b[0] == '"' {
+			b = b[1:]
+			goto InKey
+		}
+	}
+	goto eof
+InKey:
+	for ; len(b) > 0; b = b[1:] {
+		if b[0] == '"' {
+			b = b[1:]
+			goto InKV
+		}
+		key = append(key, b[0])
+	}
+	goto eof
+InKV:
+	for ; len(b) > 0; b = b[1:] {
+		// Skip whitespace
+		if isWhitespace(b[0]) {
+			continue
+		}
+		if b[0] == ':' {
+			b = b[1:]
+			goto InVal
+		}
+	}
+	goto eof
+InVal:
+	// Skip whitespace before value
+	for len(b) > 0 && isWhitespace(b[0]) {
+		b = b[1:]
+	}
+	switch key[0] {
+	case jId[0]:
+		if !utils.FastEqual(jId, key) {
+			goto invalid
+		}
+		var id []byte
+		if id, b, err = text.UnmarshalHex(b); chk.E(err) {
+			return
+		}
+		if len(id) != sha256.Size {
+			err = errorf.E(
+				"invalid ID, require %d got %d", sha256.Size,
+				len(id),
+			)
+			return
+		}
+		ev.ID = id
+		goto BetweenKV
+	case jPubkey[0]:
+		if !utils.FastEqual(jPubkey, key) {
+			goto invalid
+		}
+		var pk []byte
+		if pk, b, err = text.UnmarshalHex(b); chk.E(err) {
+			return
+		}
+		if len(pk) != schnorr.PubKeyBytesLen {
+			err = errorf.E(
+				"invalid pubkey, require %d got %d",
+				schnorr.PubKeyBytesLen, len(pk),
+			)
+			return
+		}
+		ev.Pubkey = pk
+		goto BetweenKV
+	case jKind[0]:
+		if !utils.FastEqual(jKind, key) {
+			goto invalid
+		}
+		k := kind.New(0)
+		if b, err = k.Unmarshal(b); chk.E(err) {
+			return
+		}
+		ev.Kind = k.ToU16()
+		goto BetweenKV
+	case jTags[0]:
+		if !utils.FastEqual(jTags, key) {
+			goto invalid
+		}
+		ev.Tags = new(tag.S)
+		if b, err = ev.Tags.Unmarshal(b); chk.E(err) {
+			return
+		}
+		goto BetweenKV
+	case jSig[0]:
+		if !utils.FastEqual(jSig, key) {
+			goto invalid
+		}
+		var sig []byte
+		if sig, b, err = text.UnmarshalHex(b); chk.E(err) {
+			return
+		}
+		if len(sig) != schnorr.SignatureSize {
+			err = errorf.E(
+				"invalid sig length, require %d got %d '%s'\n%s",
+				schnorr.SignatureSize, len(sig), b, b,
+			)
+			return
+		}
+		ev.Sig = sig
+		goto BetweenKV
+	case jContent[0]:
+		if key[1] == jContent[1] {
+			if !utils.FastEqual(jContent, key) {
+				goto invalid
+			}
+			if ev.Content, b, err = text.UnmarshalQuoted(b); chk.T(err) {
+				return
+			}
+			goto BetweenKV
+		} else if key[1] == jCreatedAt[1] {
+			if !utils.FastEqual(jCreatedAt, key) {
+				goto invalid
+			}
+			if b, err = ints.New(0).Unmarshal(b); chk.T(err) {
+				return
+			}
+			goto BetweenKV
+		} else {
+			goto invalid
+		}
+	default:
+		goto invalid
+	}
+BetweenKV:
+	key = key[:0]
+	for ; len(b) > 0; b = b[1:] {
+		// Skip whitespace
+		if isWhitespace(b[0]) {
+			continue
+		}
+
+		switch {
+		case len(b) == 0:
+			return
+		case b[0] == '}':
+			b = b[1:]
+			goto AfterClose
+		case b[0] == ',':
+			b = b[1:]
+			goto BetweenKeys
+		case b[0] == '"':
+			b = b[1:]
+			goto InKey
+		}
+	}
+	log.I.F("between kv")
+	goto eof
+AfterClose:
+	// Skip any trailing whitespace
+	for len(b) > 0 && isWhitespace(b[0]) {
+		b = b[1:]
+	}
+	return
+invalid:
+	err = fmt.Errorf(
+		"invalid key,\n'%s'\n'%s'\n'%s'", string(b), string(b[:len(b)]),
+		string(b),
+	)
+	return
+eof:
+	err = io.EOF
+	return
+}
+
+// isWhitespace returns true if the byte is a whitespace character (space, tab, newline, carriage return).
+func isWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
 
 // S is an array of event.E that sorts in reverse chronological order.
