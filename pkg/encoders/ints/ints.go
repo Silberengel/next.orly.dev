@@ -109,6 +109,7 @@ func (n *T) Unmarshal(b []byte) (r []byte, err error) {
 			break
 		}
 	}
+	// log.I.F("%s", b)
 	if len(b) == 0 {
 		err = io.EOF
 		return
@@ -116,6 +117,7 @@ func (n *T) Unmarshal(b []byte) (r []byte, err error) {
 	// count the digits
 	for ; sLen < len(b) && b[sLen] >= zero && b[sLen] <= nine && b[sLen] != ','; sLen++ {
 	}
+	// log.I.F("%s", b[:sLen])
 	if sLen == 0 {
 		err = errorf.E("zero length number")
 		return
@@ -127,9 +129,13 @@ func (n *T) Unmarshal(b []byte) (r []byte, err error) {
 	// the length of the string found
 	r = b[sLen:]
 	b = b[:sLen]
+	// log.I.F("\n%s\n%s", b, r)
+	n.N = uint64(b[0]) - zero
+	b = b[1:]
 	for _, ch := range b {
 		ch -= zero
 		n.N = n.N*10 + uint64(ch)
 	}
+	// log.I.F("%d", n.N)
 	return
 }

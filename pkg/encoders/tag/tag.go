@@ -33,8 +33,7 @@ func (t *T) Free() {
 // Marshal encodes a tag.T as standard minified JSON array of strings.
 //
 // Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
-func (t *T) Marshal() (b []byte) {
-	dst := t.b
+func (t *T) Marshal(dst []byte) (b []byte) {
 	dst = append(dst, '[')
 	for i, s := range t.T {
 		dst = text.AppendQuote(dst, s, text.NostrEscape)

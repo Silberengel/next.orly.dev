@@ -111,27 +111,11 @@ func (ev *E) MarshalJSON() (b []byte, err error) {
 	b = ints.New(ev.Kind).Marshal(b)
 	b = append(b, `,"`...)
 	b = append(b, jTags...)
-	b = append(b, `":[`...)
+	b = append(b, `":`...)
 	if ev.Tags != nil {
-		lts := len(*ev.Tags) - 1
-		for i, tt := range *ev.Tags {
-			b = append(b, '[')
-			lt := len(tt.T) - 1
-			for j, t := range tt.T {
-				b = append(b, '"')
-				b = append(b, t...)
-				b = append(b, '"')
-				if j < lt {
-					b = append(b, ',')
-				}
-			}
-			b = append(b, ']')
-			if i < lts {
-				b = append(b, ',')
-			}
-		}
+		b = ev.Tags.Marshal(b)
 	}
-	b = append(b, `],"`...)
+	b = append(b, `,"`...)
 	b = append(b, jContent...)
 	b = append(b, `":"`...)
 	// it can happen the slice has insufficient capacity to hold the content AND
@@ -175,6 +159,7 @@ func (ev *E) UnmarshalJSON(b []byte) (err error) {
 			goto BetweenKeys
 		}
 	}
+	log.I.F("start")
 	goto eof
 BetweenKeys:
 	for ; len(b) > 0; b = b[1:] {
@@ -187,6 +172,7 @@ BetweenKeys:
 			goto InKey
 		}
 	}
+	log.I.F("BetweenKeys")
 	goto eof
 InKey:
 	for ; len(b) > 0; b = b[1:] {
@@ -196,6 +182,7 @@ InKey:
 		}
 		key = append(key, b[0])
 	}
+	log.I.F("InKey")
 	goto eof
 InKV:
 	for ; len(b) > 0; b = b[1:] {
@@ -208,6 +195,7 @@ InKV:
 			goto InVal
 		}
 	}
+	log.I.F("InKV")
 	goto eof
 InVal:
 	// Skip whitespace before value
@@ -298,9 +286,11 @@ InVal:
 			if !utils.FastEqual(jCreatedAt, key) {
 				goto invalid
 			}
-			if b, err = ints.New(0).Unmarshal(b); chk.T(err) {
+			i := ints.New(0)
+			if b, err = i.Unmarshal(b); chk.T(err) {
 				return
 			}
+			ev.CreatedAt = i.Int64()
 			goto BetweenKV
 		} else {
 			goto invalid
@@ -315,7 +305,6 @@ BetweenKV:
 		if isWhitespace(b[0]) {
 			continue
 		}
-
 		switch {
 		case len(b) == 0:
 			return

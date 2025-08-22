@@ -16,7 +16,19 @@ func (s *S) MarshalJSON() (b []byte, err error) {
 	b = bufpool.Get()
 	b = append(b, '[')
 	for i, ss := range *s {
-		b = append(b, ss.Marshal()...)
+		b = ss.Marshal(b)
+		if i < len(*s)-1 {
+			b = append(b, ',')
+		}
+	}
+	b = append(b, ']')
+	return
+}
+
+func (s *S) Marshal(dst []byte) (b []byte) {
+	b = append(dst, '[')
+	for i, ss := range *s {
+		b = ss.Marshal(b)
 		if i < len(*s)-1 {
 			b = append(b, ',')
 		}

@@ -74,5 +74,6 @@ func PutBytes(b []byte) {
 			return fmt.Sprintf("returning bytes to buffer: %p", ptr)
 		},
 	)
+	b = b[:0]
 	Put(b)
 }
