@@ -1,10 +1,10 @@
 package event
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
-	"github.com/pkg/profile"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
 	"next.orly.dev/pkg/encoders/hex"
@@ -13,11 +13,8 @@ import (
 	"next.orly.dev/pkg/utils/bufpool"
 )
 
-func TestMarshalJSON(t *testing.T) {
-	// lol.SetLogLevel("trace")
-	prof := profile.Start(profile.MemProfile)
-	defer prof.Stop()
-	for range 1000000 {
+func TestMarshalJSONUnmarshalJSON(t *testing.T) {
+	for range 10000 {
 		ev := New()
 		ev.ID = frand.Bytes(32)
 		ev.Pubkey = frand.Bytes(32)
@@ -32,18 +29,23 @@ func TestMarshalJSON(t *testing.T) {
 				},
 			},
 		}
-		ev.Content = frand.Bytes(frand.Intn(1024) + 1)
+		ev.Content = []byte(`some text content
+
+	with line breaks and tabs and other stuff
+`)
 		ev.Sig = frand.Bytes(64)
 		// log.I.S(ev)
 		b, err := ev.MarshalJSON()
+		if b, err = json.Marshal(ev); chk.E(err) {
+			t.Fatal(err)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
 		var bc []byte
 		bc = append(bc, b...)
-		// log.I.F("%s", bc)
 		ev2 := New()
-		if err = ev2.UnmarshalJSON(b); chk.E(err) {
+		if err = json.Unmarshal(b, ev2); chk.E(err) {
 			t.Fatal(err)
 		}
 		var b2 []byte
@@ -60,4 +62,8 @@ func TestMarshalJSON(t *testing.T) {
 		bufpool.PutBytes(b2)
 		bufpool.PutBytes(bc)
 	}
+}
+
+func TestExamplesCache(t *testing.T) {
+
 }

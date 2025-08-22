@@ -112,21 +112,23 @@ func (ev *E) MarshalJSON() (b []byte, err error) {
 	b = append(b, `,"`...)
 	b = append(b, jTags...)
 	b = append(b, `":[`...)
-	lts := len(*ev.Tags) - 1
-	for i, tt := range *ev.Tags {
-		b = append(b, '[')
-		lt := len(tt.T) - 1
-		for j, t := range tt.T {
-			b = append(b, '"')
-			b = append(b, t...)
-			b = append(b, '"')
-			if j < lt {
+	if ev.Tags != nil {
+		lts := len(*ev.Tags) - 1
+		for i, tt := range *ev.Tags {
+			b = append(b, '[')
+			lt := len(tt.T) - 1
+			for j, t := range tt.T {
+				b = append(b, '"')
+				b = append(b, t...)
+				b = append(b, '"')
+				if j < lt {
+					b = append(b, ',')
+				}
+			}
+			b = append(b, ']')
+			if i < lts {
 				b = append(b, ',')
 			}
-		}
-		b = append(b, ']')
-		if i < lts {
-			b = append(b, ',')
 		}
 	}
 	b = append(b, `],"`...)
@@ -135,7 +137,11 @@ func (ev *E) MarshalJSON() (b []byte, err error) {
 	// it can happen the slice has insufficient capacity to hold the content AND
 	// the signature at this point, because the signature encoder must have
 	// sufficient capacity pre-allocated as it does not append to the buffer.
-	// unlike every other encoding function up to this point.
+	// unlike every other encoding function up to this point. This also ensures
+	// that since the bufpool defaults to 1kb, most events won't have a
+	// re-allocation required, but if they do, it will be this next one, and it
+	// integrates properly with the buffer pool, reducing GC pressure and
+	// avoiding new heap allocations.
 	if cap(b) < len(b)+len(ev.Content)+7+256+2 {
 		b2 := make([]byte, len(b)+len(ev.Content)*2+7+256+2)
 		copy(b2, b)
