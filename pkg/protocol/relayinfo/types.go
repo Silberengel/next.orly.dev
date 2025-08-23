@@ -291,6 +291,8 @@ func NewInfo(inf *T) (info *T) {
 func (ri *T) Clone() (r2 *T, err error) {
 	r2 = new(T)
 	var b []byte
+	// beware, this will escape <, > and & to unicode escapes but that should be
+	// ok since this data is not signed in events until after it is marshaled.
 	if b, err = json.Marshal(ri); chk.E(err) {
 		return
 	}
@@ -330,6 +332,8 @@ func (ri *T) Save(filename string) (err error) {
 		return
 	}
 	var b []byte
+	// beware, this will escape <, > and & to unicode escapes but that should be
+	// ok since this data is not signed in events until after it is marshaled.
 	if b, err = json.MarshalIndent(ri, "", "    "); chk.E(err) {
 		return
 	}

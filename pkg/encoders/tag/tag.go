@@ -45,6 +45,16 @@ func (t *T) Marshal(dst []byte) (b []byte) {
 	return dst
 }
 
+// MarshalJSON encodes a tag.T as standard minified JSON array of strings.
+//
+// Warning: this will mangle the output if the tag fields contain <, > or &
+// characters. do not use json.Marshal in the hopes of rendering tags verbatim
+// in an event as you will have a bad time.
+func (t *T) MarshalJSON() (b []byte, err error) {
+	b = t.Marshal(nil)
+	return
+}
+
 // Unmarshal decodes a standard minified JSON array of strings to a tags.T.
 //
 // Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
@@ -70,5 +80,10 @@ func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 	if !openedBracket || inQuotes {
 		return nil, errorf.E("tag: failed to parse tag")
 	}
+	return
+}
+
+func (t *T) UnmarshalJSON(b []byte) (err error) {
+	_, err = t.Unmarshal(b)
 	return
 }

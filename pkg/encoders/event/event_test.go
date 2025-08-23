@@ -43,7 +43,7 @@ func TestMarshalJSONUnmarshalJSON(t *testing.T) {
 		// b, err := ev.MarshalJSON()
 		var err error
 		var b []byte
-		if b, err = json.Marshal(ev); chk.E(err) {
+		if b, err = ev.MarshalJSON(); chk.E(err) {
 			t.Fatal(err)
 		}
 		var bc []byte
@@ -53,7 +53,7 @@ func TestMarshalJSONUnmarshalJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b2 []byte
-		if b2, err = json.Marshal(ev2); err != nil {
+		if b2, err = ev2.MarshalJSON(); err != nil {
 			t.Fatal(err)
 		}
 		if !utils.FastEqual(bc, b2) {
