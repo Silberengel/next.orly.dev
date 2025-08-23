@@ -20,7 +20,13 @@ import (
 
 // E is the primary datatype of nostr. This is the form of the structure that
 // defines its JSON string-based format. Always use New() and Free() to create
-// and free event.E.
+// and free event.E to take advantage of the bufpool which greatly improves
+// memory allocation behaviour when encoding and decoding nostr events.
+//
+// WARNING: DO NOT use json.Marshal with this type because it will not properly
+// encode <, >, and & characters due to legacy bullcrap in the encoding/json
+// library. Either call MarshalJSON directly or use a json.Encoder with html
+// escaping disabled.
 type E struct {
 
 	// ID is the SHA256 hash of the canonical encoding of the event in binary format
