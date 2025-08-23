@@ -3,7 +3,6 @@ package event
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"lukechampine.com/frand"
 	"next.orly.dev/pkg/encoders/event/examples"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/json"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/bufpool"
@@ -39,11 +39,9 @@ func TestMarshalJSONUnmarshalJSON(t *testing.T) {
 	with line breaks and tabs and other stuff
 `)
 		ev.Sig = frand.Bytes(64)
-		// log.I.S(ev)
-		// b, err := ev.MarshalJSON()
 		var err error
 		var b []byte
-		if b, err = ev.MarshalJSON(); chk.E(err) {
+		if b, err = json.Marshal(ev); chk.E(err) {
 			t.Fatal(err)
 		}
 		var bc []byte
@@ -53,7 +51,7 @@ func TestMarshalJSONUnmarshalJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b2 []byte
-		if b2, err = ev2.MarshalJSON(); err != nil {
+		if b2, err = json.Marshal(ev2); err != nil {
 			t.Fatal(err)
 		}
 		if !utils.FastEqual(bc, b2) {
@@ -82,8 +80,8 @@ func TestExamplesCache(t *testing.T) {
 			t.Fatal(err)
 		}
 		var b2 []byte
-		// can't use json.Marshal as it improperly escapes <, > and &.
-		if b2, err = ev.MarshalJSON(); err != nil {
+		// can't use encoding/json.Marshal as it improperly escapes <, > and &.
+		if b2, err = json.Marshal(ev); err != nil {
 			t.Fatal(err)
 		}
 		if !utils.FastEqual(c, b2) {

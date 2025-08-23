@@ -9,6 +9,7 @@ import (
 	"lukechampine.com/frand"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/json"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/bufpool"
@@ -36,7 +37,7 @@ func main() {
 		ev.Content = frand.Bytes(frand.Intn(1024) + 1)
 		ev.Sig = frand.Bytes(64)
 		// log.I.S(ev)
-		b, err := ev.MarshalJSON()
+		b, err := json.Marshal(ev)
 		if chk.E(err) {
 			return
 		}
@@ -44,11 +45,11 @@ func main() {
 		bc = append(bc, b...)
 		// log.I.F("%s", bc)
 		ev2 := event.New()
-		if err = ev2.UnmarshalJSON(b); chk.E(err) {
+		if err = json.Unmarshal(b, ev2); chk.E(err) {
 			return
 		}
 		var b2 []byte
-		if b2, err = ev.MarshalJSON(); err != nil {
+		if b2, err = json.Marshal(ev); err != nil {
 			return
 		}
 		if !utils.FastEqual(bc, b2) {
