@@ -78,10 +78,11 @@ func TestExamplesCache(t *testing.T) {
 		c = c[:0]
 		c = append(c, b...)
 		ev := New()
-		if err = ev.UnmarshalJSON(b); chk.E(err) {
+		if err = json.Unmarshal(b, ev); chk.E(err) {
 			t.Fatal(err)
 		}
 		var b2 []byte
+		// can't use json.Marshal as it improperly escapes <, > and &.
 		if b2, err = ev.MarshalJSON(); err != nil {
 			t.Fatal(err)
 		}

@@ -87,6 +87,11 @@ func (ev *E) Free() {
 // MarshalJSON marshals an event.E into a JSON byte string.
 //
 // Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
+//
+// WARNING: if json.Marshal is called in the hopes of invoking this function on
+// an event, if it has <, > or * in the content or tags they are escaped into
+// unicode escapes and break the event ID. Call this function directly in order
+// to bypass this issue.
 func (ev *E) MarshalJSON() (b []byte, err error) {
 	b = bufpool.Get()
 	b = b[:0]
