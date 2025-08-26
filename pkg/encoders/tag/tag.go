@@ -4,6 +4,8 @@
 package tag
 
 import (
+	"bytes"
+
 	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/encoders/text"
 	"next.orly.dev/pkg/utils/bufpool"
@@ -25,10 +27,22 @@ func New(t ...[]byte) *T {
 	return &T{T: t, b: bufpool.Get()}
 }
 
+func NewWithCap(c int) *T {
+	return &T{T: make([][]byte, 0, c), b: bufpool.Get()}
+}
+
 func (t *T) Free() {
 	bufpool.Put(t.b)
 	t.T = nil
 }
+
+func (t *T) Len() int { return len(t.T) }
+
+func (t *T) Less(i, j int) bool {
+	return bytes.Compare(t.T[i], t.T[j]) < 0
+}
+
+func (t *T) Swap(i, j int) { t.T[i], t.T[j] = t.T[j], t.T[i] }
 
 // Marshal encodes a tag.T as standard minified JSON array of strings.
 //

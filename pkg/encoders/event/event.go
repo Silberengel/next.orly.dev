@@ -32,7 +32,8 @@ import (
 // same as go 1.25 json v1 except with this one stupidity removed.
 type E struct {
 
-	// ID is the SHA256 hash of the canonical encoding of the event in binary format
+	// ID is the SHA256 hash of the canonical encoding of the event in binary
+	// format
 	ID []byte
 
 	// Pubkey is the public key of the event creator in binary format
@@ -57,8 +58,8 @@ type E struct {
 	// Pubkey in binary format.
 	Sig []byte
 
-	// b is the decode buffer for the event.E. this is where the UnmarshalJSON will
-	// source the memory to store all of the fields except for the tags.
+	// b is the decode buffer for the event.E. this is where the UnmarshalJSON
+	// will source the memory to store all of the fields except for the tags.
 	b bufpool.B
 }
 

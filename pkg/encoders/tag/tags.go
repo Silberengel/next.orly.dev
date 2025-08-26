@@ -1,6 +1,8 @@
 package tag
 
 import (
+	"bytes"
+
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/utils/bufpool"
 )
@@ -8,6 +10,26 @@ import (
 // S is a list of tag.T - which are lists of string elements with ordering and
 // no uniqueness constraint (not a set).
 type S []*T
+
+func NewSWithCap(c int) (s *S) {
+	ss := make([]*T, 0, c)
+	return (*S)(&ss)
+}
+
+func (s *S) Len() int {
+	return len(*s)
+}
+
+func (s *S) Less(i, j int) bool {
+	// only the first element is compared, this is only used for normalizing
+	// filters and the individual tags must be separately sorted.
+	return bytes.Compare((*s)[i].T[0], (*s)[j].T[0]) < 0
+}
+
+func (s *S) Swap(i, j int) {
+	// TODO implement me
+	panic("implement me")
+}
 
 // MarshalJSON encodes a tags.T appended to a provided byte slice in JSON form.
 //

@@ -17,14 +17,14 @@ func TestMarshalUnmarshal(t *testing.T) {
 			_, _ = frand.Read(b1)
 			tg.T = append(tg.T, b1)
 		}
-		tb := tg.Marshal()
+		tb := tg.Marshal(nil)
 		var tbc []byte
 		tbc = append(tbc, tb...)
 		tg2 := New()
 		if _, err := tg2.Unmarshal(tb); chk.E(err) {
 			t.Fatal(err)
 		}
-		tb2 := tg2.Marshal()
+		tb2 := tg2.Marshal(nil)
 		if !utils.FastEqual(tbc, tb2) {
 			t.Fatalf("failed to re-marshal back original")
 		}

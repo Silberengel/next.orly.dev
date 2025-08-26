@@ -89,7 +89,7 @@ func TestExamplesCache(t *testing.T) {
 			t.Fatalf("failed to re-marshal back original")
 		}
 		ev.Free()
-		// Don't return scanner.Bytes() to the pool as it's not a buffer we own
+		// Don't return scanner.Bytes() to the pool as it's a buffer from embed.
 		// bufpool.PutBytes(b)
 		bufpool.PutBytes(b2)
 		bufpool.PutBytes(c)
