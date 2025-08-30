@@ -21,6 +21,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if r.Header.Get("Accept") == "application/nostr+json" {
 		s.HandleRelayInfo(w, r)
 	} else {
-		http.Error(w, "Upgrade required", http.StatusUpgradeRequired)
+		if s.mux == nil {
+			http.Error(w, "Upgrade required", http.StatusUpgradeRequired)
+		} else {
+			s.mux.ServeHTTP(w, r)
+		}
 	}
 }

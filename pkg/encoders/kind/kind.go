@@ -57,7 +57,7 @@ func (k *K) ToU64() uint64 {
 
 // Name returns the human readable string describing the semantics of the
 // kind.K.
-func (k *K) Name() string { return GetString(k) }
+func (k *K) Name() string { return GetString(k.K) }
 
 // Equal checks if
 func (k *K) Equal(k2 *K) bool {
@@ -105,13 +105,10 @@ func (k *K) Unmarshal(b []byte) (r []byte, err error) {
 }
 
 // GetString returns a human-readable identifier for a kind.K.
-func GetString(t *K) string {
-	if t == nil {
-		return ""
-	}
-	MapMx.Lock()
-	defer MapMx.Unlock()
-	return Map[t.K]
+func GetString(t uint16) string {
+	MapMx.RLock()
+	defer MapMx.RUnlock()
+	return Map[t]
 }
 
 // IsEphemeral returns true if the event kind is an ephemeral event. (not to be
@@ -340,7 +337,7 @@ var (
 	ParameterizedReplaceableEnd = &K{39999}
 )
 
-var MapMx sync.Mutex
+var MapMx sync.RWMutex
 var Map = map[uint16]string{
 	ProfileMetadata.K:             "ProfileMetadata",
 	TextNote.K:                    "TextNote",

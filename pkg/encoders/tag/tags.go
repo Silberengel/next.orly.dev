@@ -4,12 +4,19 @@ import (
 	"bytes"
 
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // S is a list of tag.T - which are lists of string elements with ordering and
 // no uniqueness constraint (not a set).
 type S []*T
+
+func NewS(t ...*T) (s *S) {
+	s = new(S)
+	*s = append(*s, t...)
+	return
+}
 
 func NewSWithCap(c int) (s *S) {
 	ss := make([]*T, 0, c)
@@ -29,6 +36,10 @@ func (s *S) Less(i, j int) bool {
 func (s *S) Swap(i, j int) {
 	// TODO implement me
 	panic("implement me")
+}
+
+func (s *S) Append(t ...*T) {
+	*s = append(*s, t...)
 }
 
 // MarshalJSON encodes a tags.T appended to a provided byte slice in JSON form.
@@ -106,6 +117,16 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 			default:
 				r = r[1:]
 			}
+		}
+	}
+	return
+}
+
+// GetFirst returns the first tag.T that has the same Key as t.
+func (s *S) GetFirst(t []byte) (first *T) {
+	for _, tt := range *s {
+		if utils.FastEqual(tt.T[0], t) {
+			return tt
 		}
 	}
 	return

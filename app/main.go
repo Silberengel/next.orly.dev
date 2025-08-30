@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 )
@@ -20,11 +21,14 @@ func Run(ctx context.Context, cfg *config.C) (quit chan struct{}) {
 	}()
 	// start listener
 	l := &Server{
+		Ctx:    ctx,
 		Config: cfg,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
-	log.I.F("starting listener on %s", addr)
-	go http.ListenAndServe(addr, l)
+	log.I.F("starting listener on http://%s", addr)
+	go func() {
+		chk.E(http.ListenAndServe(addr, l))
+	}()
 	quit = make(chan struct{})
 	return
 }

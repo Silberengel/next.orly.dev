@@ -94,17 +94,8 @@ func (ev *E) Free() {
 	ev.b = nil
 }
 
-// MarshalJSON marshals an event.E into a JSON byte string.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
-//
-// WARNING: if json.Marshal is called in the hopes of invoking this function on
-// an event, if it has <, > or * in the content or tags they are escaped into
-// unicode escapes and break the event ID. Call this function directly in order
-// to bypass this issue.
-func (ev *E) MarshalJSON() (b []byte, err error) {
-	b = bufpool.Get()
-	b = b[:0]
+func (ev *E) Marshal(dst []byte) (b []byte) {
+	b = dst
 	b = append(b, '{')
 	b = append(b, '"')
 	b = append(b, jId...)
@@ -159,10 +150,76 @@ func (ev *E) MarshalJSON() (b []byte, err error) {
 	return
 }
 
-// UnmarshalJSON unmarshalls a JSON string into an event.E.
+// MarshalJSON marshals an event.E into a JSON byte string.
+//
+// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
+//
+// WARNING: if json.Marshal is called in the hopes of invoking this function on
+// an event, if it has <, > or * in the content or tags they are escaped into
+// unicode escapes and break the event ID. Call this function directly in order
+// to bypass this issue.
+func (ev *E) MarshalJSON() (b []byte, err error) {
+	b = bufpool.Get()
+	b = ev.Marshal(b[:0])
+	// b = b[:0]
+	// b = append(b, '{')
+	// b = append(b, '"')
+	// b = append(b, jId...)
+	// b = append(b, `":"`...)
+	// b = b[:len(b)+2*sha256.Size]
+	// xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
+	// b = append(b, `","`...)
+	// b = append(b, jPubkey...)
+	// b = append(b, `":"`...)
+	// b = b[:len(b)+2*schnorr.PubKeyBytesLen]
+	// xhex.Encode(b[len(b)-2*schnorr.PubKeyBytesLen:], ev.Pubkey)
+	// b = append(b, `","`...)
+	// b = append(b, jCreatedAt...)
+	// b = append(b, `":`...)
+	// b = ints.New(ev.CreatedAt).Marshal(b)
+	// b = append(b, `,"`...)
+	// b = append(b, jKind...)
+	// b = append(b, `":`...)
+	// b = ints.New(ev.Kind).Marshal(b)
+	// b = append(b, `,"`...)
+	// b = append(b, jTags...)
+	// b = append(b, `":`...)
+	// if ev.Tags != nil {
+	// 	b = ev.Tags.Marshal(b)
+	// }
+	// b = append(b, `,"`...)
+	// b = append(b, jContent...)
+	// b = append(b, `":"`...)
+	// // it can happen the slice has insufficient capacity to hold the content AND
+	// // the signature at this point, because the signature encoder must have
+	// // sufficient capacity pre-allocated as it does not append to the buffer.
+	// // unlike every other encoding function up to this point. This also ensures
+	// // that since the bufpool defaults to 1kb, most events won't have a
+	// // re-allocation required, but if they do, it will be this next one, and it
+	// // integrates properly with the buffer pool, reducing GC pressure and
+	// // avoiding new heap allocations.
+	// if cap(b) < len(b)+len(ev.Content)+7+256+2 {
+	// 	b2 := make([]byte, len(b)+len(ev.Content)*2+7+256+2)
+	// 	copy(b2, b)
+	// 	b2 = b2[:len(b)]
+	// 	// return the old buffer to the pool for reuse.
+	// 	bufpool.PutBytes(b)
+	// 	b = b2
+	// }
+	// b = text.NostrEscape(b, ev.Content)
+	// b = append(b, `","`...)
+	// b = append(b, jSig...)
+	// b = append(b, `":"`...)
+	// b = b[:len(b)+2*schnorr.SignatureSize]
+	// xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
+	// b = append(b, `"}`...)
+	return
+}
+
+// Unmarshal unmarshalls a JSON string into an event.E.
 //
 // Call ev.Free() to return the provided buffer to the bufpool afterwards.
-func (ev *E) UnmarshalJSON(b []byte) (err error) {
+func (ev *E) Unmarshal(b []byte) (rem []byte, err error) {
 	key := make([]byte, 0, 9)
 	for ; len(b) > 0; b = b[1:] {
 		// Skip whitespace
@@ -337,10 +394,7 @@ BetweenKV:
 	log.I.F("between kv")
 	goto eof
 AfterClose:
-	// Skip any trailing whitespace
-	for len(b) > 0 && isWhitespace(b[0]) {
-		b = b[1:]
-	}
+	rem = b
 	return
 invalid:
 	err = fmt.Errorf(
@@ -350,6 +404,14 @@ invalid:
 	return
 eof:
 	err = io.EOF
+	return
+}
+
+// UnmarshalJSON unmarshalls a JSON string into an event.E.
+//
+// Call ev.Free() to return the provided buffer to the bufpool afterwards.
+func (ev *E) UnmarshalJSON(b []byte) (err error) {
+	_, err = ev.Unmarshal(b)
 	return
 }
 

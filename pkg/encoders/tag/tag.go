@@ -23,8 +23,18 @@ type T struct {
 	b bufpool.B
 }
 
-func New(t ...[]byte) *T {
-	return &T{T: t, b: bufpool.Get()}
+func New(t ...any) *T {
+	var bs [][]byte
+	for _, v := range t {
+		if vb, ok := v.([]byte); ok {
+			bs = append(bs, vb)
+		} else if vs, ok := v.(string); ok {
+			bs = append(bs, []byte(vs))
+		} else {
+			panic("programmer error: type of tag element is not []byte or string")
+		}
+	}
+	return &T{T: bs, b: bufpool.Get()}
 }
 
 func NewWithCap(c int) *T {
@@ -45,8 +55,6 @@ func (t *T) Less(i, j int) bool {
 func (t *T) Swap(i, j int) { t.T[i], t.T[j] = t.T[j], t.T[i] }
 
 // Marshal encodes a tag.T as standard minified JSON array of strings.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
 func (t *T) Marshal(dst []byte) (b []byte) {
 	dst = append(dst, '[')
 	for i, s := range t.T {
@@ -63,15 +71,21 @@ func (t *T) Marshal(dst []byte) (b []byte) {
 //
 // Warning: this will mangle the output if the tag fields contain <, > or &
 // characters. do not use json.Marshal in the hopes of rendering tags verbatim
-// in an event as you will have a bad time.
+// in an event as you will have a bad time. Use the json.Marshal function in the
+// pkg/encoders/json package instead, this has a fork of the json library that
+// disables html escaping for json.Marshal.
+//
+// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
 func (t *T) MarshalJSON() (b []byte, err error) {
-	b = t.Marshal(nil)
+	b = bufpool.Get()
+	b = t.Marshal(b)
 	return
 }
 
 // Unmarshal decodes a standard minified JSON array of strings to a tags.T.
 //
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
+// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use if it
+// was originally created using bufpool.Get().
 func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 	var inQuotes, openedBracket bool
 	var quoteStart int
@@ -99,5 +113,26 @@ func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 
 func (t *T) UnmarshalJSON(b []byte) (err error) {
 	_, err = t.Unmarshal(b)
+	return
+}
+
+func (t *T) Key() (key []byte) {
+	if len(t.T) > Key {
+		return t.T[Key]
+	}
+	return
+}
+
+func (t *T) Value() (key []byte) {
+	if len(t.T) > Value {
+		return t.T[Value]
+	}
+	return
+}
+
+func (t *T) Relay() (key []byte) {
+	if len(t.T) > Relay {
+		return t.T[Relay]
+	}
 	return
 }

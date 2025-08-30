@@ -34,7 +34,7 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	var err error
 	var conn *websocket.Conn
 	if conn, err = websocket.Accept(
-		w, r, &websocket.AcceptOptions{},
+		w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}},
 	); chk.E(err) {
 		return
 	}
@@ -48,8 +48,8 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		default:
 		}
 		var typ websocket.MessageType
-		var message []byte
-		if typ, message, err = conn.Read(s.Ctx); err != nil {
+		var msg []byte
+		if typ, msg, err = conn.Read(s.Ctx); err != nil {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
@@ -68,12 +68,12 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if typ == PingMessage {
-			if err = conn.Write(s.Ctx, PongMessage, message); chk.E(err) {
+			if err = conn.Write(s.Ctx, PongMessage, msg); chk.E(err) {
 				return
 			}
 			continue
 		}
-		go s.HandleMessage()
+		go s.HandleMessage(msg)
 	}
 }
 
