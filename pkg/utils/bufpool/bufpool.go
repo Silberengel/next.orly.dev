@@ -11,7 +11,7 @@ import (
 
 const (
 	// BufferSize is the size of each buffer in the pool (1kb)
-	BufferSize = units.Kb / 2
+	BufferSize = units.Kb
 )
 
 type B []byte

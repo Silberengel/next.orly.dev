@@ -12,6 +12,7 @@ import (
 	"next.orly.dev/pkg/encoders/event"
 	text2 "next.orly.dev/pkg/encoders/text"
 	"next.orly.dev/pkg/interfaces/codec"
+	"next.orly.dev/pkg/utils/units"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -193,6 +194,11 @@ func (en *Response) Marshal(dst []byte) (b []byte) {
 	if en.Event == nil {
 		err = errorf.E("nil event in response")
 		return
+	}
+	// if the destination capacity is not large enough, allocate a new
+	// destination slice.
+	if en.Event.EstimateSize() >= cap(dst) {
+		dst = make([]byte, 0, en.Event.EstimateSize()+units.Kb)
 	}
 	b = dst
 	b = envs.Marshal(b, L, en.Event.Marshal)

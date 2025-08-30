@@ -94,6 +94,18 @@ func (ev *E) Free() {
 	ev.b = nil
 }
 
+// EstimateSize returns a size for the event that allows for worst case scenario
+// expansion of the escaped content and tags.
+func (ev *E) EstimateSize() (size int) {
+	size = len(ev.ID)*2 + len(ev.Pubkey)*2 + len(ev.Sig)*2 + len(ev.Content)*2
+	for _, v := range *ev.Tags {
+		for _, w := range (*v).T {
+			size += len(w) * 2
+		}
+	}
+	return
+}
+
 func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = dst
 	b = append(b, '{')
