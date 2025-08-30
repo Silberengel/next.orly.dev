@@ -23,18 +23,26 @@ type T struct {
 	b bufpool.B
 }
 
-func New(t ...any) *T {
-	var bs [][]byte
+func New() *T { return &T{b: bufpool.Get()} }
+
+func NewFromByteSlice(t ...[]byte) (tt *T) {
+	tt = &T{T: t, b: bufpool.Get()}
+	return
+}
+
+func NewFromAny(t ...any) (tt *T) {
+	tt = &T{b: bufpool.Get()}
 	for _, v := range t {
-		if vb, ok := v.([]byte); ok {
-			bs = append(bs, vb)
-		} else if vs, ok := v.(string); ok {
-			bs = append(bs, []byte(vs))
-		} else {
-			panic("programmer error: type of tag element is not []byte or string")
+		switch vv := v.(type) {
+		case []byte:
+			tt.T = append(tt.T, vv)
+		case string:
+			tt.T = append(tt.T, []byte(vv))
+		default:
+			panic("invalid type for tag fields, must be []byte or string")
 		}
 	}
-	return &T{T: bs, b: bufpool.Get()}
+	return
 }
 
 func NewWithCap(c int) *T {

@@ -32,8 +32,8 @@ func CreateUnsigned(pubkey, challenge []byte, relayURL string) (ev *event.E) {
 		CreatedAt: time.Now().Unix(),
 		Kind:      kind.ClientAuthentication.K,
 		Tags: tag.NewS(
-			tag.New("relay", relayURL),
-			tag.New("challenge", string(challenge)),
+			tag.NewFromAny("relay", relayURL),
+			tag.NewFromAny("challenge", string(challenge)),
 		),
 	}
 }

@@ -88,7 +88,7 @@ func GenFilter() (f *F, err error) {
 			idb = append(idb, id)
 		}
 		idb = append([][]byte{{'#', byte(b)}}, idb...)
-		*f.Tags = append(*f.Tags, tag.New(idb...))
+		*f.Tags = append(*f.Tags, tag.NewFromByteSlice(idb...))
 		// f.Tags.F = append(f.Tags.F, tag.FromBytesSlice(idb...))
 	}
 	tn := int(timestamp.Now().I64())

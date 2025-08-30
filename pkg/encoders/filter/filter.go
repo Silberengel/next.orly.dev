@@ -302,7 +302,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 					return
 				}
 				ff = append([][]byte{k}, ff...)
-				s := append(*f.Tags, tag.New(ff...))
+				s := append(*f.Tags, tag.NewFromByteSlice(ff...))
 				f.Tags = &s
 				// f.Tags.F = append(f.Tags.F, tag.New(ff...))
 				// }
@@ -317,7 +317,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				); chk.E(err) {
 					return
 				}
-				f.Ids = tag.New(ff...)
+				f.Ids = tag.NewFromByteSlice(ff...)
 				state = betweenKV
 			case Kinds[0]:
 				if len(key) < len(Kinds) {
@@ -338,7 +338,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				); chk.E(err) {
 					return
 				}
-				f.Authors = tag.New(ff...)
+				f.Authors = tag.NewFromByteSlice(ff...)
 				state = betweenKV
 			case Until[0]:
 				if len(key) < len(Until) {
