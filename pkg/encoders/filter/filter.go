@@ -282,21 +282,6 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				}
 				k := make([]byte, len(key))
 				copy(k, key)
-				// switch key[1] {
-				// case 'e', 'p':
-				// 	// the tags must all be 64 character hexadecimal
-				// 	var ff [][]byte
-				// 	if ff, r, err = text2.UnmarshalHexArray(
-				// 		r,
-				// 		sha256.Size,
-				// 	); chk.E(err) {
-				// 		return
-				// 	}
-				// 	ff = append([][]byte{k}, ff...)
-				// 	f.Tags = f.Tags.AppendTags(tag.FromBytesSlice(ff...))
-				// 	// f.Tags.F = append(f.Tags.F, tag.New(ff...))
-				// default:
-				// other types of tags can be anything
 				var ff [][]byte
 				if ff, r, err = text.UnmarshalStringArray(r); chk.E(err) {
 					return

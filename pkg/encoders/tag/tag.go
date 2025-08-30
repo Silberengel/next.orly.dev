@@ -54,7 +54,12 @@ func (t *T) Free() {
 	t.T = nil
 }
 
-func (t *T) Len() int { return len(t.T) }
+func (t *T) Len() int {
+	if t == nil {
+		return 0
+	}
+	return len(t.T)
+}
 
 func (t *T) Less(i, j int) bool {
 	return bytes.Compare(t.T[i], t.T[j]) < 0

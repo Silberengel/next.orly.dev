@@ -24,6 +24,9 @@ func NewSWithCap(c int) (s *S) {
 }
 
 func (s *S) Len() int {
+	if s == nil {
+		return 0
+	}
 	return len(*s)
 }
 
