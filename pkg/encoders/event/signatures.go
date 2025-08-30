@@ -34,13 +34,13 @@ func (ev *E) Verify() (valid bool, err error) {
 		// check that this isn't because of a bogus ID
 		id := ev.GetIDBytes()
 		if !utils.FastEqual(id, ev.ID) {
-			log.E.Ln("event ID incorrect")
+			log.E.Ln("event Subscription incorrect")
 			ev.ID = id
 			err = nil
 			if valid, err = keys.Verify(ev.ID, ev.Sig); chk.E(err) {
 				return
 			}
-			err = errorf.W("event ID incorrect but signature is valid on correct ID")
+			err = errorf.W("event Subscription incorrect but signature is valid on correct Subscription")
 		}
 		return
 	}

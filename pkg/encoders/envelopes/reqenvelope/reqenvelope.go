@@ -87,7 +87,6 @@ func (en *T) Unmarshal(b []byte) (r []byte, err error) {
 	if en.Subscription, r, err = text.UnmarshalQuoted(r); chk.E(err) {
 		return
 	}
-
 	if r, err = text.Comma(r); chk.E(err) {
 		return
 	}

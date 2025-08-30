@@ -7,14 +7,13 @@ import (
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {
 	var err error
-	rb, rb1, rb2 := make([]byte, 0, 65535), make([]byte, 0, 65535), make(
-		[]byte, 0, 65535,
-	)
 	for i := range 1000 {
+		rb, rb1, rb2 := bufpool.Get(), bufpool.Get(), bufpool.Get()
 		var f filter.S
 		if f, err = filter.GenFilters(); chk.E(err) {
 			t.Fatal(err)
@@ -22,8 +21,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 		s := utils.NewSubscription(i)
 		req := NewFrom(s, f)
 		rb = req.Marshal(rb)
-		rb1 = rb1[:len(rb)]
-		copy(rb1, rb)
+		rb1 = append(rb1, rb...)
 		var rem []byte
 		var l string
 		if l, rb, err = envelopes.Identify(rb); chk.E(err) {
@@ -64,6 +62,8 @@ func TestMarshalUnmarshal(t *testing.T) {
 				len(rb1), rb1, len(rb2), rb2,
 			)
 		}
-		rb, rb1, rb2 = rb[:0], rb1[:0], rb2[:0]
+		bufpool.Put(rb1)
+		bufpool.Put(rb2)
+		bufpool.Put(rb)
 	}
 }

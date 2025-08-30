@@ -297,7 +297,7 @@ InVal:
 		}
 		if len(id) != sha256.Size {
 			err = errorf.E(
-				"invalid ID, require %d got %d", sha256.Size,
+				"invalid Subscription, require %d got %d", sha256.Size,
 				len(id),
 			)
 			return

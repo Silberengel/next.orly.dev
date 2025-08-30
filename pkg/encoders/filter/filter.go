@@ -237,7 +237,7 @@ const (
 //
 // todo: this may tolerate whitespace, not certain currently.
 func (f *F) Unmarshal(b []byte) (r []byte, err error) {
-	r = b[:]
+	r = b
 	var key []byte
 	var state int
 	for ; len(r) > 0; r = r[1:] {
