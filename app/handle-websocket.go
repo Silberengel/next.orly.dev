@@ -28,6 +28,19 @@ const (
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	remote := GetRemoteFromReq(r)
+	log.D.F("handling websocket connection from %s", remote)
+	if len(s.Config.IPWhitelist) > 0 {
+		for _, ip := range s.Config.IPWhitelist {
+			log.T.F("checking IP whitelist: %s", ip)
+			if strings.HasPrefix(remote, ip) {
+				log.T.F("IP whitelisted %s", remote)
+				goto whitelist
+			}
+		}
+		log.T.F("IP not whitelisted: %s", remote)
+		return
+	}
+whitelist:
 	var cancel context.CancelFunc
 	s.Ctx, cancel = context.WithCancel(s.Ctx)
 	defer cancel()
@@ -39,7 +52,6 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.CloseNow()
-
 	go s.Pinger(s.Ctx, conn, time.NewTicker(time.Second*10), cancel)
 	for {
 		select {
@@ -73,7 +85,7 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-		go s.HandleMessage(msg)
+		go s.HandleMessage(msg, remote)
 	}
 }
 

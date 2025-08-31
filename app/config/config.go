@@ -16,6 +16,7 @@ import (
 	"go-simpler.org/env"
 	lol "lol.mleku.dev"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/version"
 )
 
@@ -23,12 +24,13 @@ import (
 // and default values. It defines parameters for app behaviour, storage
 // locations, logging, and network settings used across the relay service.
 type C struct {
-	AppName  string `env:"ORLY_APP_NAME" usage:"set a name to display on information about the relay" default:"ORLY"`
-	DataDir  string `env:"ORLY_DATA_DIR" usage:"storage location for the event store" default:"~/.local/share/ORLY"`
-	Listen   string `env:"ORLY_LISTEN" default:"0.0.0.0" usage:"network listen address"`
-	Port     int    `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
-	LogLevel string `env:"ORLY_LOG_LEVEL" default:"info" usage:"debug level: fatal error warn info debug trace"`
-	Pprof    string `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation"`
+	AppName     string   `env:"ORLY_APP_NAME" usage:"set a name to display on information about the relay" default:"ORLY"`
+	DataDir     string   `env:"ORLY_DATA_DIR" usage:"storage location for the event store" default:"~/.local/share/ORLY"`
+	Listen      string   `env:"ORLY_LISTEN" default:"0.0.0.0" usage:"network listen address"`
+	Port        int      `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
+	LogLevel    string   `env:"ORLY_LOG_LEVEL" default:"info" usage:"debug level: fatal error warn info debug trace"`
+	Pprof       string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation"`
+	IPWhitelist []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
 }
 
 // New creates and initializes a new configuration object for the relay
@@ -69,6 +71,7 @@ func New() (cfg *C, err error) {
 		os.Exit(0)
 	}
 	lol.SetLogLevel(cfg.LogLevel)
+	log.I.S(cfg.IPWhitelist)
 	return
 }
 
