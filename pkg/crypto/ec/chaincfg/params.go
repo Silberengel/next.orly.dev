@@ -5,8 +5,8 @@ import (
 	"math/big"
 	"time"
 
-	"next.orly.dev/pkg/crypto/ec/chainhash"
-	"next.orly.dev/pkg/crypto/ec/wire"
+	"crypto.orly/ec/chainhash"
+	"crypto.orly/ec/wire"
 )
 
 var (

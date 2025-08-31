@@ -8,8 +8,8 @@ package ecdsa
 import (
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/encoders/hex"
+	"crypto.orly/ec/secp256k1"
+	"encoders.orly/hex"
 )
 
 // hexToModNScalar converts the passed hex string into a ModNScalar and will

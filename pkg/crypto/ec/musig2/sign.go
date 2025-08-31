@@ -7,13 +7,12 @@ import (
 	"fmt"
 	"io"
 
-	"next.orly.dev/pkg/utils"
-
+	"crypto.orly/ec"
+	"crypto.orly/ec/chainhash"
+	"crypto.orly/ec/schnorr"
+	"crypto.orly/ec/secp256k1"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/chainhash"
-	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"utils.orly"
 )
 
 var (

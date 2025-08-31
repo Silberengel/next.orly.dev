@@ -8,8 +8,8 @@ import (
 	"math/big"
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/encoders/hex"
+	"crypto.orly/ec/secp256k1"
+	"encoders.orly/hex"
 )
 
 // setHex decodes the passed big-endian hex string into the internal field value

@@ -9,11 +9,9 @@ import (
 	"path"
 	"testing"
 
-	"next.orly.dev/pkg/utils"
-
-	"next.orly.dev/pkg/encoders/hex"
-
+	"encoders.orly/hex"
 	"github.com/stretchr/testify/require"
+	"utils.orly"
 )
 
 type nonceGenTestCase struct {

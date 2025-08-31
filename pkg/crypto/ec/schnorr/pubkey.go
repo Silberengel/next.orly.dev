@@ -8,8 +8,8 @@ package schnorr
 import (
 	"fmt"
 
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec"
+	"crypto.orly/ec/secp256k1"
 )
 
 // These constants define the lengths of serialized public keys.

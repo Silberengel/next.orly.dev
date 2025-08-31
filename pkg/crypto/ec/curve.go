@@ -6,7 +6,7 @@ package btcec
 import (
 	"fmt"
 
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec/secp256k1"
 )
 
 // JacobianPoint is an element of the group formed by the secp256k1 curve in

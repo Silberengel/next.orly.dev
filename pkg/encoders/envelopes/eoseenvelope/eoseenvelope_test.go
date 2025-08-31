@@ -3,9 +3,9 @@ package eoseenvelope
 import (
 	"testing"
 
+	"encoders.orly/envelopes"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {

@@ -9,10 +9,10 @@ import (
 	"math/big"
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
+	"crypto.orly/ec"
+	"crypto.orly/ec/secp256k1"
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
 )
 
 // hexToBytes converts the passed hex string into bytes and will panic if there

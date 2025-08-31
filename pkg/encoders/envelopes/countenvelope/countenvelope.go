@@ -6,13 +6,13 @@ import (
 	"bytes"
 	"io"
 
+	"encoders.orly/envelopes"
+	"encoders.orly/filter"
+	"encoders.orly/ints"
+	"encoders.orly/text"
+	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/encoders/filter"
-	"next.orly.dev/pkg/encoders/ints"
-	"next.orly.dev/pkg/encoders/text"
-	"next.orly.dev/pkg/interfaces/codec"
 )
 
 // L is the label associated with this type of codec.Envelope.

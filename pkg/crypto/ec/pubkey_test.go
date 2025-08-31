@@ -7,7 +7,7 @@ package btcec
 import (
 	"testing"
 
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 
 	"github.com/davecgh/go-spew/spew"
 )

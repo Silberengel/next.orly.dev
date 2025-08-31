@@ -1,12 +1,9 @@
 package bufpool
 
 import (
-	"fmt"
 	"sync"
-	"unsafe"
 
-	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/utils/units"
+	"utils.orly/units"
 )
 
 const (
@@ -22,12 +19,12 @@ var Pool = sync.Pool{
 	New: func() interface{} {
 		// Create a new buffer when the pool is empty
 		b := make([]byte, 0, BufferSize)
-		log.T.C(
-			func() string {
-				ptr := unsafe.SliceData(b)
-				return fmt.Sprintf("creating buffer at: %p", ptr)
-			},
-		)
+		// log.T.C(
+		// 	func() string {
+		// 		ptr := unsafe.SliceData(b)
+		// 		return fmt.Sprintf("creating buffer at: %p", ptr)
+		// 	},
+		// )
 		return B(b)
 	},
 }
@@ -41,12 +38,12 @@ var Pool = sync.Pool{
 //	// Use buf...
 func Get() B {
 	b := Pool.Get().(B)
-	log.T.C(
-		func() string {
-			ptr := unsafe.SliceData(b)
-			return fmt.Sprintf("getting buffer at: %p", ptr)
-		},
-	)
+	// log.T.C(
+	// 	func() string {
+	// 		ptr := unsafe.SliceData(b)
+	// 		return fmt.Sprintf("getting buffer at: %p", ptr)
+	// 	},
+	// )
 	return b
 }
 
@@ -57,23 +54,23 @@ func Put(b B) {
 		(b)[i] = 0
 	}
 	b = b[:0]
-	log.T.C(
-		func() string {
-			ptr := unsafe.SliceData(b)
-			return fmt.Sprintf("returning to buffer: %p", ptr)
-		},
-	)
+	// log.T.C(
+	// 	func() string {
+	// 		ptr := unsafe.SliceData(b)
+	// 		return fmt.Sprintf("returning to buffer: %p", ptr)
+	// 	},
+	// )
 	Pool.Put(b)
 }
 
 // PutBytes returns a buffer was not necessarily created by Get().
 func PutBytes(b []byte) {
-	log.T.C(
-		func() string {
-			ptr := unsafe.SliceData(b)
-			return fmt.Sprintf("returning bytes to buffer: %p", ptr)
-		},
-	)
+	// log.T.C(
+	// 	func() string {
+	// 		ptr := unsafe.SliceData(b)
+	// 		return fmt.Sprintf("returning bytes to buffer: %p", ptr)
+	// 	},
+	// )
 	b = b[:0]
 	Put(b)
 }

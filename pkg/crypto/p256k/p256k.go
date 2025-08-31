@@ -4,12 +4,12 @@ package p256k
 
 import "C"
 import (
+	"crypto.orly/ec"
+	"crypto.orly/ec/secp256k1"
+	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	realy "next.orly.dev/pkg/interfaces/signer"
 )
 
 func init() {
@@ -33,7 +33,7 @@ type Signer struct {
 	skb, pkb []byte
 }
 
-var _ realy.I = &Signer{}
+var _ signer.I = &Signer{}
 
 // Generate a new Signer key pair using the CGO bindings to libsecp256k1
 func (s *Signer) Generate() (err error) {

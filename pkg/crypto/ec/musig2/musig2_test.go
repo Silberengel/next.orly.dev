@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
+	"crypto.orly/ec"
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
 )
 
 const (

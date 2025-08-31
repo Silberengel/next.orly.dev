@@ -6,10 +6,9 @@ package kind
 import (
 	"sync"
 
-	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/ints"
-
+	"encoders.orly/ints"
 	"golang.org/x/exp/constraints"
+	"lol.mleku.dev/chk"
 )
 
 // K - which will be externally referenced as kind.K is the event type in the
@@ -113,23 +112,23 @@ func GetString(t uint16) string {
 
 // IsEphemeral returns true if the event kind is an ephemeral event. (not to be
 // stored)
-func (k *K) IsEphemeral() bool {
-	return k.K >= EphemeralStart.K && k.K < EphemeralEnd.K
+func IsEphemeral(k uint16) bool {
+	return k >= EphemeralStart.K && k < EphemeralEnd.K
 }
 
 // IsReplaceable returns true if the event kind is a replaceable kind - that is,
 // if the newest version is the one that is in force (eg follow lists, relay
 // lists, etc.
-func (k *K) IsReplaceable() bool {
-	return k.K == ProfileMetadata.K || k.K == FollowList.K ||
-		(k.K >= ReplaceableStart.K && k.K < ReplaceableEnd.K)
+func IsReplaceable(k uint16) bool {
+	return k == ProfileMetadata.K || k == FollowList.K ||
+		(k >= ReplaceableStart.K && k < ReplaceableEnd.K)
 }
 
 // IsParameterizedReplaceable is a kind of event that is one of a group of
 // events that replaces based on matching criteria.
-func (k *K) IsParameterizedReplaceable() bool {
-	return k.K >= ParameterizedReplaceableStart.K &&
-		k.K < ParameterizedReplaceableEnd.K
+func IsParameterizedReplaceable(k uint16) bool {
+	return k >= ParameterizedReplaceableStart.K &&
+		k < ParameterizedReplaceableEnd.K
 }
 
 // Directory events are events that necessarily need to be readable by anyone in
@@ -148,9 +147,9 @@ var Directory = []*K{
 
 // IsDirectoryEvent returns whether an event kind is a Directory event, which
 // should grant permission to read such events without requiring authentication.
-func (k *K) IsDirectoryEvent() bool {
+func IsDirectoryEvent(k uint16) bool {
 	for i := range Directory {
-		if k.Equal(Directory[i]) {
+		if k == Directory[i].K {
 			return true
 		}
 	}

@@ -3,10 +3,10 @@ package noticeenvelope
 import (
 	"testing"
 
+	"encoders.orly/envelopes"
+	"encoders.orly/envelopes/messages"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/encoders/envelopes/messages"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {

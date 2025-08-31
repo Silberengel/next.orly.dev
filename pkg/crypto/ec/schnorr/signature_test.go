@@ -11,10 +11,10 @@ import (
 	"testing"
 	"testing/quick"
 
+	"crypto.orly/ec"
+	"crypto.orly/ec/secp256k1"
+	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/encoders/hex"
 
 	"github.com/davecgh/go-spew/spew"
 )

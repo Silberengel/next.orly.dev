@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"io"
 
+	"crypto.orly/ec/schnorr"
+	"crypto.orly/sha256"
+	"encoders.orly/ints"
+	"encoders.orly/kind"
+	"encoders.orly/tag"
+	"encoders.orly/text"
 	"github.com/templexxx/xhex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/ints"
-	"next.orly.dev/pkg/encoders/kind"
-	"next.orly.dev/pkg/encoders/tag"
-	"next.orly.dev/pkg/encoders/text"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly"
+	"utils.orly/bufpool"
 )
 
 // E is the primary datatype of nostr. This is the form of the structure that
@@ -28,7 +28,7 @@ import (
 // library. Either call MarshalJSON directly or use a json.Encoder with html
 // escaping disabled.
 //
-// Or import "next.orly.dev/pkg/encoders/json" and use json.Marshal which is the
+// Or import "encoders.orly/json" and use json.Marshal which is the
 // same as go 1.25 json v1 except with this one stupidity removed.
 type E struct {
 
@@ -173,58 +173,12 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 func (ev *E) MarshalJSON() (b []byte, err error) {
 	b = bufpool.Get()
 	b = ev.Marshal(b[:0])
-	// b = b[:0]
-	// b = append(b, '{')
-	// b = append(b, '"')
-	// b = append(b, jId...)
-	// b = append(b, `":"`...)
-	// b = b[:len(b)+2*sha256.Size]
-	// xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
-	// b = append(b, `","`...)
-	// b = append(b, jPubkey...)
-	// b = append(b, `":"`...)
-	// b = b[:len(b)+2*schnorr.PubKeyBytesLen]
-	// xhex.Encode(b[len(b)-2*schnorr.PubKeyBytesLen:], ev.Pubkey)
-	// b = append(b, `","`...)
-	// b = append(b, jCreatedAt...)
-	// b = append(b, `":`...)
-	// b = ints.New(ev.CreatedAt).Marshal(b)
-	// b = append(b, `,"`...)
-	// b = append(b, jKind...)
-	// b = append(b, `":`...)
-	// b = ints.New(ev.Kind).Marshal(b)
-	// b = append(b, `,"`...)
-	// b = append(b, jTags...)
-	// b = append(b, `":`...)
-	// if ev.Tags != nil {
-	// 	b = ev.Tags.Marshal(b)
-	// }
-	// b = append(b, `,"`...)
-	// b = append(b, jContent...)
-	// b = append(b, `":"`...)
-	// // it can happen the slice has insufficient capacity to hold the content AND
-	// // the signature at this point, because the signature encoder must have
-	// // sufficient capacity pre-allocated as it does not append to the buffer.
-	// // unlike every other encoding function up to this point. This also ensures
-	// // that since the bufpool defaults to 1kb, most events won't have a
-	// // re-allocation required, but if they do, it will be this next one, and it
-	// // integrates properly with the buffer pool, reducing GC pressure and
-	// // avoiding new heap allocations.
-	// if cap(b) < len(b)+len(ev.Content)+7+256+2 {
-	// 	b2 := make([]byte, len(b)+len(ev.Content)*2+7+256+2)
-	// 	copy(b2, b)
-	// 	b2 = b2[:len(b)]
-	// 	// return the old buffer to the pool for reuse.
-	// 	bufpool.PutBytes(b)
-	// 	b = b2
-	// }
-	// b = text.NostrEscape(b, ev.Content)
-	// b = append(b, `","`...)
-	// b = append(b, jSig...)
-	// b = append(b, `":"`...)
-	// b = b[:len(b)+2*schnorr.SignatureSize]
-	// xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
-	// b = append(b, `"}`...)
+	return
+}
+
+func (ev *E) Serialize() (b []byte) {
+	b = bufpool.Get()
+	b = ev.Marshal(b[:0])
 	return
 }
 

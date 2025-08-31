@@ -5,10 +5,10 @@ import (
 	"math"
 	"testing"
 
+	"encoders.orly/envelopes"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly"
+	"utils.orly/bufpool"
 
 	"lukechampine.com/frand"
 )

@@ -3,12 +3,12 @@ package okenvelope
 import (
 	"testing"
 
+	"crypto.orly/sha256"
+	"encoders.orly/envelopes"
+	"encoders.orly/envelopes/messages"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/encoders/envelopes/messages"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {

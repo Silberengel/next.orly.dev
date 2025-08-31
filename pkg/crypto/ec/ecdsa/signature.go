@@ -8,7 +8,7 @@ package ecdsa
 import (
 	"fmt"
 
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec/secp256k1"
 )
 
 // References:

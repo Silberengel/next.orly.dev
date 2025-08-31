@@ -7,8 +7,8 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/protocol/relayinfo"
 	"next.orly.dev/pkg/version"
+	"protocol.orly/relayinfo"
 )
 
 // HandleRelayInfo generates and returns a relay information document in JSON

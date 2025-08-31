@@ -3,12 +3,12 @@ package authenvelope
 import (
 	"testing"
 
+	"crypto.orly/p256k"
+	"encoders.orly/envelopes"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/protocol/auth"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"protocol.orly/auth"
+	"utils.orly"
+	"utils.orly/bufpool"
 )
 
 const relayURL = "wss://example.com"

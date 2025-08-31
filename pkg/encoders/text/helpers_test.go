@@ -3,11 +3,11 @@ package text
 import (
 	"testing"
 
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestUnmarshalHexArray(t *testing.T) {

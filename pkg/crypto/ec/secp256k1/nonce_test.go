@@ -8,9 +8,9 @@ package secp256k1
 import (
 	"testing"
 
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/utils"
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
+	"utils.orly"
 )
 
 // hexToBytes converts the passed hex string into bytes and will panic if there

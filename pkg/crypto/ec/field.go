@@ -1,7 +1,7 @@
 package btcec
 
 import (
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec/secp256k1"
 )
 
 // FieldVal implements optimized fixed-precision arithmetic over the secp256k1

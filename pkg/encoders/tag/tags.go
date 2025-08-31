@@ -4,8 +4,8 @@ import (
 	"bytes"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly"
+	"utils.orly/bufpool"
 )
 
 // S is a list of tag.T - which are lists of string elements with ordering and
@@ -25,7 +25,7 @@ func NewSWithCap(c int) (s *S) {
 
 func (s *S) Len() int {
 	if s == nil {
-		return 0
+		panic("tags cannot be used without initialization")
 	}
 	return len(*s)
 }
@@ -37,12 +37,24 @@ func (s *S) Less(i, j int) bool {
 }
 
 func (s *S) Swap(i, j int) {
-	// TODO implement me
-	panic("implement me")
+	(*s)[i].T, (*s)[j].T = (*s)[j].T, (*s)[i].T
 }
 
 func (s *S) Append(t ...*T) {
 	*s = append(*s, t...)
+}
+
+func (s *S) ToSliceOfTags() (t []T) {
+	if s == nil {
+		return
+	}
+	for _, tt := range *s {
+		if tt == nil {
+			continue
+		}
+		t = append(t, *tt)
+	}
+	return
 }
 
 // MarshalJSON encodes a tags.T appended to a provided byte slice in JSON form.
@@ -128,8 +140,20 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 // GetFirst returns the first tag.T that has the same Key as t.
 func (s *S) GetFirst(t []byte) (first *T) {
 	for _, tt := range *s {
+		if tt.Len() == 0 {
+			continue
+		}
 		if utils.FastEqual(tt.T[0], t) {
 			return tt
+		}
+	}
+	return
+}
+
+func (s *S) GetAll(t []byte) (all []*T) {
+	for _, tt := range *s {
+		if utils.FastEqual(tt.T[0], t) {
+			all = append(all, tt)
 		}
 	}
 	return

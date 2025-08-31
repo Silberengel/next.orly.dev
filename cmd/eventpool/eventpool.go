@@ -3,16 +3,16 @@ package main
 import (
 	"time"
 
+	"encoders.orly/event"
+	"encoders.orly/hex"
+	"encoders.orly/json"
+	"encoders.orly/tag"
 	"github.com/pkg/profile"
 	lol "lol.mleku.dev"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"next.orly.dev/pkg/encoders/event"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/encoders/json"
-	"next.orly.dev/pkg/encoders/tag"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly"
+	"utils.orly/bufpool"
 )
 
 func main() {

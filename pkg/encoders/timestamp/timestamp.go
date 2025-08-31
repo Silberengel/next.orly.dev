@@ -7,9 +7,9 @@ import (
 	"time"
 	"unsafe"
 
+	"encoders.orly/ints"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/encoders/ints"
 )
 
 // T is a convenience type for UNIX 64 bit timestamps of 1 second

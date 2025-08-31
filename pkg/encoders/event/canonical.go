@@ -1,10 +1,10 @@
 package event
 
 import (
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/encoders/ints"
-	"next.orly.dev/pkg/encoders/text"
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
+	"encoders.orly/ints"
+	"encoders.orly/text"
 )
 
 // ToCanonical converts the event to the canonical encoding used to derive the

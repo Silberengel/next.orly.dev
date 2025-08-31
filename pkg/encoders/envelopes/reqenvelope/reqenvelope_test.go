@@ -3,11 +3,11 @@ package reqenvelope
 import (
 	"testing"
 
+	"encoders.orly/envelopes"
+	"encoders.orly/filter"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/encoders/filter"
-	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly"
+	"utils.orly/bufpool"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {

@@ -3,7 +3,7 @@ package wire
 import (
 	"time"
 
-	"next.orly.dev/pkg/crypto/ec/chainhash"
+	"crypto.orly/ec/chainhash"
 )
 
 // BlockHeader defines information about a block and is used in the bitcoin

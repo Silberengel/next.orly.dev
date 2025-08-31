@@ -8,8 +8,8 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec/base58"
-	"next.orly.dev/pkg/utils"
+	"crypto.orly/ec/base58"
+	"utils.orly"
 )
 
 var stringTests = []struct {

@@ -3,9 +3,9 @@
 package p256k
 
 import (
+	"encoders.orly/hex"
+	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/interfaces/signer"
 )
 
 func NewSecFromHex[V []byte | string](skh V) (sign signer.I, err error) {

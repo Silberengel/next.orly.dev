@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"next.orly.dev/pkg/crypto/ec/wire"
+	"crypto.orly/ec/wire"
 )
 
 var (

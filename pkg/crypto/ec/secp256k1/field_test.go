@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 // SetHex decodes the passed big-endian hex string into the internal field value

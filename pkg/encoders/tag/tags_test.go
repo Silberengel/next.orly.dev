@@ -5,7 +5,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestSMarshalUnmarshal(t *testing.T) {

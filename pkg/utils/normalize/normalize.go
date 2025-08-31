@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/url"
 
+	"encoders.orly/ints"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/encoders/ints"
 )
 
 var (

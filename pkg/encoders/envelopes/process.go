@@ -10,7 +10,7 @@ import (
 // other data structures into an envelope.
 type Marshaller func(dst []byte) (b []byte)
 
-// Marshal is a parser for dynamic typed arrays like nosttr codec.Envelope
+// Marshal is a parser for dynamic typed arrays like nostr codec.Envelope
 // types.
 func Marshal(dst []byte, label string, m Marshaller) (b []byte) {
 	b = dst

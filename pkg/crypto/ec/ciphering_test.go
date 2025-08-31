@@ -7,7 +7,7 @@ package btcec
 import (
 	"testing"
 
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 func TestGenerateSharedSecret(t *testing.T) {

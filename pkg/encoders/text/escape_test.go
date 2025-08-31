@@ -3,9 +3,8 @@ package text
 import (
 	"testing"
 
+	"crypto.orly/sha256"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/sha256"
-
 	"lukechampine.com/frand"
 )
 

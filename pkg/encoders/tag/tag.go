@@ -6,9 +6,9 @@ package tag
 import (
 	"bytes"
 
+	"encoders.orly/text"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/encoders/text"
-	"next.orly.dev/pkg/utils/bufpool"
+	"utils.orly/bufpool"
 )
 
 // The tag position meanings, so they are clear when reading.
@@ -25,7 +25,7 @@ type T struct {
 
 func New() *T { return &T{b: bufpool.Get()} }
 
-func NewFromByteSlice(t ...[]byte) (tt *T) {
+func NewFromBytesSlice(t ...[]byte) (tt *T) {
 	tt = &T{T: t, b: bufpool.Get()}
 	return
 }
@@ -66,6 +66,10 @@ func (t *T) Less(i, j int) bool {
 }
 
 func (t *T) Swap(i, j int) { t.T[i], t.T[j] = t.T[j], t.T[i] }
+
+func (t *T) ToSliceOfBytes() (b [][]byte) {
+	return t.T
+}
 
 // Marshal encodes a tag.T as standard minified JSON array of strings.
 func (t *T) Marshal(dst []byte) (b []byte) {

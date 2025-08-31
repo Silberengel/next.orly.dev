@@ -8,7 +8,7 @@ import (
 	"bytes"
 	"testing"
 
-	"next.orly.dev/pkg/crypto/ec/base58"
+	"crypto.orly/ec/base58"
 )
 
 var (

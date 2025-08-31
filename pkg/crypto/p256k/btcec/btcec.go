@@ -4,19 +4,18 @@
 package btcec
 
 import (
+	"crypto.orly/ec/schnorr"
+	"crypto.orly/ec/secp256k1"
+	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	btcec3 "next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/interfaces/signer"
 )
 
 // Signer is an implementation of signer.I that uses the btcec library.
 type Signer struct {
 	SecretKey *secp256k1.SecretKey
 	PublicKey *secp256k1.PublicKey
-	BTCECSec  *btcec3.SecretKey
+	BTCECSec  *ec.SecretKey
 	pkb, skb  []byte
 }
 
@@ -24,11 +23,11 @@ var _ signer.I = &Signer{}
 
 // Generate creates a new Signer.
 func (s *Signer) Generate() (err error) {
-	if s.SecretKey, err = btcec3.NewSecretKey(); chk.E(err) {
+	if s.SecretKey, err = ec.NewSecretKey(); chk.E(err) {
 		return
 	}
 	s.skb = s.SecretKey.Serialize()
-	s.BTCECSec, _ = btcec3.PrivKeyFromBytes(s.skb)
+	s.BTCECSec, _ = ec.PrivKeyFromBytes(s.skb)
 	s.PublicKey = s.SecretKey.PubKey()
 	s.pkb = schnorr.SerializePubKey(s.PublicKey)
 	return
@@ -44,7 +43,7 @@ func (s *Signer) InitSec(sec []byte) (err error) {
 	s.SecretKey = secp256k1.SecKeyFromBytes(sec)
 	s.PublicKey = s.SecretKey.PubKey()
 	s.pkb = schnorr.SerializePubKey(s.PublicKey)
-	s.BTCECSec, _ = btcec3.PrivKeyFromBytes(s.skb)
+	s.BTCECSec, _ = ec.PrivKeyFromBytes(s.skb)
 	return
 }
 
@@ -143,7 +142,7 @@ func (s *Signer) ECDH(pubkeyBytes []byte) (secret []byte, err error) {
 	); chk.E(err) {
 		return
 	}
-	secret = btcec3.GenerateSharedSecret(s.BTCECSec, pub)
+	secret = ec.GenerateSharedSecret(s.BTCECSec, pub)
 	return
 }
 
@@ -155,7 +154,7 @@ type Keygen struct {
 // Generate a new key pair. If the result is suitable, the embedded Signer can have its contents
 // extracted.
 func (k *Keygen) Generate() (pubBytes []byte, err error) {
-	if k.Signer.SecretKey, err = btcec3.NewSecretKey(); chk.E(err) {
+	if k.Signer.SecretKey, err = ec.NewSecretKey(); chk.E(err) {
 		return
 	}
 	k.Signer.PublicKey = k.SecretKey.PubKey()

@@ -12,7 +12,7 @@ import (
 	"math/big"
 	"testing"
 
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 // TestGenerateSecretKey ensures the key generation works as expected.

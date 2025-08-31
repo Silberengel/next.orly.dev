@@ -4,7 +4,7 @@
 package btcec
 
 import (
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec/secp256k1"
 )
 
 // Error identifies an error related to public key cryptography using a

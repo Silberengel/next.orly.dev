@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"encoders.orly/event"
+	"encoders.orly/kind"
+	"encoders.orly/tag"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/encoders/event"
-	"next.orly.dev/pkg/encoders/kind"
-	"next.orly.dev/pkg/encoders/tag"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 // GenerateChallenge creates a reasonable, 16-byte base64 challenge string

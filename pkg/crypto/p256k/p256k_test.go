@@ -6,24 +6,23 @@ import (
 	"testing"
 	"time"
 
-	"next.orly.dev/pkg/utils"
-
+	"crypto.orly/p256k"
+	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
-	realy "next.orly.dev/pkg/interfaces/signer"
+	"utils.orly"
 )
 
 func TestSigner_Generate(t *testing.T) {
 	for _ = range 10000 {
 		var err error
-		signer := &p256k.Signer{}
+		sign := &p256k.Signer{}
 		var skb []byte
-		if err = signer.Generate(); chk.E(err) {
+		if err = sign.Generate(); chk.E(err) {
 			t.Fatal(err)
 		}
-		skb = signer.Sec()
-		if err = signer.InitSec(skb); chk.E(err) {
+		skb = sign.Sec()
+		if err = sign.InitSec(skb); chk.E(err) {
 			t.Fatal(err)
 		}
 	}
@@ -123,7 +122,7 @@ func TestSigner_Generate(t *testing.T) {
 func TestECDH(t *testing.T) {
 	n := time.Now()
 	var err error
-	var s1, s2 realy.I
+	var s1, s2 signer.I
 	var counter int
 	const total = 100
 	for _ = range total {

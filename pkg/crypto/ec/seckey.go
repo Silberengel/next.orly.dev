@@ -5,7 +5,7 @@
 package btcec
 
 import (
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"crypto.orly/ec/secp256k1"
 )
 
 // SecretKey wraps an ecdsa.SecretKey as a convenience mainly for signing things with the secret key without having to

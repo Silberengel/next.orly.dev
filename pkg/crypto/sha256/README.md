@@ -112,7 +112,7 @@ This will automatically select the fastest method for the architecture on which
 it will be executed.
 
 ```go
-import "github.com/minio/sha256-simd"
+import "crypto.orly/sha256"
 
 func main() {
         ...

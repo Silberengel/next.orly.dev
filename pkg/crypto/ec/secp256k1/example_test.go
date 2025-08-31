@@ -11,9 +11,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/hex"
+	"crypto.orly/ec/secp256k1"
+	"crypto.orly/sha256"
+	"encoders.orly/hex"
 )
 
 // This example demonstrates use of GenerateSharedSecret to encrypt a message

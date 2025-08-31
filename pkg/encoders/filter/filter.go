@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"sort"
 
+	"crypto.orly/ec/schnorr"
+	"crypto.orly/sha256"
+	"encoders.orly/ints"
+	"encoders.orly/kind"
+	"encoders.orly/tag"
+	"encoders.orly/text"
+	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/sha256"
-	"next.orly.dev/pkg/encoders/ints"
-	"next.orly.dev/pkg/encoders/kind"
-	"next.orly.dev/pkg/encoders/tag"
-	"next.orly.dev/pkg/encoders/text"
-	"next.orly.dev/pkg/encoders/timestamp"
-	"next.orly.dev/pkg/utils/pointers"
+	"utils.orly/pointers"
 )
 
 // F is the primary query form for requesting events from a nostr relay.
@@ -133,7 +133,7 @@ func (f *F) Marshal(dst []byte) (b []byte) {
 		dst = text.JSONKey(dst, Authors)
 		dst = text.MarshalHexArray(dst, f.Authors.T)
 	}
-	if f.Tags.Len() > 0 {
+	if f.Tags != nil && f.Tags.Len() > 0 {
 		// tags are stored as tags with the initial element the "#a" and the rest the list in
 		// each element of the tags list. eg:
 		//
@@ -287,7 +287,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 					return
 				}
 				ff = append([][]byte{k}, ff...)
-				s := append(*f.Tags, tag.NewFromByteSlice(ff...))
+				s := append(*f.Tags, tag.NewFromBytesSlice(ff...))
 				f.Tags = &s
 				// f.Tags.F = append(f.Tags.F, tag.New(ff...))
 				// }
@@ -302,7 +302,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				); chk.E(err) {
 					return
 				}
-				f.Ids = tag.NewFromByteSlice(ff...)
+				f.Ids = tag.NewFromBytesSlice(ff...)
 				state = betweenKV
 			case Kinds[0]:
 				if len(key) < len(Kinds) {
@@ -323,7 +323,7 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				); chk.E(err) {
 					return
 				}
-				f.Authors = tag.NewFromByteSlice(ff...)
+				f.Authors = tag.NewFromBytesSlice(ff...)
 				state = betweenKV
 			case Until[0]:
 				if len(key) < len(Until) {

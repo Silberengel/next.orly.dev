@@ -13,9 +13,9 @@ import (
 	"math/big"
 	"os"
 
+	"crypto.orly/ec/secp256k1"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
 )
 
 // curveParams houses the secp256k1 curve parameters for convenient access.

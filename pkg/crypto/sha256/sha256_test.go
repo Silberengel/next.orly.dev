@@ -59,7 +59,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/utils"
+	"utils.orly"
 )
 
 type sha256Test struct {

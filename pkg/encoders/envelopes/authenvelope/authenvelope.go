@@ -5,14 +5,14 @@ package authenvelope
 import (
 	"io"
 
+	"encoders.orly/envelopes"
+	"encoders.orly/event"
+	"encoders.orly/text"
+	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	envs "next.orly.dev/pkg/encoders/envelopes"
-	"next.orly.dev/pkg/encoders/event"
-	text2 "next.orly.dev/pkg/encoders/text"
-	"next.orly.dev/pkg/interfaces/codec"
-	"next.orly.dev/pkg/utils/units"
+	"utils.orly/units"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -82,12 +82,12 @@ func (en *Challenge) Write(w io.Writer) (err error) {
 func (en *Challenge) Marshal(dst []byte) (b []byte) {
 	b = dst
 	var err error
-	b = envs.Marshal(
+	b = envelopes.Marshal(
 		b, L,
 		func(bst []byte) (o []byte) {
 			o = bst
 			o = append(o, '"')
-			o = text2.NostrEscape(o, en.Challenge)
+			o = text.NostrEscape(o, en.Challenge)
 			o = append(o, '"')
 			return
 		},
@@ -116,7 +116,7 @@ func (en *Challenge) Marshal(dst []byte) (b []byte) {
 // - Trims any trailing characters following the closing quote.
 func (en *Challenge) Unmarshal(b []byte) (r []byte, err error) {
 	r = b
-	if en.Challenge, r, err = text2.UnmarshalQuoted(r); chk.E(err) {
+	if en.Challenge, r, err = text.UnmarshalQuoted(r); chk.E(err) {
 		return
 	}
 	for ; len(r) >= 0; r = r[1:] {
@@ -201,7 +201,7 @@ func (en *Response) Marshal(dst []byte) (b []byte) {
 		dst = make([]byte, 0, en.Event.EstimateSize()+units.Kb)
 	}
 	b = dst
-	b = envs.Marshal(b, L, en.Event.Marshal)
+	b = envelopes.Marshal(b, L, en.Event.Marshal)
 	_ = err
 	return
 }
@@ -216,7 +216,7 @@ func (en *Response) Unmarshal(b []byte) (r []byte, err error) {
 	if r, err = en.Event.Unmarshal(r); chk.E(err) {
 		return
 	}
-	if r, err = envs.SkipToTheEnd(r); chk.E(err) {
+	if r, err = envelopes.SkipToTheEnd(r); chk.E(err) {
 		return
 	}
 	return
