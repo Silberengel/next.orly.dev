@@ -17,8 +17,10 @@ require (
 )
 
 replace (
-	crypto.orly => ./pkg/crypto
+	crypto.orly => ../crypto
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces
 	next.orly.dev => ../../
+	protocol.orly => ../protocol
+	utils.orly => ../utils
 )
