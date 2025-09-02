@@ -7,12 +7,14 @@ import (
 	"encoders.orly/envelopes/authenvelope"
 	"encoders.orly/envelopes/closeenvelope"
 	"encoders.orly/envelopes/eventenvelope"
+	"encoders.orly/envelopes/noticeenvelope"
 	"encoders.orly/envelopes/reqenvelope"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 )
 
-func (s *Server) HandleMessage(msg []byte, remote string) {
+func (l *Listener) HandleMessage(msg []byte, remote string) {
 	log.D.C(
 		func() string {
 			return fmt.Sprintf(
@@ -20,36 +22,36 @@ func (s *Server) HandleMessage(msg []byte, remote string) {
 			)
 		},
 	)
-	var notice []byte
 	var err error
 	var t string
 	var rem []byte
-	if t, rem, err = envelopes.Identify(msg); chk.E(err) {
-		notice = []byte(err.Error())
+	if t, rem, err = envelopes.Identify(msg); !chk.E(err) {
+		switch t {
+		case eventenvelope.L:
+			log.D.F("eventenvelope: %s", rem)
+			err = l.HandleEvent(l.ctx, rem)
+		case reqenvelope.L:
+			log.D.F("reqenvelope: %s", rem)
+			err = l.HandleReq(l.ctx, rem)
+		case closeenvelope.L:
+			log.D.F("closeenvelope: %s", rem)
+		case authenvelope.L:
+			log.D.F("authenvelope: %s", rem)
+		default:
+			err = errorf.E("unknown envelope type %s\n%s", t, rem)
+		}
 	}
-	switch t {
-	case eventenvelope.L:
-		log.D.F("eventenvelope: %s", rem)
-	case reqenvelope.L:
-		log.D.F("reqenvelope: %s", rem)
-	case closeenvelope.L:
-		log.D.F("closeenvelope: %s", rem)
-	case authenvelope.L:
-		log.D.F("authenvelope: %s", rem)
-	default:
-		notice = []byte(fmt.Sprintf("unknown envelope type %s\n%s", t, rem))
-	}
-	if len(notice) > 0 {
+	if err != nil {
 		log.D.C(
 			func() string {
 				return fmt.Sprintf(
-					"notice->%s %s", remote, notice,
+					"notice->%s %s", remote, err,
 				)
 			},
 		)
-		// if err = noticeenvelope.NewFrom(notice).Write(a.Listener); chk.E(err) {
-		// 	return
-		// }
+		if err = noticeenvelope.NewFrom(err.Error()).Write(l); chk.E(err) {
+			return
+		}
 	}
 
 }

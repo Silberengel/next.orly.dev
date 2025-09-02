@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"net/http"
 
+	database "database.orly"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 )
 
-func Run(ctx context.Context, cfg *config.C) (quit chan struct{}) {
+func Run(
+	ctx context.Context, cfg *config.C, db *database.D,
+) (quit chan struct{}) {
 	// shutdown handler
 	go func() {
 		select {
@@ -23,6 +26,7 @@ func Run(ctx context.Context, cfg *config.C) (quit chan struct{}) {
 	l := &Server{
 		Ctx:    ctx,
 		Config: cfg,
+		D:      db,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)

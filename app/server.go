@@ -4,14 +4,19 @@ import (
 	"context"
 	"net/http"
 
+	"database.orly"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
+	"protocol.orly/publish"
 )
 
 type Server struct {
 	mux    *http.ServeMux
 	Config *config.C
 	Ctx    context.Context
+	remote string
+	*database.D
+	publishers *publish.S
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

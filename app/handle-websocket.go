@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"protocol.orly/publish"
 )
 
 const (
@@ -28,7 +29,7 @@ const (
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	remote := GetRemoteFromReq(r)
-	log.D.F("handling websocket connection from %s", remote)
+	log.T.F("handling websocket connection from %s", remote)
 	if len(s.Config.IPWhitelist) > 0 {
 		for _, ip := range s.Config.IPWhitelist {
 			log.T.F("checking IP whitelist: %s", ip)
@@ -52,6 +53,13 @@ whitelist:
 		return
 	}
 	defer conn.CloseNow()
+	listener := &Listener{
+		ctx:    s.Ctx,
+		Server: s,
+		conn:   conn,
+		remote: remote,
+	}
+	listener.publishers = publish.New(NewPublisher())
 	go s.Pinger(s.Ctx, conn, time.NewTicker(time.Second*10), cancel)
 	for {
 		select {
@@ -85,7 +93,7 @@ whitelist:
 			}
 			continue
 		}
-		go s.HandleMessage(msg, remote)
+		go listener.HandleMessage(msg, remote)
 	}
 }
 

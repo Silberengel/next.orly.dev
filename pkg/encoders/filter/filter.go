@@ -6,6 +6,7 @@ import (
 
 	"crypto.orly/ec/schnorr"
 	"crypto.orly/sha256"
+	"encoders.orly/event"
 	"encoders.orly/ints"
 	"encoders.orly/kind"
 	"encoders.orly/tag"
@@ -98,6 +99,50 @@ func (f *F) Sort() {
 		}
 		sort.Sort(f.Tags)
 	}
+}
+
+// MatchesIgnoringTimestampConstraints checks a filter against an event and
+// determines if the event matches the filter, ignoring timestamp constraints..
+func (f *F) MatchesIgnoringTimestampConstraints(ev *event.E) bool {
+	if ev == nil {
+		return false
+	}
+	if f.Ids.Len() > 0 && !f.Ids.Contains(ev.ID) {
+		return false
+	}
+	if f.Kinds.Len() > 0 && !f.Kinds.Contains(ev.Kind) {
+		return false
+	}
+	if f.Authors.Len() > 0 && !f.Authors.Contains(ev.Pubkey) {
+		return false
+	}
+	if f.Tags.Len() > 0 {
+		for _, v := range *f.Tags {
+			if v.Len() < 2 {
+				continue
+			}
+			key := v.Key()
+			values := v.T[1:]
+			if !ev.Tags.ContainsAny(key, values) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// Matches checks a filter against an event and determines if the event matches the filter.
+func (f *F) Matches(ev *event.E) (match bool) {
+	if !f.MatchesIgnoringTimestampConstraints(ev) {
+		return
+	}
+	if f.Since.Int() != 0 && ev.CreatedAt < f.Since.I64() {
+		return
+	}
+	if f.Until.Int() != 0 && ev.CreatedAt > f.Until.I64() {
+		return
+	}
+	return true
 }
 
 // Marshal a filter into raw JSON bytes, minified. The field ordering and sort

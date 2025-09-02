@@ -21,7 +21,7 @@ const L = "REQ"
 // newly received events after it returns an eoseenvelope.T.
 type T struct {
 	Subscription []byte
-	Filters      filter.S
+	Filters      *filter.S
 }
 
 var _ codec.Envelope = (*T)(nil)
@@ -32,14 +32,14 @@ func New() *T { return new(T) }
 
 // NewFrom creates a new reqenvelope.T with a provided subscription.Id and
 // filters.T.
-func NewFrom(id []byte, ff filter.S) *T {
+func NewFrom(id []byte, ff *filter.S) *T {
 	return &T{
 		Subscription: id,
 		Filters:      ff,
 	}
 }
 
-func NewWithId[V string | []byte](id V, ff filter.S) (sub *T) {
+func NewWithId[V string | []byte](id V, ff *filter.S) (sub *T) {
 	return &T{
 		Subscription: []byte(id),
 		Filters:      ff,
@@ -69,7 +69,7 @@ func (en *T) Marshal(dst []byte) (b []byte) {
 			o = append(o, '"')
 			o = append(o, en.Subscription...)
 			o = append(o, '"')
-			for _, f := range en.Filters {
+			for _, f := range *en.Filters {
 				o = append(o, ',')
 				o = f.Marshal(o)
 			}
@@ -90,6 +90,7 @@ func (en *T) Unmarshal(b []byte) (r []byte, err error) {
 	if r, err = text.Comma(r); chk.E(err) {
 		return
 	}
+	en.Filters = new(filter.S)
 	if r, err = en.Filters.Unmarshal(r); chk.E(err) {
 		return
 	}

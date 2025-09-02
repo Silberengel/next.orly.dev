@@ -30,9 +30,9 @@ func (ev *E) MarshalBinary(w io.Writer) {
 	varint.Encode(w, uint64(ev.CreatedAt))
 	varint.Encode(w, uint64(ev.Kind))
 	varint.Encode(w, uint64(ev.Tags.Len()))
-	for _, x := range ev.Tags.ToSliceOfTags() {
+	for _, x := range *ev.Tags {
 		varint.Encode(w, uint64(x.Len()))
-		for _, y := range x.ToSliceOfBytes() {
+		for _, y := range x.T {
 			varint.Encode(w, uint64(len(y)))
 			_, _ = w.Write(y)
 		}

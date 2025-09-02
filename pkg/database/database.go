@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"time"
@@ -43,7 +44,8 @@ func New(
 		return
 	}
 
-	// Also ensure the directory exists using apputil.EnsureDir for any potential subdirectories
+	// Also ensure the directory exists using apputil.EnsureDir for any
+	// potential subdirectories
 	dummyFile := filepath.Join(dataDir, "dummy.sst")
 	if err = apputil.EnsureDir(dummyFile); chk.E(err) {
 		return
@@ -87,8 +89,8 @@ func New(
 func (d *D) Path() string { return d.dataDir }
 
 func (d *D) Wipe() (err error) {
-	// TODO implement me
-	panic("implement me")
+	err = errors.New("not implemented")
+	return
 }
 
 func (d *D) SetLogLevel(level string) {
@@ -98,8 +100,8 @@ func (d *D) SetLogLevel(level string) {
 func (d *D) EventIdsBySerial(start uint64, count int) (
 	evs []uint64, err error,
 ) {
-	// TODO implement me
-	panic("implement me")
+	err = errors.New("not implemented")
+	return
 }
 
 // Init initializes the database with the given path.
@@ -118,6 +120,7 @@ func (d *D) Sync() (err error) {
 
 // Close releases resources and closes the database.
 func (d *D) Close() (err error) {
+	log.D.F("%s: closing database", d.dataDir)
 	if d.seq != nil {
 		if err = d.seq.Release(); chk.E(err) {
 			return

@@ -44,17 +44,26 @@ func (s *S) Append(t ...*T) {
 	*s = append(*s, t...)
 }
 
-func (s *S) ToSliceOfTags() (t []T) {
-	if s == nil {
-		return
+// ContainsAny returns true if any of the values given in `values` matches any
+// of the tag elements.
+func (s *S) ContainsAny(tagName []byte, values [][]byte) bool {
+	if len(tagName) < 1 {
+		return false
 	}
-	for _, tt := range *s {
-		if tt == nil {
+	for _, v := range *s {
+		if v.Len() < 2 {
 			continue
 		}
-		t = append(t, *tt)
+		if !utils.FastEqual(v.Key(), tagName) {
+			continue
+		}
+		for _, candidate := range values {
+			if bytes.HasPrefix(v.Value(), candidate) {
+				return true
+			}
+		}
 	}
-	return
+	return false
 }
 
 // MarshalJSON encodes a tags.T appended to a provided byte slice in JSON form.
@@ -74,7 +83,8 @@ func (s *S) MarshalJSON() (b []byte, err error) {
 }
 
 func (s *S) Marshal(dst []byte) (b []byte) {
-	b = append(dst, '[')
+	b = dst
+	b = append(b, '[')
 	for i, ss := range *s {
 		b = ss.Marshal(b)
 		if i < len(*s)-1 {

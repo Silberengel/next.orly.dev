@@ -16,6 +16,7 @@ import (
 	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"lol.mleku.dev/log"
 )
 
 // SaveEvent saves an event to the database, generating all the necessary indexes.
@@ -71,16 +72,6 @@ func (d *D) SaveEvent(
 				return
 			}
 			idPkTss = append(idPkTss, tmp...)
-			// for _, ser := range sers {
-			// 	var fidpk *store.IdPkTs
-			// 	if fidpk, err = d.GetFullIdPubkeyBySerial(ser); chk.E(err) {
-			// 		return
-			// 	}
-			// 	if fidpk == nil {
-			// 		continue
-			// 	}
-			// 	idPkTss = append(idPkTss, fidpk)
-			// }
 			// sort by timestamp, so the first is the newest
 			sort.Slice(
 				idPkTss, func(i, j int) bool {
@@ -177,6 +168,6 @@ func (d *D) SaveEvent(
 			return
 		},
 	)
-	// log.T.F("total data written: %d bytes keys %d bytes values", kc, vc)
+	log.T.F("total data written: %d bytes keys %d bytes values", kc, vc)
 	return
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	database "database.orly"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app"
@@ -21,7 +22,13 @@ func main() {
 	log.I.F("starting %s %s", cfg.AppName, version.V)
 	startProfiler(cfg.Pprof)
 	ctx, cancel := context.WithCancel(context.Background())
-	quit := app.Run(ctx, cfg)
+	var db *database.D
+	if db, err = database.New(
+		ctx, cancel, cfg.DataDir, cfg.DBLogLevel,
+	); chk.E(err) {
+		os.Exit(1)
+	}
+	quit := app.Run(ctx, cfg, db)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt)
 	for {

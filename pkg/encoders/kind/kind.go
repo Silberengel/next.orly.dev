@@ -59,11 +59,11 @@ func (k *K) ToU64() uint64 {
 func (k *K) Name() string { return GetString(k.K) }
 
 // Equal checks if
-func (k *K) Equal(k2 *K) bool {
-	if k == nil || k2 == nil {
+func (k *K) Equal(k2 uint16) bool {
+	if k == nil {
 		return false
 	}
-	return k.K == k2.K
+	return k.K == k2
 }
 
 var Privileged = []*K{
@@ -80,7 +80,7 @@ var Privileged = []*K{
 // the pubkeys in the event and p tags of the event are party to.
 func (k *K) IsPrivileged() (is bool) {
 	for i := range Privileged {
-		if k.Equal(Privileged[i]) {
+		if k.Equal(Privileged[i].K) {
 			return true
 		}
 	}

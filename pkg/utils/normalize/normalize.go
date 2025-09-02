@@ -4,6 +4,7 @@ package normalize
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -105,6 +106,15 @@ func Msg(prefix Reason, format string, params ...any) []byte {
 	return []byte(fmt.Sprintf(prefix.S()+": "+format, params...))
 }
 
+// MsgString constructs a properly formatted message with a machine-readable prefix
+// for OK and CLOSED envelopes.
+func MsgString(prefix Reason, format string, params ...any) string {
+	if len(prefix) < 1 {
+		prefix = Error
+	}
+	return fmt.Sprintf(prefix.S()+": "+format, params...)
+}
+
 // Reason is the machine-readable prefix before the colon in an OK or CLOSED
 // envelope message. Below are the most common kinds that are mentioned in
 // NIP-01.
@@ -139,5 +149,14 @@ func (r Reason) IsPrefix(reason []byte) bool {
 func (r Reason) F(format string, params ...any) []byte {
 	return Msg(
 		r, format, params...,
+	)
+}
+
+// Errorf allows creation of a full Reason text with a printf style as an error.
+func (r Reason) Errorf(format string, params ...any) (err error) {
+	return errors.New(
+		MsgString(
+			r, format, params...,
+		),
 	)
 }

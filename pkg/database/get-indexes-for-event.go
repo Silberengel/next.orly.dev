@@ -76,20 +76,21 @@ func GetIndexesForEvent(ev *event.E, serial uint64) (
 	}
 	// Process tags for tag-related indexes
 	if ev.Tags != nil && ev.Tags.Len() > 0 {
-		for _, tag := range ev.Tags.ToSliceOfTags() {
+		for _, t := range *ev.Tags {
 			// only index tags with a value field and the key is a single character
-			if tag.Len() >= 2 {
+			if t.Len() >= 2 {
 				// Get the key and value from the tag
-				keyBytes := tag.Key()
+				keyBytes := t.Key()
 				// require single-letter key
 				if len(keyBytes) != 1 {
 					continue
 				}
 				// if the key is not a-zA-Z skip
-				if (keyBytes[0] < 'a' || keyBytes[0] > 'z') && (keyBytes[0] < 'A' || keyBytes[0] > 'Z') {
+				if (keyBytes[0] < 'a' || keyBytes[0] > 'z') &&
+					(keyBytes[0] < 'A' || keyBytes[0] > 'Z') {
 					continue
 				}
-				valueBytes := tag.Value()
+				valueBytes := t.Value()
 				// Create tag key and value
 				key := new(Letter)
 				key.Set(keyBytes[0])

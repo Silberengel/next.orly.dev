@@ -8,6 +8,7 @@ import (
 
 	"encoders.orly/text"
 	"lol.mleku.dev/errorf"
+	utils "utils.orly"
 	"utils.orly/bufpool"
 )
 
@@ -67,21 +68,28 @@ func (t *T) Less(i, j int) bool {
 
 func (t *T) Swap(i, j int) { t.T[i], t.T[j] = t.T[j], t.T[i] }
 
-func (t *T) ToSliceOfBytes() (b [][]byte) {
-	return t.T
+// Contains returns true if the provided element is found in the tag slice.
+func (t *T) Contains(s []byte) (b bool) {
+	for i := range t.T {
+		if utils.FastEqual(t.T[i], s) {
+			return true
+		}
+	}
+	return false
 }
 
 // Marshal encodes a tag.T as standard minified JSON array of strings.
 func (t *T) Marshal(dst []byte) (b []byte) {
-	dst = append(dst, '[')
+	b = dst
+	b = append(b, '[')
 	for i, s := range t.T {
-		dst = text.AppendQuote(dst, s, text.NostrEscape)
+		b = text.AppendQuote(b, s, text.NostrEscape)
 		if i < len(t.T)-1 {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		}
 	}
-	dst = append(dst, ']')
-	return dst
+	b = append(b, ']')
+	return
 }
 
 // MarshalJSON encodes a tag.T as standard minified JSON array of strings.

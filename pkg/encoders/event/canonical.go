@@ -5,6 +5,7 @@ import (
 	"encoders.orly/hex"
 	"encoders.orly/ints"
 	"encoders.orly/text"
+	"lol.mleku.dev/log"
 )
 
 // ToCanonical converts the event to the canonical encoding used to derive the
@@ -14,14 +15,15 @@ func (ev *E) ToCanonical(dst []byte) (b []byte) {
 	b = append(b, "[0,\""...)
 	b = hex.EncAppend(b, ev.Pubkey)
 	b = append(b, "\","...)
-	b = ints.New(ev.CreatedAt).Marshal(nil)
+	b = ints.New(ev.CreatedAt).Marshal(b)
 	b = append(b, ',')
-	b = ints.New(ev.Kind).Marshal(nil)
+	b = ints.New(ev.Kind).Marshal(b)
 	b = append(b, ',')
 	b = ev.Tags.Marshal(b)
 	b = append(b, ',')
 	b = text.AppendQuote(b, ev.Content, text.NostrEscape)
 	b = append(b, ']')
+	log.D.F("canonical: %s", b)
 	return
 }
 

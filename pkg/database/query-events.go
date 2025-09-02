@@ -42,7 +42,7 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	var expDeletes types.Uint40s
 	var expEvs event.S
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		for _, idx := range f.Ids.ToSliceOfBytes() {
+		for _, idx := range f.Ids.T {
 			// we know there is only Ids in this, so run the ID query and fetch.
 			var ser *types.Uint40
 			if ser, err = d.GetSerialById(idx); chk.E(err) {

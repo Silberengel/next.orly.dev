@@ -17,7 +17,7 @@ func (d *D) QueryForSerials(c context.Context, f *filter.F) (
 	var founds []*types.Uint40
 	var idPkTs []*store.IdPkTs
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		for _, id := range f.Ids.ToSliceOfBytes() {
+		for _, id := range f.Ids.T {
 			var ser *types.Uint40
 			if ser, err = d.GetSerialById(id); chk.E(err) {
 				return
@@ -29,25 +29,6 @@ func (d *D) QueryForSerials(c context.Context, f *filter.F) (
 			return
 		}
 		idPkTs = append(idPkTs, tmp...)
-
-		// // fetch the events full id indexes so we can sort them
-		// for _, ser := range founds {
-		// 	// scan for the IdPkTs
-		// 	var fidpk *store.IdPkTs
-		// 	if fidpk, err = d.GetFullIdPubkeyBySerial(ser); chk.E(err) {
-		// 		return
-		// 	}
-		// 	if fidpk == nil {
-		// 		continue
-		// 	}
-		// 	idPkTs = append(idPkTs, fidpk)
-		// 	// sort by timestamp
-		// 	sort.Slice(
-		// 		idPkTs, func(i, j int) bool {
-		// 			return idPkTs[i].Ts > idPkTs[j].Ts
-		// 		},
-		// 	)
-		// }
 	} else {
 		if idPkTs, err = d.QueryForIds(c, f); chk.E(err) {
 			return

@@ -1,10 +1,21 @@
 package filter
 
 import (
+	"encoders.orly/event"
 	"lol.mleku.dev/errorf"
 )
 
 type S []*F
+
+// Match checks if a set of filters.T matches on an event.F.
+func (s *S) Match(event *event.E) bool {
+	for _, f := range *s {
+		if f.Matches(event) {
+			return true
+		}
+	}
+	return false
+}
 
 // Marshal encodes a slice of filters as a JSON array of objects.
 // It appends the result to dst and returns the resulting slice.
@@ -43,7 +54,7 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 		if len(r) == 0 {
 			return
 		}
-		f := new(F)
+		f := New()
 		var rem []byte
 		if rem, err = f.Unmarshal(r); err != nil {
 			return

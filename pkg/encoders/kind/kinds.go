@@ -67,7 +67,7 @@ func (k *S) Clone() (c *S) {
 // Even if a custom number is found, this codebase does not have the logic to
 // deal with the kind so such a search is pointless and for which reason static
 // typing always wins. No mistakes possible with known quantities.
-func (k *S) Contains(s *K) bool {
+func (k *S) Contains(s uint16) bool {
 	for i := range k.K {
 		if k.K[i].Equal(s) {
 			return true
