@@ -40,7 +40,7 @@ var Ok = OKs{
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
-			env.Id(), true, nil,
+			env.Id(), true, []byte{},
 		).Write(l)
 	},
 	AuthRequired: func(

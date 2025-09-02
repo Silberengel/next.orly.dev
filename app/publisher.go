@@ -63,8 +63,9 @@ type P struct {
 
 var _ publisher.I = &P{}
 
-func NewPublisher() (publisher *P) {
+func NewPublisher(c context.Context) (publisher *P) {
 	return &P{
+		c:   c,
 		Map: make(Map),
 	}
 }
@@ -113,7 +114,7 @@ func (p *P) Receive(msg typer.T) {
 			subs = make(map[string]Subscription)
 			subs[m.Id] = Subscription{S: m.Filters, remote: m.remote}
 			p.Map[m.Conn] = subs
-			log.T.C(
+			log.D.C(
 				func() string {
 					return fmt.Sprintf(
 						"created new subscription for %s, %s",
@@ -124,7 +125,7 @@ func (p *P) Receive(msg typer.T) {
 			)
 		} else {
 			subs[m.Id] = Subscription{S: m.Filters, remote: m.remote}
-			log.T.C(
+			log.D.C(
 				func() string {
 					return fmt.Sprintf(
 						"added subscription %s for %s", m.Id,
@@ -151,7 +152,7 @@ func (p *P) Deliver(ev *event.E) {
 	var err error
 	p.Mx.Lock()
 	defer p.Mx.Unlock()
-	log.T.C(
+	log.D.C(
 		func() string {
 			return fmt.Sprintf(
 				"delivering event %0x to websocket subscribers %d", ev.ID,
@@ -160,13 +161,6 @@ func (p *P) Deliver(ev *event.E) {
 		},
 	)
 	for w, subs := range p.Map {
-		log.T.C(
-			func() string {
-				return fmt.Sprintf(
-					"%v %s", subs,
-				)
-			},
-		)
 		for id, subscriber := range subs {
 			if !subscriber.Match(ev) {
 				continue
@@ -185,7 +179,7 @@ func (p *P) Deliver(ev *event.E) {
 			); chk.E(err) {
 				continue
 			}
-			log.T.C(
+			log.D.C(
 				func() string {
 					return fmt.Sprintf(
 						"dispatched event %0x to subscription %s, %s",

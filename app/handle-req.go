@@ -60,6 +60,7 @@ func (l *Listener) HandleReq(c context.Context, msg []byte) (
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
+	log.T.F("sending EOSE to %s", l.remote)
 	if err = eoseenvelope.NewFrom(env.Subscription).
 		Write(l); chk.E(err) {
 		return

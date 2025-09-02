@@ -28,7 +28,7 @@ func Run(
 		Ctx:        ctx,
 		Config:     cfg,
 		D:          db,
-		publishers: publish.New(NewPublisher()),
+		publishers: publish.New(NewPublisher(ctx)),
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)

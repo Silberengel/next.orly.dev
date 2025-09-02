@@ -80,7 +80,7 @@ whitelist:
 		}
 		var typ websocket.MessageType
 		var msg []byte
-		log.I.F("waiting for message from %s", remote)
+		log.T.F("waiting for message from %s", remote)
 		if typ, msg, err = conn.Read(ctx); chk.E(err) {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
