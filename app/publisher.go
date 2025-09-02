@@ -93,10 +93,10 @@ func (p *P) Receive(msg typer.T) {
 		if m.Cancel {
 			if m.Id == "" {
 				p.removeSubscriber(m.Conn)
-				log.T.F("removed listener %s", m.remote)
+				log.D.F("removed listener %s", m.remote)
 			} else {
 				p.removeSubscriberId(m.Conn, m.Id)
-				log.T.C(
+				log.D.C(
 					func() string {
 						return fmt.Sprintf(
 							"removed subscription %s for %s", m.Id,

@@ -57,7 +57,7 @@ func (l *Listener) HandleEvent(c context.Context, msg []byte) (
 	if _, _, err = l.SaveEvent(c, env.E, false, nil); chk.E(err) {
 		return
 	}
-	// Send a success response after storing
+	// Send a success response storing
 	if err = Ok.Ok(l, env, ""); chk.E(err) {
 		return
 	}

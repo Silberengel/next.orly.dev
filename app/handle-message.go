@@ -35,6 +35,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 			err = l.HandleReq(l.ctx, rem)
 		case closeenvelope.L:
 			log.D.F("closeenvelope: %s", rem)
+			err = l.HandleClose(rem)
 		case authenvelope.L:
 			log.D.F("authenvelope: %s", rem)
 		default:

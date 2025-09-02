@@ -9,10 +9,15 @@ import (
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"protocol.orly/publish"
+	"utils.orly/units"
 )
 
 const (
+	DefaultWriteWait      = 10 * time.Second
+	DefaultPongWait       = 60 * time.Second
+	DefaultPingWait       = DefaultPongWait / 2
+	DefaultMaxMessageSize = 1 * units.Mb
+
 	// CloseMessage denotes a close control message. The optional message
 	// payload contains a numeric code and text. Use the FormatCloseMessage
 	// function to format a close message payload.
@@ -42,8 +47,7 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 whitelist:
-	var cancel context.CancelFunc
-	s.Ctx, cancel = context.WithCancel(s.Ctx)
+	ctx, cancel := context.WithCancel(s.Ctx)
 	defer cancel()
 	var err error
 	var conn *websocket.Conn
@@ -52,24 +56,32 @@ whitelist:
 	); chk.E(err) {
 		return
 	}
+	conn.SetReadLimit(DefaultMaxMessageSize)
 	defer conn.CloseNow()
 	listener := &Listener{
-		ctx:    s.Ctx,
+		ctx:    ctx,
 		Server: s,
 		conn:   conn,
 		remote: remote,
 	}
-	listener.publishers = publish.New(NewPublisher())
-	go s.Pinger(s.Ctx, conn, time.NewTicker(time.Second*10), cancel)
+	ticker := time.NewTicker(DefaultPingWait)
+	go s.Pinger(ctx, conn, ticker, cancel)
+	defer func() {
+		log.D.F("closing websocket connection from %s", remote)
+		cancel()
+		ticker.Stop()
+		listener.publishers.Receive(&W{Cancel: true})
+	}()
 	for {
 		select {
-		case <-s.Ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 		}
 		var typ websocket.MessageType
 		var msg []byte
-		if typ, msg, err = conn.Read(s.Ctx); err != nil {
+		log.I.F("waiting for message from %s", remote)
+		if typ, msg, err = conn.Read(ctx); chk.E(err) {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
@@ -88,7 +100,7 @@ whitelist:
 			return
 		}
 		if typ == PingMessage {
-			if err = conn.Write(s.Ctx, PongMessage, msg); chk.E(err) {
+			if err = conn.Write(ctx, PongMessage, msg); chk.E(err) {
 				return
 			}
 			continue
@@ -109,8 +121,7 @@ func (s *Server) Pinger(
 	for {
 		select {
 		case <-ticker.C:
-			if err = conn.Write(ctx, PingMessage, nil); err != nil {
-				log.E.F("error writing ping: %v; closing websocket", err)
+			if err = conn.Ping(ctx); chk.E(err) {
 				return
 			}
 		case <-ctx.Done():

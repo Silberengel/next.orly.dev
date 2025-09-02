@@ -9,6 +9,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
+	"protocol.orly/publish"
 )
 
 func Run(
@@ -24,9 +25,10 @@ func Run(
 	}()
 	// start listener
 	l := &Server{
-		Ctx:    ctx,
-		Config: cfg,
-		D:      db,
+		Ctx:        ctx,
+		Config:     cfg,
+		D:          db,
+		publishers: publish.New(NewPublisher()),
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)
