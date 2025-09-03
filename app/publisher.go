@@ -177,6 +177,10 @@ func (p *P) Deliver(ev *event.E) {
 			if err = w.Write(
 				p.c, websocket.MessageText, res.Marshal(nil),
 			); chk.E(err) {
+				p.removeSubscriber(w)
+				if err = w.CloseNow(); chk.E(err) {
+					continue
+				}
 				continue
 			}
 			log.D.C(
