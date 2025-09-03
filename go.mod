@@ -10,7 +10,6 @@ require (
 	github.com/pkg/profile v1.7.0
 	go-simpler.org/env v0.12.0
 	lol.mleku.dev v1.0.2
-	lukechampine.com/frand v1.5.1
 	protocol.orly v0.0.0-00010101000000-000000000000
 	utils.orly v0.0.0-00010101000000-000000000000
 )
@@ -48,6 +47,7 @@ require (
 )
 
 replace (
+	acl.orly => ./pkg/acl
 	crypto.orly => ./pkg/crypto
 	database.orly => ./pkg/database
 	encoders.orly => ./pkg/encoders

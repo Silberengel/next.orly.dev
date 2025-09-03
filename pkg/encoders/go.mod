@@ -24,6 +24,7 @@ require (
 )
 
 replace (
+	acl.orly => ../acl
 	crypto.orly => ../crypto
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces

@@ -3,6 +3,7 @@ module database.orly
 go 1.25.0
 
 replace (
+	acl.orly => ../acl
 	crypto.orly => ../crypto
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces
