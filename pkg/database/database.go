@@ -79,8 +79,8 @@ func New(
 		case <-d.ctx.Done():
 		}
 		d.cancel()
-		d.seq.Release()
-		d.DB.Close()
+		// d.seq.Release()
+		// d.DB.Close()
 	}()
 	return
 }
@@ -131,5 +131,6 @@ func (d *D) Close() (err error) {
 			return
 		}
 	}
+	log.I.F("%s: database closed", d.dataDir)
 	return
 }

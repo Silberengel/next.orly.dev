@@ -36,8 +36,11 @@ func main() {
 		case <-sigs:
 			fmt.Printf("\r")
 			cancel()
+			chk.E(db.Close())
+			return
 		case <-quit:
 			cancel()
+			chk.E(db.Close())
 			return
 		}
 	}

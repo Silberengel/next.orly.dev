@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"encoders.orly/envelopes/eventenvelope"
 	"lol.mleku.dev/chk"
@@ -53,8 +54,22 @@ func (l *Listener) HandleEvent(c context.Context, msg []byte) (
 		}
 		return
 	}
+	// check if the event was deleted
+	//
+	// todo: the list of admin pubkeys should go in the second parameter when it
+	//  is implemented to enable admins to delete events of other users.
+	if err = l.CheckForDeleted(env.E, nil); err != nil {
+		if strings.HasPrefix(err.Error(), "blocked:") {
+			errStr := err.Error()[len("blocked: "):len(err.Error())]
+			if err = Ok.Error(
+				l, env, errStr,
+			); chk.E(err) {
+				return
+			}
+		}
+	}
 	// store the event
-	if _, _, err = l.SaveEvent(c, env.E, false, nil); chk.E(err) {
+	if _, _, err = l.SaveEvent(c, env.E); chk.E(err) {
 		return
 	}
 	l.publishers.Deliver(env.E)

@@ -65,7 +65,7 @@ func TestSaveEvents(t *testing.T) {
 
 		// Save the event to the database
 		var k, v int
-		if k, v, err = db.SaveEvent(ctx, ev, false, nil); err != nil {
+		if k, v, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
 		}
 		kc += k
@@ -125,7 +125,7 @@ func TestDeletionEventWithETagRejection(t *testing.T) {
 	regularEvent.Sign(sign)
 
 	// Save the regular event
-	if _, _, err := db.SaveEvent(ctx, regularEvent, false, nil); err != nil {
+	if _, _, err := db.SaveEvent(ctx, regularEvent); err != nil {
 		t.Fatalf("Failed to save regular event: %v", err)
 	}
 
@@ -151,7 +151,7 @@ func TestDeletionEventWithETagRejection(t *testing.T) {
 		err = errorf.E("deletion events referencing other events with 'e' tag are not allowed")
 	} else {
 		// Try to save the deletion event
-		_, _, err = db.SaveEvent(ctx, deletionEvent, false, nil)
+		_, _, err = db.SaveEvent(ctx, deletionEvent)
 	}
 
 	if err == nil {
@@ -204,12 +204,12 @@ func TestSaveExistingEvent(t *testing.T) {
 	ev.Sign(sign)
 
 	// Save the event for the first time
-	if _, _, err := db.SaveEvent(ctx, ev, false, nil); err != nil {
+	if _, _, err := db.SaveEvent(ctx, ev); err != nil {
 		t.Fatalf("Failed to save event: %v", err)
 	}
 
 	// Try to save the same event again, it should be rejected
-	_, _, err = db.SaveEvent(ctx, ev, false, nil)
+	_, _, err = db.SaveEvent(ctx, ev)
 	if err == nil {
 		t.Fatal("Expected error when saving an existing event, but got nil")
 	}

@@ -3,8 +3,6 @@ package reason
 import (
 	"bytes"
 	"fmt"
-
-	"lol.mleku.dev/log"
 )
 
 // R is the machine-readable prefix before the colon in an OK or CLOSED envelope message.
@@ -38,7 +36,6 @@ func (r R) IsPrefix(reason []byte) bool {
 
 // F allows creation of a full R text with a printf style format.
 func (r R) F(format string, params ...any) (o []byte) {
-	log.D.F(format, params...)
 	return Msg(r, format, params...)
 }
 

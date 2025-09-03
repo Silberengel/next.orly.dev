@@ -62,7 +62,7 @@ func setupTestDB(t *testing.T) (
 		events = append(events, ev)
 
 		// Save the event to the database
-		if _, _, err = db.SaveEvent(ctx, ev, false, nil); err != nil {
+		if _, _, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
 		}
 
@@ -202,9 +202,7 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	replaceableEvent.Tags = tag.NewS()
 	replaceableEvent.Sign(sign)
 	// Save the replaceable event
-	if _, _, err := db.SaveEvent(
-		ctx, replaceableEvent, false, nil,
-	); err != nil {
+	if _, _, err := db.SaveEvent(ctx, replaceableEvent); err != nil {
 		t.Fatalf("Failed to save replaceable event: %v", err)
 	}
 
@@ -217,7 +215,7 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	newerEvent.Tags = tag.NewS()
 	newerEvent.Sign(sign)
 	// Save the newer event
-	if _, _, err := db.SaveEvent(ctx, newerEvent, false, nil); err != nil {
+	if _, _, err := db.SaveEvent(ctx, newerEvent); err != nil {
 		t.Fatalf("Failed to save newer event: %v", err)
 	}
 
@@ -294,7 +292,7 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	)
 
 	// Save the deletion event
-	if _, _, err = db.SaveEvent(ctx, deletionEvent, false, nil); err != nil {
+	if _, _, err = db.SaveEvent(ctx, deletionEvent); err != nil {
 		t.Fatalf("Failed to save deletion event: %v", err)
 	}
 
@@ -379,7 +377,7 @@ func TestParameterizedReplaceableEventsAndDeletion(t *testing.T) {
 	paramEvent.Sign(sign)
 
 	// Save the parameterized replaceable event
-	if _, _, err := db.SaveEvent(ctx, paramEvent, false, nil); err != nil {
+	if _, _, err := db.SaveEvent(ctx, paramEvent); err != nil {
 		t.Fatalf("Failed to save parameterized replaceable event: %v", err)
 	}
 
@@ -405,9 +403,7 @@ func TestParameterizedReplaceableEventsAndDeletion(t *testing.T) {
 	paramDeletionEvent.Sign(sign)
 
 	// Save the parameterized deletion event
-	if _, _, err := db.SaveEvent(
-		ctx, paramDeletionEvent, false, nil,
-	); err != nil {
+	if _, _, err := db.SaveEvent(ctx, paramDeletionEvent); err != nil {
 		t.Fatalf("Failed to save parameterized deletion event: %v", err)
 	}
 
@@ -440,9 +436,7 @@ func TestParameterizedReplaceableEventsAndDeletion(t *testing.T) {
 	paramDeletionEvent2.Sign(sign)
 
 	// Save the parameterized deletion event with e-tag
-	if _, _, err := db.SaveEvent(
-		ctx, paramDeletionEvent2, false, nil,
-	); err != nil {
+	if _, _, err := db.SaveEvent(ctx, paramDeletionEvent2); err != nil {
 		t.Fatalf(
 			"Failed to save parameterized deletion event with e-tag: %v", err,
 		)

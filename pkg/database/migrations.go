@@ -14,11 +14,10 @@ import (
 )
 
 const (
-	currentVersion uint32 = 0
+	currentVersion uint32 = 1
 )
 
 func (d *D) RunMigrations() {
-	log.I.F("running migrations...")
 	var err error
 	var dbVersion uint32
 	// first find the current version tag if any
@@ -48,6 +47,7 @@ func (d *D) RunMigrations() {
 				); chk.E(err) {
 					return
 				}
+				log.I.F("found version tag: %d", ver.Get())
 				dbVersion = ver.Get()
 			}
 			return
@@ -62,7 +62,11 @@ func (d *D) RunMigrations() {
 				buf := new(bytes.Buffer)
 				vv := new(types.Uint32)
 				vv.Set(currentVersion)
+				log.I.S(vv)
 				if err = indexes.VersionEnc(vv).MarshalWrite(buf); chk.E(err) {
+					return
+				}
+				if err = txn.Set(buf.Bytes(), nil); chk.E(err) {
 					return
 				}
 				return
@@ -72,10 +76,10 @@ func (d *D) RunMigrations() {
 		}
 	}
 	if dbVersion < 1 {
+		log.I.F("migrating to version 1...")
 		// the first migration is expiration tags
 		d.UpdateExpirationTags()
 	}
-	log.I.F("migrations complete")
 }
 
 func (d *D) UpdateExpirationTags() {
