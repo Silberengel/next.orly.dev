@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	crypto.orly v0.0.0-00010101000000-000000000000
 	encoders.orly v0.0.0-00010101000000-000000000000
+	interfaces.orly v0.0.0-00010101000000-000000000000
 	lol.mleku.dev v1.0.2
 	utils.orly v0.0.0-00010101000000-000000000000
 )
@@ -19,12 +20,12 @@ require (
 	github.com/templexxx/xhex v0.0.0-20200614015412-aed53437177b // indirect
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
 	golang.org/x/sys v0.35.0 // indirect
-	interfaces.orly v0.0.0-00010101000000-000000000000 // indirect
 )
 
 replace (
 	acl.orly => ../acl
 	crypto.orly => ../crypto
+	database.orly => ../database
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces
 	next.orly.dev => ../../

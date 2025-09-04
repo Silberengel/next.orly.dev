@@ -24,11 +24,11 @@ require (
 )
 
 replace (
+	acl.orly => ../acl
 	crypto.orly => ../crypto
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces
 	next.orly.dev => ../../
 	protocol.orly => ../protocol
 	utils.orly => ../utils
-	acl.orly => ../acl
 )
