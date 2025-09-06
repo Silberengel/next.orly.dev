@@ -5,6 +5,7 @@ go 1.25.0
 replace (
 	acl.orly => ../acl
 	crypto.orly => ../crypto
+	database.orly => ../database
 	encoders.orly => ../encoders
 	interfaces.orly => ../interfaces
 	next.orly.dev => ../../

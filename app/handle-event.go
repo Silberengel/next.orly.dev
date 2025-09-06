@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"encoders.orly/envelopes/eventenvelope"
+	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	utils "utils.orly"
@@ -53,6 +54,10 @@ func (l *Listener) HandleEvent(c context.Context, msg []byte) (
 			return
 		}
 		return
+	}
+	// if the event is a delete, process the delete
+	if env.E.Kind == kind.EventDeletion.K {
+
 	}
 	// check if the event was deleted
 	//
