@@ -32,33 +32,11 @@ func (l *Listener) HandleReq(msg []byte) (
 	if len(rem) > 0 {
 		log.I.F("extra '%s'", rem)
 	}
-	// // send a challenge to the client to auth if an ACL is active and not authed
-	// if acl.Registry.Active.Load() != "none" && l.authedPubkey.Load() == nil {
-	// 	log.D.F("sending challenge to %s", l.remote)
-	// 	if err = authenvelope.NewChallengeWith(l.challenge.Load()).
-	// 		Write(l); chk.E(err) {
-	// 		// return
-	// 	}
-	// 	log.D.F("sending CLOSED to %s", l.remote)
-	// 	if err = closedenvelope.NewFrom(
-	// 		env.Subscription, reason.AuthRequired.F("auth required for access"),
-	// 	).Write(l); chk.E(err) {
-	// 		return
-	// 	}
-	// 	// ACL is enabled so return and wait for auth
-	// 	// return
-	// }
 	// send a challenge to the client to auth if an ACL is active
 	if acl.Registry.Active.Load() != "none" {
-		// log.D.F("sending CLOSED to %s", l.remote)
-		// if err = closedenvelope.NewFrom(
-		// 	env.Subscription, reason.AuthRequired.F("auth required for access"),
-		// ).Write(l); chk.E(err) {
-		// 	// return
-		// }
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 			Write(l); chk.E(err) {
-			// return
+			return
 		}
 	}
 	// check permissions of user

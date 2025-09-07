@@ -56,21 +56,13 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 		return
 	}
-	// // send a challenge to the client to auth if an ACL is active and not authed
-	// if acl.Registry.Active.Load() != "none" && l.authedPubkey.Load() == nil {
-	// 	log.D.F("sending challenge to %s", l.remote)
-	// 	if err = authenvelope.NewChallengeWith(l.challenge.Load()).
-	// 		Write(l); chk.E(err) {
-	// 		// return
-	// 	}
-	// 	// ACL is enabled so return and wait for auth
-	// 	// return
-	// }
 	// check permissions of user
 	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load())
 	switch accessLevel {
 	case "none":
-		log.D.F("handle event: sending CLOSED to %s", l.remote)
+		log.D.F(
+			"handle event: sending 'OK,false,auth-required...' to %s", l.remote,
+		)
 		if err = okenvelope.NewFrom(
 			env.Id(), false,
 			reason.AuthRequired.F("auth required for write access"),
@@ -84,17 +76,20 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 		return
 	case "read":
-		log.D.F("handle event: sending CLOSED to %s", l.remote)
+		log.D.F(
+			"handle event: sending 'OK,false,auth-required:...' to %s",
+			l.remote,
+		)
 		if err = okenvelope.NewFrom(
 			env.Id(), false,
 			reason.AuthRequired.F("auth required for write access"),
 		).Write(l); chk.E(err) {
-			// return
+			return
 		}
 		log.D.F("handle event: sending challenge to %s", l.remote)
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 			Write(l); chk.E(err) {
-			// return
+			return
 		}
 		return
 	default:
