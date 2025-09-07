@@ -1,11 +1,13 @@
 package utils
 
-func FastEqual(a, b []byte) (same bool) {
+func FastEqual[A string | []byte, B string | []byte](a A, b B) (same bool) {
 	if len(a) != len(b) {
 		return
 	}
-	for i, v := range a {
-		if v != b[i] {
+	ab := []byte(a)
+	bb := []byte(b)
+	for i, v := range ab {
+		if v != bb[i] {
 			return
 		}
 	}

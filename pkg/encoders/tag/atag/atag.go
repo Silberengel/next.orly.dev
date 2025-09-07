@@ -14,7 +14,7 @@ import (
 // T is a data structure for what is found in an `a` tag: kind:pubkey:arbitrary data
 type T struct {
 	Kind   *kind.K
-	PubKey []byte
+	Pubkey []byte
 	DTag   []byte
 }
 
@@ -22,7 +22,7 @@ type T struct {
 func (t *T) Marshal(dst []byte) (b []byte) {
 	b = t.Kind.Marshal(dst)
 	b = append(b, ':')
-	b = hex.EncAppend(b, t.PubKey)
+	b = hex.EncAppend(b, t.Pubkey)
 	b = append(b, ':')
 	b = append(b, t.DTag...)
 	return
@@ -41,7 +41,7 @@ func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 	}
 	t.Kind = kind.New(kin.Uint16())
 	// pubkey
-	if t.PubKey, err = hex.DecAppend(t.PubKey, split[1]); chk.E(err) {
+	if t.Pubkey, err = hex.DecAppend(t.Pubkey, split[1]); chk.E(err) {
 		return
 	}
 	// d-tag

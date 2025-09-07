@@ -23,7 +23,7 @@ func TestT_Marshal_Unmarshal(t *testing.T) {
 	dtag = hex.Enc(d)
 	t1 := &T{
 		Kind:   k,
-		PubKey: pk,
+		Pubkey: pk,
 		DTag:   []byte(dtag),
 	}
 	b1 := t1.Marshal(nil)
