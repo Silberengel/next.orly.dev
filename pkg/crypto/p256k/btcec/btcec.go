@@ -15,7 +15,7 @@ import (
 type Signer struct {
 	SecretKey *secp256k1.SecretKey
 	PublicKey *secp256k1.PublicKey
-	BTCECSec  *ec.SecretKey
+	BTCECSec  *secp256k1.SecretKey
 	pkb, skb  []byte
 }
 
@@ -23,11 +23,11 @@ var _ signer.I = &Signer{}
 
 // Generate creates a new Signer.
 func (s *Signer) Generate() (err error) {
-	if s.SecretKey, err = ec.NewSecretKey(); chk.E(err) {
+	if s.SecretKey, err = secp256k1.GenerateSecretKey(); chk.E(err) {
 		return
 	}
 	s.skb = s.SecretKey.Serialize()
-	s.BTCECSec, _ = ec.PrivKeyFromBytes(s.skb)
+	s.BTCECSec = secp256k1.PrivKeyFromBytes(s.skb)
 	s.PublicKey = s.SecretKey.PubKey()
 	s.pkb = schnorr.SerializePubKey(s.PublicKey)
 	return
@@ -43,7 +43,7 @@ func (s *Signer) InitSec(sec []byte) (err error) {
 	s.SecretKey = secp256k1.SecKeyFromBytes(sec)
 	s.PublicKey = s.SecretKey.PubKey()
 	s.pkb = schnorr.SerializePubKey(s.PublicKey)
-	s.BTCECSec, _ = ec.PrivKeyFromBytes(s.skb)
+	s.BTCECSec = secp256k1.PrivKeyFromBytes(s.skb)
 	return
 }
 
@@ -142,7 +142,7 @@ func (s *Signer) ECDH(pubkeyBytes []byte) (secret []byte, err error) {
 	); chk.E(err) {
 		return
 	}
-	secret = ec.GenerateSharedSecret(s.BTCECSec, pub)
+	secret = secp256k1.GenerateSharedSecret(s.BTCECSec, pub)
 	return
 }
 
@@ -154,7 +154,7 @@ type Keygen struct {
 // Generate a new key pair. If the result is suitable, the embedded Signer can have its contents
 // extracted.
 func (k *Keygen) Generate() (pubBytes []byte, err error) {
-	if k.Signer.SecretKey, err = ec.NewSecretKey(); chk.E(err) {
+	if k.Signer.SecretKey, err = secp256k1.GenerateSecretKey(); chk.E(err) {
 		return
 	}
 	k.Signer.PublicKey = k.SecretKey.PubKey()

@@ -122,9 +122,19 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	if _, _, err = l.SaveEvent(l.Ctx, env.E); chk.E(err) {
 		return
 	}
-	// if a follow list was saved, reconfigure ACLs now that it is persisted
-	if env.E.Kind == kind.FollowList.K {
-		if err = acl.Registry.Configure(); chk.E(err) {
+	var isNewFromAdmin bool
+	for _, admin := range l.Admins {
+		if utils.FastEqual(admin, env.E.Pubkey) {
+			isNewFromAdmin = true
+			break
+		}
+	}
+	if isNewFromAdmin {
+		// if a follow list was saved, reconfigure ACLs now that it is persisted
+		if env.E.Kind == kind.FollowList.K ||
+			env.E.Kind == kind.RelayListMetadata.K {
+			if err = acl.Registry.Configure(); chk.E(err) {
+			}
 		}
 	}
 	l.publishers.Deliver(env.E)
