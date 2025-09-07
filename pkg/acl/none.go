@@ -20,6 +20,8 @@ func (n None) Type() string {
 	return "none"
 }
 
+func (n None) Syncer() {}
+
 func init() {
 	log.T.F("registering none ACL")
 	Registry.Register(new(None))

@@ -48,6 +48,15 @@ func (s *S) GetACLInfo() (name, description, documentation string) {
 	return
 }
 
+func (s *S) Syncer() {
+	for _, i := range s.ACL {
+		if i.Type() == s.Active.Load() {
+			i.Syncer()
+			break
+		}
+	}
+}
+
 func (s *S) Type() (typ string) {
 	for _, i := range s.ACL {
 		if i.Type() == s.Active.Load() {

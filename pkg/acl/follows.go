@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"context"
 	"reflect"
 	"sync"
 
@@ -20,11 +21,13 @@ import (
 )
 
 type Follows struct {
+	Ctx context.Context
 	cfg *config.C
 	*database.D
 	followsMx sync.RWMutex
 	admins    [][]byte
 	follows   [][]byte
+	updated   chan struct{}
 }
 
 func (f *Follows) Configure(cfg ...any) (err error) {
@@ -37,6 +40,9 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 		case *database.D:
 			log.D.F("setting ACL database: %s", c.Path())
 			f.D = c
+		case context.Context:
+			log.D.F("setting ACL context: %s", c.Value("id"))
+			f.Ctx = c
 		default:
 			err = errorf.E("invalid type: %T", reflect.TypeOf(ca))
 		}
@@ -92,6 +98,11 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 			}
 		}
 	}
+	if f.updated == nil {
+		f.updated = make(chan struct{})
+	} else {
+		f.updated <- struct{}{}
+	}
 	return
 }
 
@@ -120,6 +131,22 @@ func (f *Follows) GetACLInfo() (name, description, documentation string) {
 }
 
 func (f *Follows) Type() string { return "follows" }
+
+func (f *Follows) Syncer() {
+	log.I.F("starting follows syncer")
+	go func() {
+		for {
+			select {
+			case <-f.Ctx.Done():
+				return
+			case <-f.updated:
+				// close and reopen subscriptions to users on the follow list and
+				// admins
+				log.I.F("reopening subscriptions")
+			}
+		}
+	}()
+}
 
 func init() {
 	log.T.F("registering follows ACL")

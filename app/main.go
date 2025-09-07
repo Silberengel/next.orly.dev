@@ -34,7 +34,6 @@ func Run(
 		}
 		adminKeys = append(adminKeys, pk)
 	}
-
 	// start listener
 	l := &Server{
 		Ctx:        ctx,

@@ -30,9 +30,10 @@ func main() {
 		os.Exit(1)
 	}
 	acl.Registry.Active.Store(cfg.ACLMode)
-	if err = acl.Registry.Configure(cfg, db); chk.E(err) {
+	if err = acl.Registry.Configure(cfg, db, ctx); chk.E(err) {
 		os.Exit(1)
 	}
+	acl.Registry.Syncer()
 	quit := app.Run(ctx, cfg, db)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt)

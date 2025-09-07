@@ -68,7 +68,8 @@ func (l *Listener) HandleReq(msg []byte) (
 			err = nil
 		}
 	}
-	// write out the events to the socket
+	// todo: filter out privileged events from the results if the user is not
+	//  authed or authed to a non-privileged pubkey.
 	seen := make(map[string]struct{})
 	for _, ev := range events {
 		// track the IDs we've sent

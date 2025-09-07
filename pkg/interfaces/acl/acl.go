@@ -27,5 +27,9 @@ type I interface {
 	// explain briefly how it works, and then a long text of documentation of
 	// the ACL's rules and configuration (in asciidoc or markdown).
 	GetACLInfo() (name, description, documentation string)
+	// Syncer is a worker thread that does things in the background like syncing
+	// with other relays on admin relay lists using subscriptions for all events
+	// that arrive elsewhere relevant to the ACL scheme.
+	Syncer()
 	typer.T
 }
