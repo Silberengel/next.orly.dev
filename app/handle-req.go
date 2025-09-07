@@ -12,11 +12,14 @@ import (
 	"encoders.orly/envelopes/reqenvelope"
 	"encoders.orly/event"
 	"encoders.orly/filter"
+	"encoders.orly/hex"
+	"encoders.orly/kind"
 	"encoders.orly/reason"
 	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	utils "utils.orly"
 	"utils.orly/normalize"
 	"utils.orly/pointers"
 )
@@ -68,8 +71,48 @@ func (l *Listener) HandleReq(msg []byte) (
 			err = nil
 		}
 	}
-	// todo: filter out privileged events from the results if the user is not
-	//  authed or authed to a non-privileged pubkey.
+	var tmp event.S
+privCheck:
+	for _, ev := range events {
+		if kind.IsPrivileged(ev.Kind) &&
+			accessLevel != "admin" { // admins can see all events
+			log.I.F("checking privileged event %s", ev.ID)
+			pk := l.authedPubkey.Load()
+			if pk == nil {
+				continue
+			}
+			if utils.FastEqual(ev.Pubkey, pk) {
+				log.I.F(
+					"privileged event %s is for logged in pubkey %0x", ev.ID,
+					pk,
+				)
+				tmp = append(tmp, ev)
+				continue
+			}
+			pTags := ev.Tags.GetAll([]byte("p"))
+			for _, pTag := range pTags {
+				var pt []byte
+				if pt, err = hex.Dec(string(pTag.Value())); chk.E(err) {
+					continue
+				}
+				if utils.FastEqual(pt, pk) {
+					log.I.F(
+						"privileged event %s is for logged in pubkey %0x",
+						ev.ID, pk,
+					)
+					tmp = append(tmp, ev)
+					continue privCheck
+				}
+			}
+			log.W.F(
+				"privileged event %s does not contain the logged in pubkey %0x",
+				ev.ID, pk,
+			)
+		} else {
+			tmp = append(tmp, ev)
+		}
+	}
+	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
 		// track the IDs we've sent

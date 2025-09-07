@@ -78,9 +78,9 @@ var Privileged = []*K{
 
 // IsPrivileged returns true if the type is the kind of message nobody else than
 // the pubkeys in the event and p tags of the event are party to.
-func (k *K) IsPrivileged() (is bool) {
+func IsPrivileged(k uint16) (is bool) {
 	for i := range Privileged {
-		if k.Equal(Privileged[i].K) {
+		if k == Privileged[i].K {
 			return true
 		}
 	}

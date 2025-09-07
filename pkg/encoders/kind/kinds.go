@@ -142,7 +142,7 @@ func (k *S) Unmarshal(b []byte) (r []byte, err error) {
 // be privacy protected).
 func (k *S) IsPrivileged() (priv bool) {
 	for i := range k.K {
-		if k.K[i].IsPrivileged() {
+		if IsPrivileged(k.K[i].K) {
 			return true
 		}
 	}
