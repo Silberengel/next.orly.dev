@@ -12,12 +12,13 @@ import (
 )
 
 type Server struct {
-	mux    *http.ServeMux
-	Config *config.C
-	Ctx    context.Context
-	remote string
-	*database.D
+	mux        *http.ServeMux
+	Config     *config.C
+	Ctx        context.Context
+	remote     string
 	publishers *publish.S
+	Admins     [][]byte
+	*database.D
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

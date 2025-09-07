@@ -11,6 +11,7 @@ import (
 	"encoders.orly/ints"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"utils.orly/constraints"
 )
 
 var (
@@ -29,7 +30,7 @@ var (
 // - Adds ws:// to addresses with any other port
 //
 // - Converts http/s to ws/s
-func URL[V string | []byte](v V) (b []byte) {
+func URL[V constraints.Bytes](v V) (b []byte) {
 	u := []byte(v)
 	if len(u) == 0 {
 		return nil

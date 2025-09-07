@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	database "database.orly"
+	"encoders.orly/bech32encoding"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
@@ -23,12 +24,24 @@ func Run(
 			close(quit)
 		}
 	}()
+	// get the admins
+	var err error
+	var adminKeys [][]byte
+	for _, admin := range cfg.Admins {
+		var pk []byte
+		if pk, err = bech32encoding.NpubOrHexToPublicKeyBinary(admin); chk.E(err) {
+			continue
+		}
+		adminKeys = append(adminKeys, pk)
+	}
+
 	// start listener
 	l := &Server{
 		Ctx:        ctx,
 		Config:     cfg,
 		D:          db,
 		publishers: publish.New(NewPublisher(ctx)),
+		Admins:     adminKeys,
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)

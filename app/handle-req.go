@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"errors"
 
 	"encoders.orly/envelopes/closedenvelope"
@@ -18,7 +17,7 @@ import (
 	"utils.orly/pointers"
 )
 
-func (l *Listener) HandleReq(c context.Context, msg []byte) (
+func (l *Listener) HandleReq(msg []byte) (
 	err error,
 ) {
 	var rem []byte
@@ -36,7 +35,7 @@ func (l *Listener) HandleReq(c context.Context, msg []byte) (
 				continue
 			}
 		}
-		if events, err = l.QueryEvents(c, f); chk.E(err) {
+		if events, err = l.QueryEvents(l.Ctx, f); chk.E(err) {
 			if errors.Is(err, badger.ErrDBClosed) {
 				return
 			}

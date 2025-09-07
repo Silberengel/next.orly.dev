@@ -13,6 +13,7 @@ import (
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 	"utils.orly/units"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -30,7 +31,7 @@ var _ codec.Envelope = (*Challenge)(nil)
 func NewChallenge() *Challenge { return &Challenge{} }
 
 // NewChallengeWith creates a new authenvelope.Challenge with provided bytes.
-func NewChallengeWith[V string | []byte](challenge V) *Challenge {
+func NewChallengeWith[V constraints.Bytes](challenge V) *Challenge {
 	return &Challenge{[]byte(challenge)}
 }
 

@@ -1,6 +1,8 @@
 package utils
 
-func FastEqual[A string | []byte, B string | []byte](a A, b B) (same bool) {
+import "utils.orly/constraints"
+
+func FastEqual[A constraints.Bytes, B constraints.Bytes](a A, b B) (same bool) {
 	if len(a) != len(b) {
 		return
 	}

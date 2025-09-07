@@ -13,6 +13,7 @@ import (
 	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -118,7 +119,7 @@ func NewResponse() *Response { return new(Response) }
 // NewResponseFrom creates a new countenvelope.Response with provided string for the
 // subscription.Id, a count and optional variadic approximate flag, which is
 // otherwise false and does not get rendered into the JSON.
-func NewResponseFrom[V string | []byte](
+func NewResponseFrom[V constraints.Bytes](
 	s V, cnt int,
 	approx ...bool,
 ) (res *Response, err error) {

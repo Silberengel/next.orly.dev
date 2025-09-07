@@ -10,6 +10,7 @@ import (
 	"encoders.orly/text"
 	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -28,7 +29,7 @@ var _ codec.Envelope = (*T)(nil)
 func New() *T { return &T{} }
 
 // NewFrom creates a new noticeenvelope.T with a provided message.
-func NewFrom[V string | []byte](msg V) *T { return &T{Message: []byte(msg)} }
+func NewFrom[V constraints.Bytes](msg V) *T { return &T{Message: []byte(msg)} }
 
 // Label returns the label of a NOTICE envelope.
 func (en *T) Label() string { return L }

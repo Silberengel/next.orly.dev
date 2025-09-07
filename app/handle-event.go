@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -12,9 +11,7 @@ import (
 	utils "utils.orly"
 )
 
-func (l *Listener) HandleEvent(c context.Context, msg []byte) (
-	err error,
-) {
+func (l *Listener) HandleEvent(msg []byte) (err error) {
 	// decode the envelope
 	env := eventenvelope.NewSubmission()
 	if msg, err = env.Unmarshal(msg); chk.E(err) {
@@ -57,24 +54,22 @@ func (l *Listener) HandleEvent(c context.Context, msg []byte) (
 	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
-
-	}
-	// check if the event was deleted
-	//
-	// todo: the list of admin pubkeys should go in the second parameter when it
-	//  is implemented to enable admins to delete events of other users.
-	if err = l.CheckForDeleted(env.E, nil); err != nil {
-		if strings.HasPrefix(err.Error(), "blocked:") {
-			errStr := err.Error()[len("blocked: "):len(err.Error())]
-			if err = Ok.Error(
-				l, env, errStr,
-			); chk.E(err) {
-				return
+		l.HandleDelete(env)
+	} else {
+		// check if the event was deleted
+		if err = l.CheckForDeleted(env.E, l.Admins); err != nil {
+			if strings.HasPrefix(err.Error(), "blocked:") {
+				errStr := err.Error()[len("blocked: "):len(err.Error())]
+				if err = Ok.Error(
+					l, env, errStr,
+				); chk.E(err) {
+					return
+				}
 			}
 		}
 	}
 	// store the event
-	if _, _, err = l.SaveEvent(c, env.E); chk.E(err) {
+	if _, _, err = l.SaveEvent(l.Ctx, env.E); chk.E(err) {
 		return
 	}
 	l.publishers.Deliver(env.E)

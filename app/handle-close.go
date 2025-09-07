@@ -11,9 +11,7 @@ import (
 // HandleClose processes a CLOSE envelope by unmarshalling the request,
 // validates the presence of an <id> field, and signals cancellation for
 // the associated listener through the server's publisher mechanism.
-func (l *Listener) HandleClose(
-	req []byte,
-) (err error) {
+func (l *Listener) HandleClose(req []byte) (err error) {
 	var rem []byte
 	env := closeenvelope.New()
 	if rem, err = env.Unmarshal(req); chk.E(err) {

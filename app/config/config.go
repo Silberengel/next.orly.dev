@@ -31,6 +31,7 @@ type C struct {
 	DBLogLevel  string   `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
 	Pprof       string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation"`
 	IPWhitelist []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
+	Admins      []string `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
 }
 
 // New creates and initializes a new configuration object for the relay

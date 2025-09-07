@@ -14,6 +14,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -34,7 +35,7 @@ func New() *T { return &T{} }
 
 // NewFrom creates a new okenvelope.T with a string for the subscription.Id and
 // the optional reason.
-func NewFrom[V string | []byte](eid V, ok bool, msg ...V) *T {
+func NewFrom[V constraints.Bytes](eid V, ok bool, msg ...V) *T {
 	var m []byte
 	if len(msg) > 0 {
 		m = []byte(msg[0])

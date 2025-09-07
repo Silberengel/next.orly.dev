@@ -29,10 +29,10 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 		switch t {
 		case eventenvelope.L:
 			log.D.F("eventenvelope: %s", rem)
-			err = l.HandleEvent(l.ctx, rem)
+			err = l.HandleEvent(rem)
 		case reqenvelope.L:
 			log.D.F("reqenvelope: %s", rem)
-			err = l.HandleReq(l.ctx, rem)
+			err = l.HandleReq(rem)
 		case closeenvelope.L:
 			log.D.F("closeenvelope: %s", rem)
 			err = l.HandleClose(rem)

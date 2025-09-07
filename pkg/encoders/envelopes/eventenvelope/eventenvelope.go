@@ -13,6 +13,7 @@ import (
 	"lol.mleku.dev/errorf"
 	"utils.orly/bufpool"
 	"utils.orly/units"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -103,7 +104,7 @@ func NewResult() *Result { return &Result{} }
 
 // NewResultWith creates a new eventenvelope.Result with a provided
 // subscription.Id string and event.E.
-func NewResultWith[V string | []byte](s V, ev *event.E) (
+func NewResultWith[V constraints.Bytes](s V, ev *event.E) (
 	res *Result, err error,
 ) {
 	if len(s) < 0 || len(s) > 64 {

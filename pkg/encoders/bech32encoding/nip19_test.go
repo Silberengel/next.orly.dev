@@ -265,7 +265,7 @@ func TestEncodeDecodeNEventTestEncodeDecodeNEvent(t *testing.T) {
 	}
 }
 
-func MustDecode[V string | []byte](s V) (b []byte) {
+func MustDecode[V constraints.Bytes](s V) (b []byte) {
 	var err error
 	if _, err = hex.Dec(string(s)); chk.E(err) {
 		panic(err)

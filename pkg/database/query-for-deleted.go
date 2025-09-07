@@ -31,7 +31,7 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 		t := ev.Tags.GetFirst([]byte("d"))
 		a := atag.T{
 			Kind:   kind.New(ev.Kind),
-			PubKey: ev.Pubkey,
+			Pubkey: ev.Pubkey,
 			DTag:   t.Value(),
 		}
 		at := a.Marshal(nil)
@@ -135,7 +135,7 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 		// construct a tag
 		a := atag.T{
 			Kind:   kind.New(ev.Kind),
-			PubKey: ev.Pubkey,
+			Pubkey: ev.Pubkey,
 		}
 		at := a.Marshal(nil)
 		if idxs, err = GetIndexesFromFilter(

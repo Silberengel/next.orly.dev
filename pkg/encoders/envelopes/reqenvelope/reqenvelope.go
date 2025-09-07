@@ -10,6 +10,7 @@ import (
 	"encoders.orly/text"
 	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
+	"utils.orly/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -39,7 +40,7 @@ func NewFrom(id []byte, ff *filter.S) *T {
 	}
 }
 
-func NewWithId[V string | []byte](id V, ff *filter.S) (sub *T) {
+func NewWithId[V constraints.Bytes](id V, ff *filter.S) (sub *T) {
 	return &T{
 		Subscription: []byte(id),
 		Filters:      ff,
