@@ -10,6 +10,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"utils.orly"
+	"utils.orly/constraints"
 )
 
 func TestEncodeNpub(t *testing.T) {

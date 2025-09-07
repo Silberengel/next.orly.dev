@@ -10,7 +10,7 @@ import (
 // parameters to generate formatted messages and return errors if any issues
 // occur during processing.
 type OK func(
-	l *Listener, env *eventenvelope.Submission, format string, params ...any,
+	l *Listener, env eventenvelope.I, format string, params ...any,
 ) (err error)
 
 // OKs provides a collection of handler functions for managing different types
@@ -36,7 +36,7 @@ type OKs struct {
 // inputs.
 var Ok = OKs{
 	Ok: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -44,7 +44,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	AuthRequired: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -52,7 +52,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	PoW: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -60,7 +60,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Duplicate: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -68,7 +68,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Blocked: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -76,7 +76,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	RateLimited: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -84,7 +84,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Invalid: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -92,7 +92,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Error: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -100,7 +100,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Unsupported: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(
@@ -108,7 +108,7 @@ var Ok = OKs{
 		).Write(l)
 	},
 	Restricted: func(
-		l *Listener, env *eventenvelope.Submission, format string,
+		l *Listener, env eventenvelope.I, format string,
 		params ...any,
 	) (err error) {
 		return okenvelope.NewFrom(

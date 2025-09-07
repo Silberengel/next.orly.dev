@@ -38,6 +38,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 			err = l.HandleClose(rem)
 		case authenvelope.L:
 			log.D.F("authenvelope: %s", rem)
+			err = l.HandleAuth(rem)
 		default:
 			err = errorf.E("unknown envelope type %s\n%s", t, rem)
 		}

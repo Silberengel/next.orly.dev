@@ -5,8 +5,11 @@ import (
 	"strings"
 
 	acl "acl.orly"
+	"encoders.orly/envelopes/authenvelope"
 	"encoders.orly/envelopes/eventenvelope"
+	"encoders.orly/envelopes/okenvelope"
 	"encoders.orly/kind"
+	"encoders.orly/reason"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	utils "utils.orly"
@@ -52,6 +55,51 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			return
 		}
 		return
+	}
+	// // send a challenge to the client to auth if an ACL is active and not authed
+	// if acl.Registry.Active.Load() != "none" && l.authedPubkey.Load() == nil {
+	// 	log.D.F("sending challenge to %s", l.remote)
+	// 	if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+	// 		Write(l); chk.E(err) {
+	// 		// return
+	// 	}
+	// 	// ACL is enabled so return and wait for auth
+	// 	// return
+	// }
+	// check permissions of user
+	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load())
+	switch accessLevel {
+	case "none":
+		log.D.F("handle event: sending CLOSED to %s", l.remote)
+		if err = okenvelope.NewFrom(
+			env.Id(), false,
+			reason.AuthRequired.F("auth required for write access"),
+		).Write(l); chk.E(err) {
+			// return
+		}
+		log.D.F("handle event: sending challenge to %s", l.remote)
+		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+			Write(l); chk.E(err) {
+			return
+		}
+		return
+	case "read":
+		log.D.F("handle event: sending CLOSED to %s", l.remote)
+		if err = okenvelope.NewFrom(
+			env.Id(), false,
+			reason.AuthRequired.F("auth required for write access"),
+		).Write(l); chk.E(err) {
+			// return
+		}
+		log.D.F("handle event: sending challenge to %s", l.remote)
+		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+			Write(l); chk.E(err) {
+			// return
+		}
+		return
+	default:
+		// user has write access or better, continue
+		log.D.F("user has %s access", accessLevel)
 	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {

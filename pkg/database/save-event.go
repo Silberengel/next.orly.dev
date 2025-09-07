@@ -72,13 +72,16 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		}
 	} else if kind.IsParameterizedReplaceable(ev.Kind) {
 		// find the events and delete them
+		dTag := ev.Tags.GetFirst([]byte("d"))
+		if dTag == nil {
+			err = errorf.E("event is missing a d tag identifier")
+			return
+		}
 		f := &filter.F{
 			Authors: tag.NewFromBytesSlice(ev.Pubkey),
 			Kinds:   kind.NewS(kind.New(ev.Kind)),
 			Tags: tag.NewS(
-				tag.NewFromAny(
-					"d", ev.Tags.GetFirst([]byte("d")),
-				),
+				tag.NewFromAny("d", dTag.Value()),
 			),
 		}
 		var sers types.Uint40s

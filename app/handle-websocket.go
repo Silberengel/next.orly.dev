@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"net/http"
 	"strings"
 	"time"
 
+	"encoders.orly/hex"
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -63,7 +65,11 @@ whitelist:
 		Server: s,
 		conn:   conn,
 		remote: remote,
+		req:    r,
 	}
+	chal := make([]byte, 32)
+	rand.Read(chal)
+	listener.challenge.Store([]byte(hex.Enc(chal)))
 	ticker := time.NewTicker(DefaultPingWait)
 	go s.Pinger(ctx, conn, ticker, cancel)
 	defer func() {

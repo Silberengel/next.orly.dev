@@ -78,7 +78,7 @@ func TestQueryForKindsAuthorsTags(t *testing.T) {
 	for _, ev := range events {
 		if ev.Tags != nil && ev.Tags.Len() > 0 {
 			// Find a tag with at least 2 elements and first element of length 1
-			for _, tag := range ev.Tags.ToSliceOfTags() {
+			for _, tag := range *ev.Tags {
 				if tag.Len() >= 2 && len(tag.Key()) == 1 {
 					testEvent = ev
 					break
@@ -96,9 +96,9 @@ func TestQueryForKindsAuthorsTags(t *testing.T) {
 
 	// Get the first tag with at least 2 elements and first element of length 1
 	var testTag *tag.T
-	for _, tag := range testEvent.Tags.ToSliceOfTags() {
+	for _, tag := range *testEvent.Tags {
 		if tag.Len() >= 2 && len(tag.Key()) == 1 {
-			testTag = &tag
+			testTag = tag
 			break
 		}
 	}
@@ -155,7 +155,7 @@ func TestQueryForKindsAuthorsTags(t *testing.T) {
 
 				// Check if the event has the tag we're looking for
 				var hasTag bool
-				for _, tag := range ev.Tags.ToSliceOfTags() {
+				for _, tag := range *ev.Tags {
 					if tag.Len() >= 2 && len(tag.Key()) == 1 {
 						if utils.FastEqual(
 							tag.Key(), testTag.Key(),

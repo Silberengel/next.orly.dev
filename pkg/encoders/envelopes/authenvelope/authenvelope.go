@@ -12,8 +12,8 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"utils.orly/units"
 	"utils.orly/constraints"
+	"utils.orly/units"
 )
 
 // L is the label associated with this type of codec.Envelope.
@@ -55,7 +55,7 @@ func (en *Challenge) Label() string { return L }
 func (en *Challenge) Write(w io.Writer) (err error) {
 	var b []byte
 	b = en.Marshal(b)
-	log.T.F("writing out challenge envelope: '%s'", b)
+	log.D.F("writing out challenge envelope: '%s'", b)
 	_, err = w.Write(b)
 	return
 }

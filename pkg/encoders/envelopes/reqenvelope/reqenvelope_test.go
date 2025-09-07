@@ -19,7 +19,7 @@ func TestMarshalUnmarshal(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := utils.NewSubscription(i)
-		req := NewFrom(s, f)
+		req := NewFrom(s, &f)
 		rb = req.Marshal(rb)
 		rb1 = append(rb1, rb...)
 		var rem []byte

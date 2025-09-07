@@ -12,12 +12,14 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"utils.orly/bufpool"
-	"utils.orly/units"
 	"utils.orly/constraints"
+	"utils.orly/units"
 )
 
 // L is the label associated with this type of codec.Envelope.
 const L = "EVENT"
+
+type I interface{ Id() []byte }
 
 // Submission is a request from a client for a realy to store an event.
 type Submission struct {

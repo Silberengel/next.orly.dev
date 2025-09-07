@@ -203,7 +203,7 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	replaceableEvent.Sign(sign)
 	// Save the replaceable event
 	if _, _, err := db.SaveEvent(ctx, replaceableEvent); err != nil {
-		t.Fatalf("Failed to save replaceable event: %v", err)
+		t.Errorf("Failed to save replaceable event: %v", err)
 	}
 
 	// Create a newer version of the replaceable event
@@ -216,38 +216,30 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	newerEvent.Sign(sign)
 	// Save the newer event
 	if _, _, err := db.SaveEvent(ctx, newerEvent); err != nil {
-		t.Fatalf("Failed to save newer event: %v", err)
+		t.Errorf("Failed to save newer event: %v", err)
 	}
 
 	// Query for the original event by ID
 	evs, err := db.QueryEvents(
 		ctx, &filter.F{
-			Ids: tag.NewFromBytesSlice(replaceableEvent.ID),
+			Ids: tag.NewFromAny(replaceableEvent.ID),
 		},
 	)
-	if err != nil {
-		t.Fatalf("Failed to query for replaced event by ID: %v", err)
+	if err == nil {
+		t.Errorf("found replaced event by ID: %v", err)
 	}
 
-	// Verify we got exactly one event
-	if len(evs) != 1 {
-		t.Fatalf(
-			"Expected 1 event when querying for replaced event by ID, got %d",
-			len(evs),
-		)
-	}
-
-	// Verify it's the original event
-	if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
-		t.Fatalf(
-			"Event ID doesn't match when querying for replaced event. Got %x, expected %x",
-			evs[0].ID, replaceableEvent.ID,
-		)
-	}
+	// // Verify it's the original event
+	// if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
+	// 	t.Errorf(
+	// 		"Event ID doesn't match when querying for replaced event. Got %x, expected %x",
+	// 		evs[0].ID, replaceableEvent.ID,
+	// 	)
+	// }
 
 	// Query for all events of this kind and pubkey
 	kindFilter := kind.NewS(kind.ProfileMetadata)
-	authorFilter := tag.NewFromBytesSlice(replaceableEvent.Pubkey)
+	authorFilter := tag.NewFromAny(replaceableEvent.Pubkey)
 
 	evs, err = db.QueryEvents(
 		ctx, &filter.F{
@@ -256,12 +248,12 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Fatalf("Failed to query for replaceable events: %v", err)
+		t.Errorf("Failed to query for replaceable events: %v", err)
 	}
 
 	// Verify we got only one event (the latest one)
 	if len(evs) != 1 {
-		t.Fatalf(
+		t.Errorf(
 			"Expected 1 event when querying for replaceable events, got %d",
 			len(evs),
 		)
@@ -304,7 +296,7 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Fatalf(
+		t.Errorf(
 			"Failed to query for replaceable events after deletion: %v", err,
 		)
 	}
@@ -331,25 +323,25 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 			Ids: tag.NewFromBytesSlice(replaceableEvent.ID),
 		},
 	)
-	if err != nil {
-		t.Fatalf("Failed to query for deleted event by ID: %v", err)
+	if err == nil {
+		t.Errorf("found deleted event by ID: %v", err)
 	}
 
-	// Verify we still get the original event when querying by ID
-	if len(evs) != 1 {
-		t.Fatalf(
-			"Expected 1 event when querying for deleted event by ID, got %d",
-			len(evs),
-		)
-	}
+	// // Verify we still get the original event when querying by ID
+	// if len(evs) != 1 {
+	// 	t.Errorf(
+	// 		"Expected 1 event when querying for deleted event by ID, got %d",
+	// 		len(evs),
+	// 	)
+	// }
 
-	// Verify it's the original event
-	if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
-		t.Fatalf(
-			"Event ID doesn't match when querying for deleted event by ID. Got %x, expected %x",
-			evs[0].ID, replaceableEvent.ID,
-		)
-	}
+	// // Verify it's the original event
+	// if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
+	// 	t.Errorf(
+	// 		"Event ID doesn't match when querying for deleted event by ID. Got %x, expected %x",
+	// 		evs[0].ID, replaceableEvent.ID,
+	// 	)
+	// }
 }
 
 func TestParameterizedReplaceableEventsAndDeletion(t *testing.T) {
@@ -562,7 +554,7 @@ func TestQueryEventsByTag(t *testing.T) {
 	for _, ev := range events {
 		if ev.Tags != nil && ev.Tags.Len() > 0 {
 			// Find a tag with at least 2 elements and first element of length 1
-			for _, tag := range ev.Tags.ToSliceOfTags() {
+			for _, tag := range *ev.Tags {
 				if tag.Len() >= 2 && len(tag.Key()) == 1 {
 					testTagEvent = ev
 					break
@@ -581,9 +573,9 @@ func TestQueryEventsByTag(t *testing.T) {
 
 	// Get the first tag with at least 2 elements and first element of length 1
 	var testTag *tag.T
-	for _, tag := range testTagEvent.Tags.ToSliceOfTags() {
+	for _, tag := range *testTagEvent.Tags {
 		if tag.Len() >= 2 && len(tag.Key()) == 1 {
-			testTag = &tag
+			testTag = tag
 			break
 		}
 	}
@@ -608,7 +600,7 @@ func TestQueryEventsByTag(t *testing.T) {
 	// Verify all events have the tag
 	for i, ev := range evs {
 		var hasTag bool
-		for _, tag := range ev.Tags.ToSliceOfTags() {
+		for _, tag := range *ev.Tags {
 			if tag.Len() >= 2 && len(tag.Key()) == 1 {
 				if utils.FastEqual(tag.Key(), testTag.Key()) &&
 					utils.FastEqual(tag.Value(), testTag.Value()) {

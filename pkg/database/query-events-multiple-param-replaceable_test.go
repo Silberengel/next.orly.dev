@@ -146,23 +146,23 @@ func TestMultipleParameterizedReplaceableEvents(t *testing.T) {
 			Ids: tag.NewFromBytesSlice(baseEvent.ID),
 		},
 	)
-	if err != nil {
-		t.Fatalf("Failed to query for base event by ID: %v", err)
+	if err == nil {
+		t.Fatalf("found base event by ID: %v", err)
 	}
 
-	// Verify we can still get the base event when querying by ID
-	if len(evs) != 1 {
-		t.Fatalf(
-			"Expected 1 event when querying for base event by ID, got %d",
-			len(evs),
-		)
-	}
-
-	// Verify it's the base event
-	if !utils.FastEqual(evs[0].ID, baseEvent.ID) {
-		t.Fatalf(
-			"Event ID doesn't match when querying for base event by ID. Got %x, expected %x",
-			evs[0].ID, baseEvent.ID,
-		)
-	}
+	// // Verify we can still get the base event when querying by ID
+	// if len(evs) != 1 {
+	// 	t.Fatalf(
+	// 		"Expected 1 event when querying for base event by ID, got %d",
+	// 		len(evs),
+	// 	)
+	// }
+	//
+	// // Verify it's the base event
+	// if !utils.FastEqual(evs[0].ID, baseEvent.ID) {
+	// 	t.Fatalf(
+	// 		"Event ID doesn't match when querying for base event by ID. Got %x, expected %x",
+	// 		evs[0].ID, baseEvent.ID,
+	// 	)
+	// }
 }

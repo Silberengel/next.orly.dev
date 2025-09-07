@@ -44,6 +44,23 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		// relayinfo.ProtectedEvents,
 		// relayinfo.RelayListMetadata,
 	)
+	if s.Config.ACLMode != "none" {
+		supportedNIPs = relayinfo.GetList(
+			relayinfo.BasicProtocol,
+			relayinfo.Authentication,
+			// relayinfo.EncryptedDirectMessage,
+			// relayinfo.EventDeletion,
+			relayinfo.RelayInformationDocument,
+			// relayinfo.GenericTagQueries,
+			// relayinfo.NostrMarketplace,
+			// relayinfo.EventTreatment,
+			// relayinfo.CommandResults,
+			// relayinfo.ParameterizedReplaceableEvents,
+			// relayinfo.ExpirationTimestamp,
+			// relayinfo.ProtectedEvents,
+			// relayinfo.RelayListMetadata,
+		)
+	}
 	sort.Sort(supportedNIPs)
 	log.T.Ln("supported NIPs", supportedNIPs)
 	info = &relayinfo.T{
@@ -52,9 +69,9 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		Nips:        supportedNIPs,
 		Software:    version.URL,
 		Version:     version.V,
-		Limitation:  relayinfo.Limits{
-			// AuthRequired:     s.C.AuthRequired,
-			// RestrictedWrites: s.C.AuthRequired,
+		Limitation: relayinfo.Limits{
+			AuthRequired:     s.Config.ACLMode != "none",
+			RestrictedWrites: s.Config.ACLMode != "none",
 		},
 		Icon: "https://cdn.satellite.earth/ac9778868fbf23b63c47c769a74e163377e6ea94d3f0f31711931663d035c4f6.png",
 	}

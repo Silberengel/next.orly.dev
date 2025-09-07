@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"database.orly"
+	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 	"protocol.orly/publish"
@@ -38,4 +41,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.mux.ServeHTTP(w, r)
 		}
 	}
+}
+func (s *Server) ServiceURL(req *http.Request) (st string) {
+	host := req.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = req.Host
+	}
+	proto := req.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		if host == "localhost" {
+			proto = "ws"
+		} else if strings.Contains(host, ":") {
+			// has a port number
+			proto = "ws"
+		} else if _, err := strconv.Atoi(
+			strings.ReplaceAll(
+				host, ".",
+				"",
+			),
+		); chk.E(err) {
+			// it's a naked IP
+			proto = "ws"
+		} else {
+			proto = "wss"
+		}
+	} else if proto == "https" {
+		proto = "wss"
+	} else if proto == "http" {
+		proto = "ws"
+	}
+	return proto + "://" + host
 }

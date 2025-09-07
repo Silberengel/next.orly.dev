@@ -3,12 +3,16 @@ package app
 import (
 	"errors"
 
+	acl "acl.orly"
+	"encoders.orly/envelopes/authenvelope"
 	"encoders.orly/envelopes/closedenvelope"
 	"encoders.orly/envelopes/eoseenvelope"
 	"encoders.orly/envelopes/eventenvelope"
+	"encoders.orly/envelopes/okenvelope"
 	"encoders.orly/envelopes/reqenvelope"
 	"encoders.orly/event"
 	"encoders.orly/filter"
+	"encoders.orly/reason"
 	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
@@ -27,6 +31,50 @@ func (l *Listener) HandleReq(msg []byte) (
 	}
 	if len(rem) > 0 {
 		log.I.F("extra '%s'", rem)
+	}
+	// // send a challenge to the client to auth if an ACL is active and not authed
+	// if acl.Registry.Active.Load() != "none" && l.authedPubkey.Load() == nil {
+	// 	log.D.F("sending challenge to %s", l.remote)
+	// 	if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+	// 		Write(l); chk.E(err) {
+	// 		// return
+	// 	}
+	// 	log.D.F("sending CLOSED to %s", l.remote)
+	// 	if err = closedenvelope.NewFrom(
+	// 		env.Subscription, reason.AuthRequired.F("auth required for access"),
+	// 	).Write(l); chk.E(err) {
+	// 		return
+	// 	}
+	// 	// ACL is enabled so return and wait for auth
+	// 	// return
+	// }
+	// send a challenge to the client to auth if an ACL is active
+	if acl.Registry.Active.Load() != "none" {
+		// log.D.F("sending CLOSED to %s", l.remote)
+		// if err = closedenvelope.NewFrom(
+		// 	env.Subscription, reason.AuthRequired.F("auth required for access"),
+		// ).Write(l); chk.E(err) {
+		// 	// return
+		// }
+		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+			Write(l); chk.E(err) {
+			// return
+		}
+	}
+	// check permissions of user
+	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load())
+	switch accessLevel {
+	case "none":
+		if err = okenvelope.NewFrom(
+			env.Subscription, false,
+			reason.AuthRequired.F("user not authed or has no read access"),
+		).Write(l); chk.E(err) {
+			return
+		}
+		return
+	default:
+		// user has read access or better, continue
+		log.D.F("user has %s access", accessLevel)
 	}
 	var events event.S
 	for _, f := range *env.Filters {
