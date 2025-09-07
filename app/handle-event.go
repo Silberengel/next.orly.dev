@@ -122,6 +122,12 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	if _, _, err = l.SaveEvent(l.Ctx, env.E); chk.E(err) {
 		return
 	}
+	// Send a success response storing
+	if err = Ok.Ok(l, env, ""); chk.E(err) {
+		return
+	}
+	defer l.publishers.Deliver(env.E)
+	log.D.F("saved event %0x", env.E.ID)
 	var isNewFromAdmin bool
 	for _, admin := range l.Admins {
 		if utils.FastEqual(admin, env.E.Pubkey) {
@@ -137,11 +143,5 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			}
 		}
 	}
-	l.publishers.Deliver(env.E)
-	// Send a success response storing
-	if err = Ok.Ok(l, env, ""); chk.E(err) {
-		return
-	}
-	log.D.F("saved event %0x", env.E.ID)
 	return
 }
