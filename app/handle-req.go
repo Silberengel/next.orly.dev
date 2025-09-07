@@ -172,11 +172,12 @@ privCheck:
 	if !cancel {
 		l.publishers.Receive(
 			&W{
-				Conn:     l.conn,
-				remote:   l.remote,
-				Id:       string(env.Subscription),
-				Receiver: receiver,
-				Filters:  env.Filters,
+				Conn:         l.conn,
+				remote:       l.remote,
+				Id:           string(env.Subscription),
+				Receiver:     receiver,
+				Filters:      env.Filters,
+				AuthedPubkey: l.authedPubkey.Load(),
 			},
 		)
 	} else {
