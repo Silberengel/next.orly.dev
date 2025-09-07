@@ -8,6 +8,7 @@ import (
 	"encoders.orly/envelopes/eventenvelope"
 	"encoders.orly/event"
 	"encoders.orly/filter"
+	"encoders.orly/kind"
 	"github.com/coder/websocket"
 	"interfaces.orly/publisher"
 	"interfaces.orly/typer"
@@ -165,11 +166,9 @@ func (p *P) Deliver(ev *event.E) {
 			if !subscriber.Match(ev) {
 				continue
 			}
-			// if p.Server.AuthRequired() {
-			// 	if !auth.CheckPrivilege(w.AuthedPubkey(), ev) {
-			// 		continue
-			// 	}
-			// }
+			if kind.IsPrivileged(ev.Kind) {
+
+			}
 			var res *eventenvelope.Result
 			if res, err = eventenvelope.NewResultWith(id, ev); chk.E(err) {
 				continue
@@ -198,7 +197,6 @@ func (p *P) Deliver(ev *event.E) {
 // removeSubscriberId removes a specific subscription from a subscriber
 // websocket.
 func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
-	p.Mx.Lock()
 	var subs map[string]Subscription
 	var ok bool
 	if subs, ok = p.Map[ws]; ok {
@@ -208,13 +206,10 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 			delete(p.Map, ws)
 		}
 	}
-	p.Mx.Unlock()
 }
 
 // removeSubscriber removes a websocket from the P collection.
 func (p *P) removeSubscriber(ws *websocket.Conn) {
-	p.Mx.Lock()
 	clear(p.Map[ws])
 	delete(p.Map, ws)
-	p.Mx.Unlock()
 }
