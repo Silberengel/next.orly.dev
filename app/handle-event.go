@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	acl "acl.orly"
 	"encoders.orly/envelopes/eventenvelope"
 	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
@@ -69,8 +70,14 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	// store the event
+	log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
 	if _, _, err = l.SaveEvent(l.Ctx, env.E); chk.E(err) {
 		return
+	}
+	// if a follow list was saved, reconfigure ACLs now that it is persisted
+	if env.E.Kind == kind.FollowList.K {
+		if err = acl.Registry.Configure(); chk.E(err) {
+		}
 	}
 	l.publishers.Deliver(env.E)
 	// Send a success response storing

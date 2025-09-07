@@ -1,6 +1,10 @@
 // Package acl is an interface for implementing arbitrary access control lists.
 package acl
 
+import (
+	"interfaces.orly/typer"
+)
+
 const (
 	// Read means read only
 	Read = "read"
@@ -16,10 +20,12 @@ const (
 )
 
 type I interface {
+	Configure(cfg ...any) (err error)
 	// GetAccessLevel returns the access level string for a given pubkey.
 	GetAccessLevel(pub []byte) (level string)
 	// GetACLInfo returns the name and a description of the ACL, which should
 	// explain briefly how it works, and then a long text of documentation of
 	// the ACL's rules and configuration (in asciidoc or markdown).
 	GetACLInfo() (name, description, documentation string)
+	typer.T
 }

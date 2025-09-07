@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 
-	database "database.orly"
 	"database.orly/indexes/types"
 	"encoders.orly/envelopes/eventenvelope"
 	"encoders.orly/event"
@@ -21,22 +20,11 @@ import (
 func (l *Listener) GetSerialsFromFilter(f *filter.F) (
 	sers types.Uint40s, err error,
 ) {
-	var idxs []database.Range
-	if idxs, err = database.GetIndexesFromFilter(f); chk.E(err) {
-		return
-	}
-	for _, idx := range idxs {
-		var s types.Uint40s
-		if s, err = l.GetSerialsByRange(idx); chk.E(err) {
-			continue
-		}
-		sers = append(sers, s...)
-	}
-	return
+	return l.D.GetSerialsFromFilter(f)
 }
 
 func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
-	log.T.C(
+	log.I.C(
 		func() string {
 			return fmt.Sprintf(
 				"delete event\n%s", env.E.Serialize(),

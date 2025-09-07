@@ -7,19 +7,98 @@ import (
 	"database.orly/indexes"
 	"database.orly/indexes/types"
 	"encoders.orly/event"
+	"encoders.orly/filter"
+	"encoders.orly/kind"
+	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 )
 
+func (d *D) GetSerialsFromFilter(f *filter.F) (
+	sers types.Uint40s, err error,
+) {
+	var idxs []Range
+	if idxs, err = GetIndexesFromFilter(f); chk.E(err) {
+		return
+	}
+	for _, idx := range idxs {
+		var s types.Uint40s
+		if s, err = d.GetSerialsByRange(idx); chk.E(err) {
+			continue
+		}
+		sers = append(sers, s...)
+	}
+	return
+}
+
 // SaveEvent saves an event to the database, generating all the necessary indexes.
 func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
+	if ev == nil {
+		err = errorf.E("nil event")
+		return
+	}
 	// check if the event already exists
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {
 		err = errorf.E("event already exists: %0x", ev.ID)
 		return
+	}
+	// check for replacement
+	if kind.IsReplaceable(ev.Kind) {
+		// find the events and delete them
+		f := &filter.F{
+			Authors: tag.NewFromBytesSlice(ev.Pubkey),
+			Kinds:   kind.NewS(kind.New(ev.Kind)),
+		}
+		var sers types.Uint40s
+		if sers, err = d.GetSerialsFromFilter(f); chk.E(err) {
+			return
+		}
+		// if found, delete them
+		if len(sers) > 0 {
+			for _, s := range sers {
+				var oldEv *event.E
+				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
+					continue
+				}
+				if err = d.DeleteEventBySerial(
+					c, s, oldEv,
+				); chk.E(err) {
+					continue
+				}
+			}
+		}
+	} else if kind.IsParameterizedReplaceable(ev.Kind) {
+		// find the events and delete them
+		f := &filter.F{
+			Authors: tag.NewFromBytesSlice(ev.Pubkey),
+			Kinds:   kind.NewS(kind.New(ev.Kind)),
+			Tags: tag.NewS(
+				tag.NewFromAny(
+					"d", ev.Tags.GetFirst([]byte("d")),
+				),
+			),
+		}
+		var sers types.Uint40s
+		if sers, err = d.GetSerialsFromFilter(f); chk.E(err) {
+			return
+		}
+		// if found, delete them
+		if len(sers) > 0 {
+			for _, s := range sers {
+				var oldEv *event.E
+				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
+					continue
+				}
+				if err = d.DeleteEventBySerial(
+					c, s, oldEv,
+				); chk.E(err) {
+					continue
+				}
+			}
+		}
 	}
 	// Get the next sequence number for the event
 	var serial uint64

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	acl "acl.orly"
 	database "database.orly"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -26,6 +27,10 @@ func main() {
 	if db, err = database.New(
 		ctx, cancel, cfg.DataDir, cfg.DBLogLevel,
 	); chk.E(err) {
+		os.Exit(1)
+	}
+	acl.Registry.Active.Store(cfg.ACLMode)
+	if err = acl.Registry.Configure(cfg, db); chk.E(err) {
 		os.Exit(1)
 	}
 	quit := app.Run(ctx, cfg, db)

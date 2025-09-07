@@ -3,6 +3,8 @@ module next.orly.dev
 go 1.25.0
 
 require (
+	acl.orly v0.0.0-00010101000000-000000000000
+	crypto.orly v0.0.0-00010101000000-000000000000
 	database.orly v0.0.0-00010101000000-000000000000
 	encoders.orly v0.0.0-00010101000000-000000000000
 	github.com/adrg/xdg v0.5.3
@@ -17,7 +19,6 @@ require (
 )
 
 require (
-	crypto.orly v0.0.0-00010101000000-000000000000 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
