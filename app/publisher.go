@@ -56,7 +56,7 @@ func (w *W) Type() (typeName string) { return Type }
 type P struct {
 	c context.Context
 	// Mx is the mutex for the Map.
-	Mx sync.Mutex
+	Mx sync.RWMutex
 	// Map is the map of subscribers and subscriptions from the websocket api.
 	Map
 }
@@ -150,8 +150,8 @@ func (p *P) Receive(msg typer.T) {
 // for unauthenticated users when events are privileged.
 func (p *P) Deliver(ev *event.E) {
 	var err error
-	p.Mx.Lock()
-	defer p.Mx.Unlock()
+	p.Mx.RLock()
+	defer p.Mx.RUnlock()
 	log.D.C(
 		func() string {
 			return fmt.Sprintf(
