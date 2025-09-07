@@ -21,6 +21,11 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	if msg, err = env.Unmarshal(msg); chk.E(err) {
 		return
 	}
+	defer func() {
+		if env != nil && env.E != nil {
+			env.E.Free()
+		}
+	}()
 	if len(msg) > 0 {
 		log.I.F("extra '%s'", msg)
 	}

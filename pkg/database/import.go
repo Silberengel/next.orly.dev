@@ -52,17 +52,22 @@ func (d *D) Import(rr io.Reader) {
 				continue
 			}
 
-			ev := &event.E{}
+			ev := event.New()
 			if _, err = ev.Unmarshal(b); err != nil {
+				// return the pooled buffer on error
+				ev.Free()
 				continue
 			}
 
 			if _, _, err = d.SaveEvent(d.ctx, ev); err != nil {
+				// return the pooled buffer on error paths too
+				ev.Free()
 				continue
 			}
 
+			// return the pooled buffer after successful save
+			ev.Free()
 			b = nil
-			ev = nil
 			count++
 			if count%100 == 0 {
 				log.I.F("received %d events", count)

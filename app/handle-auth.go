@@ -14,6 +14,11 @@ func (l *Listener) HandleAuth(b []byte) (err error) {
 	if rem, err = env.Unmarshal(b); chk.E(err) {
 		return
 	}
+	defer func() {
+		if env != nil && env.Event != nil {
+			env.Event.Free()
+		}
+	}()
 	if len(rem) > 0 {
 		log.I.F("extra '%s'", rem)
 	}
