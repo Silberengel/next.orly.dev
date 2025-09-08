@@ -116,7 +116,7 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 	return
 }
 
-func (f *Follows) GetAccessLevel(pub []byte) (level string) {
+func (f *Follows) GetAccessLevel(pub []byte, address string) (level string) {
 	if f.cfg == nil {
 		return "write"
 	}

@@ -8,7 +8,7 @@ type None struct{}
 
 func (n None) Configure(cfg ...any) (err error) { return }
 
-func (n None) GetAccessLevel(pub []byte) (level string) {
+func (n None) GetAccessLevel(pub []byte, address string) (level string) {
 	return "write"
 }
 

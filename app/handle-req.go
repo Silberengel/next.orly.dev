@@ -24,9 +24,7 @@ import (
 	"utils.orly/pointers"
 )
 
-func (l *Listener) HandleReq(msg []byte) (
-	err error,
-) {
+func (l *Listener) HandleReq(msg []byte) (err error) {
 	var rem []byte
 	env := reqenvelope.New()
 	if rem, err = env.Unmarshal(msg); chk.E(err) {
@@ -43,7 +41,7 @@ func (l *Listener) HandleReq(msg []byte) (
 		}
 	}
 	// check permissions of user
-	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load())
+	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load(), l.remote)
 	switch accessLevel {
 	case "none":
 		if err = okenvelope.NewFrom(

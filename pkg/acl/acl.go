@@ -28,10 +28,10 @@ func (s *S) Configure(cfg ...any) (err error) {
 	return err
 }
 
-func (s *S) GetAccessLevel(pub []byte) (level string) {
+func (s *S) GetAccessLevel(pub []byte, address string) (level string) {
 	for _, i := range s.ACL {
 		if i.Type() == s.Active.Load() {
-			level = i.GetAccessLevel(pub)
+			level = i.GetAccessLevel(pub, address)
 			break
 		}
 	}

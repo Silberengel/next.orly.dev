@@ -62,7 +62,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	// check permissions of user
-	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load())
+	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load(), l.remote)
 	switch accessLevel {
 	case "none":
 		log.D.F(

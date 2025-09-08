@@ -28,16 +28,16 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	if t, rem, err = envelopes.Identify(msg); !chk.E(err) {
 		switch t {
 		case eventenvelope.L:
-			log.D.F("eventenvelope: %s", rem)
+			log.D.F("eventenvelope: %s %s", remote, rem)
 			err = l.HandleEvent(rem)
 		case reqenvelope.L:
-			log.D.F("reqenvelope: %s", rem)
+			log.D.F("reqenvelope: %s %s", remote, rem)
 			err = l.HandleReq(rem)
 		case closeenvelope.L:
-			log.D.F("closeenvelope: %s", rem)
+			log.D.F("closeenvelope: %s %s", remote, rem)
 			err = l.HandleClose(rem)
 		case authenvelope.L:
-			log.D.F("authenvelope: %s", rem)
+			log.D.F("authenvelope: %s %s", remote, rem)
 			err = l.HandleAuth(rem)
 		default:
 			err = errorf.E("unknown envelope type %s\n%s", t, rem)
