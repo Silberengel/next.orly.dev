@@ -113,8 +113,6 @@ privCheck:
 	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
-		// track the IDs we've sent
-		seen[string(ev.ID)] = struct{}{}
 		var res *eventenvelope.Result
 		if res, err = eventenvelope.NewResultWith(
 			env.Subscription, ev,
@@ -124,6 +122,8 @@ privCheck:
 		if err = res.Write(l); chk.E(err) {
 			return
 		}
+		// track the IDs we've sent (use hex encoding for stable key)
+		seen[hex.Enc(ev.ID)] = struct{}{}
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
@@ -143,11 +143,11 @@ privCheck:
 		} else {
 			// remove the IDs that we already sent
 			var notFounds [][]byte
-			for _, ev := range events {
-				if _, ok := seen[string(ev.ID)]; ok {
+			for _, id := range f.Ids.T {
+				if _, ok := seen[hex.Enc(id)]; ok {
 					continue
 				}
-				notFounds = append(notFounds, ev.ID)
+				notFounds = append(notFounds, id)
 			}
 			// if all were found, don't add to subbedFilters
 			if len(notFounds) == 0 {

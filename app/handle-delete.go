@@ -87,9 +87,15 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
 		// if e tags are found, delete them if the author is signer, or one of
 		// the owners is signer
 		if utils.FastEqual(t.Key(), []byte("e")) {
-			var dst []byte
-			if _, err = hex.DecBytes(dst, t.Value()); chk.E(err) {
+			val := t.Value()
+			if len(val) == 0 {
 				continue
+			}
+			var dst []byte
+			if b, e := hex.Dec(string(val)); chk.E(e) {
+				continue
+			} else {
+				dst = b
 			}
 			f := &filter.F{
 				Ids: tag.NewFromBytesSlice(dst),
