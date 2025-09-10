@@ -44,10 +44,10 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	// check if the event already exists
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {
-		err = errorf.E("event already exists: %0x", ev.ID)
+		err = errorf.E("blocked: event already exists: %0x", ev.ID)
 		return
 	}
-	
+
 	// If the error is "id not found", we can proceed with saving the event
 	if err != nil && strings.Contains(err.Error(), "id not found in database") {
 		// Reset error since this is expected for new events
@@ -57,10 +57,13 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		log.E.F("error checking if event exists: %s", err)
 		return
 	}
-	
+
 	// Check if the event has been deleted before allowing resubmission
 	if err = d.CheckForDeleted(ev, nil); err != nil {
-		log.I.F("SaveEvent: rejecting resubmission of deleted event ID=%s: %v", hex.Enc(ev.ID), err)
+		// log.I.F(
+		// 	"SaveEvent: rejecting resubmission of deleted event ID=%s: %v",
+		// 	hex.Enc(ev.ID), err,
+		// )
 		err = errorf.E("blocked: %s", err.Error())
 		return
 	}
@@ -85,8 +88,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 				// Only replace if the new event is newer or same timestamp
 				if ev.CreatedAt < oldEv.CreatedAt {
-					log.I.F("SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)", 
-						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID), oldEv.CreatedAt)
+					log.I.F(
+						"SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
+						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
+						oldEv.CreatedAt,
+					)
 					shouldReplace = false
 					break
 				}
@@ -97,8 +103,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					log.I.F("SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)", 
-						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID), ev.CreatedAt)
+					log.I.F(
+						"SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
+						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
+						ev.CreatedAt,
+					)
 					if err = d.DeleteEventBySerial(
 						c, s, oldEv,
 					); chk.E(err) {
@@ -139,8 +148,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 				// Only replace if the new event is newer or same timestamp
 				if ev.CreatedAt < oldEv.CreatedAt {
-					log.I.F("SaveEvent: rejecting older addressable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)", 
-						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID), oldEv.CreatedAt)
+					log.I.F(
+						"SaveEvent: rejecting older addressable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
+						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
+						oldEv.CreatedAt,
+					)
 					shouldReplace = false
 					break
 				}
@@ -151,8 +163,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					log.I.F("SaveEvent: replacing older addressable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)", 
-						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID), ev.CreatedAt)
+					log.I.F(
+						"SaveEvent: replacing older addressable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
+						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
+						ev.CreatedAt,
+					)
 					if err = d.DeleteEventBySerial(
 						c, s, oldEv,
 					); chk.E(err) {
@@ -216,6 +231,9 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 			return
 		},
 	)
-	log.T.F("total data written: %d bytes keys %d bytes values for event ID %s", kc, vc, hex.Enc(ev.ID))
+	log.T.F(
+		"total data written: %d bytes keys %d bytes values for event ID %s", kc,
+		vc, hex.Enc(ev.ID),
+	)
 	return
 }

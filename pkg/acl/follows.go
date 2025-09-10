@@ -278,7 +278,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 						if ok, err := res.Event.Verify(); chk.T(err) || !ok {
 							continue
 						}
-						if _, _, err := f.D.SaveEvent(
+						if _, _, err = f.D.SaveEvent(
 							ctx, res.Event,
 						); err != nil {
 							if !strings.HasPrefix(
