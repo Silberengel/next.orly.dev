@@ -57,6 +57,13 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		log.E.F("error checking if event exists: %s", err)
 		return
 	}
+	
+	// Check if the event has been deleted before allowing resubmission
+	if err = d.CheckForDeleted(ev, nil); err != nil {
+		log.I.F("SaveEvent: rejecting resubmission of deleted event ID=%s: %v", hex.Enc(ev.ID), err)
+		err = errorf.E("blocked: %s", err.Error())
+		return
+	}
 	// check for replacement
 	if kind.IsReplaceable(ev.Kind) {
 		// find the events and check timestamps before deleting

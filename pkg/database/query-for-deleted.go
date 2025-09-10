@@ -199,25 +199,12 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 		sers = append(sers, s...)
 	}
 	if len(sers) > 0 {
-		var idPkTss []*store.IdPkTs
-		var tmp []*store.IdPkTs
-		if tmp, err = d.GetFullIdPubkeyBySerials(sers); chk.E(err) {
-			return
-		}
-		idPkTss = append(idPkTss, tmp...)
-		// sort by timestamp, so the first is the newest
-		sort.Slice(
-			idPkTss, func(i, j int) bool {
-				return idPkTss[i].Ts > idPkTss[j].Ts
-			},
+		// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
+		// regardless of timestamp, since it's a specific deletion of this exact event
+		err = errorf.E(
+			"blocked: %0x was deleted by ID and cannot be resubmitted",
+			ev.ID,
 		)
-		if ev.CreatedAt < idPkTss[0].Ts {
-			err = errorf.E(
-				"blocked: %0x was deleted because it is older than the delete: event: %d delete: %d",
-				ev.ID, ev.CreatedAt, idPkTss[0].Ts,
-			)
-			return
-		}
 		return
 	}
 
