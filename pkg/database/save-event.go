@@ -59,7 +59,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	}
 	// check for replacement
 	if kind.IsReplaceable(ev.Kind) {
-		// find the events and delete them
+		// find the events and check timestamps before deleting
 		f := &filter.F{
 			Authors: tag.NewFromBytesSlice(ev.Pubkey),
 			Kinds:   kind.NewS(kind.New(ev.Kind)),
@@ -68,18 +68,39 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		if sers, err = d.GetSerialsFromFilter(f); chk.E(err) {
 			return
 		}
-		// if found, delete them
+		// if found, check timestamps before deleting
 		if len(sers) > 0 {
+			var shouldReplace bool = true
 			for _, s := range sers {
 				var oldEv *event.E
 				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 					continue
 				}
-				if err = d.DeleteEventBySerial(
-					c, s, oldEv,
-				); chk.E(err) {
-					continue
+				// Only replace if the new event is newer or same timestamp
+				if ev.CreatedAt < oldEv.CreatedAt {
+					log.I.F("SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)", 
+						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID), oldEv.CreatedAt)
+					shouldReplace = false
+					break
 				}
+			}
+			if shouldReplace {
+				for _, s := range sers {
+					var oldEv *event.E
+					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
+						continue
+					}
+					log.I.F("SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)", 
+						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID), ev.CreatedAt)
+					if err = d.DeleteEventBySerial(
+						c, s, oldEv,
+					); chk.E(err) {
+						continue
+					}
+				}
+			} else {
+				// Don't save the older event
+				return
 			}
 		}
 	} else if kind.IsParameterizedReplaceable(ev.Kind) {
