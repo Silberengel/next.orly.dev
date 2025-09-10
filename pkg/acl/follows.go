@@ -69,8 +69,10 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 	for _, admin := range f.cfg.Admins {
 		log.I.F("%s", admin)
 		var adm []byte
-		if adm, err = bech32encoding.NpubOrHexToPublicKeyBinary(admin); chk.E(err) {
+		if a, e := bech32encoding.NpubOrHexToPublicKeyBinary(admin); chk.E(e) {
 			continue
+		} else {
+			adm = a
 		}
 		log.I.F("admin: %0x", adm)
 		f.admins = append(f.admins, adm)
@@ -100,8 +102,10 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 				for _, v := range ev.Tags.GetAll([]byte("p")) {
 					log.I.F("adding follow: %s", v.Value())
 					var a []byte
-					if a, err = hex.Dec(string(v.Value())); chk.E(err) {
+					if b, e := hex.Dec(string(v.Value())); chk.E(e) {
 						continue
+					} else {
+						a = b
 					}
 					f.follows = append(f.follows, a)
 				}
