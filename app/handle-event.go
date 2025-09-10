@@ -128,7 +128,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	// store the event
-	log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
+	// log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
 	if _, _, err = l.SaveEvent(l.Ctx, env.E); err != nil {
 		if strings.HasPrefix(err.Error(), "blocked:") {
 			errStr := err.Error()[len("blocked: "):len(err.Error())]

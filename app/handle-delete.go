@@ -24,13 +24,13 @@ func (l *Listener) GetSerialsFromFilter(f *filter.F) (
 }
 
 func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
-	log.I.C(
-		func() string {
-			return fmt.Sprintf(
-				"delete event\n%s", env.E.Serialize(),
-			)
-		},
-	)
+	// log.I.C(
+	// 	func() string {
+	// 		return fmt.Sprintf(
+	// 			"delete event\n%s", env.E.Serialize(),
+	// 		)
+	// 	},
+	// )
 	var ownerDelete bool
 	for _, pk := range l.Admins {
 		if utils.FastEqual(pk, env.E.Pubkey) {
@@ -77,24 +77,35 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						if kind.IsParameterizedReplaceable(ev.Kind) {
 							// For parameterized replaceable, we need a DTag to match
 							if len(at.DTag) == 0 {
-								log.I.F("HandleDelete: skipping parameterized replaceable event %s - no DTag in a-tag", hex.Enc(ev.ID))
+								log.I.F(
+									"HandleDelete: skipping parameterized replaceable event %s - no DTag in a-tag",
+									hex.Enc(ev.ID),
+								)
 								continue
 							}
 						} else if !kind.IsReplaceable(ev.Kind) {
 							// For non-replaceable events, a-tags don't apply
-							log.I.F("HandleDelete: skipping non-replaceable event %s - a-tags only apply to replaceable events", hex.Enc(ev.ID))
+							log.I.F(
+								"HandleDelete: skipping non-replaceable event %s - a-tags only apply to replaceable events",
+								hex.Enc(ev.ID),
+							)
 							continue
 						}
-						
+
 						// Only delete events that are older than or equal to the delete event timestamp
 						if ev.CreatedAt > env.E.CreatedAt {
-							log.I.F("HandleDelete: skipping newer event %s (created_at=%d) - delete event timestamp is %d", 
-								hex.Enc(ev.ID), ev.CreatedAt, env.E.CreatedAt)
+							log.I.F(
+								"HandleDelete: skipping newer event %s (created_at=%d) - delete event timestamp is %d",
+								hex.Enc(ev.ID), ev.CreatedAt, env.E.CreatedAt,
+							)
 							continue
 						}
-						
-						log.I.F("HandleDelete: deleting event %s via a-tag %d:%s:%s (event_time=%d, delete_time=%d)", 
-							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey), string(at.DTag), ev.CreatedAt, env.E.CreatedAt)
+
+						log.I.F(
+							"HandleDelete: deleting event %s via a-tag %d:%s:%s (event_time=%d, delete_time=%d)",
+							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey),
+							string(at.DTag), ev.CreatedAt, env.E.CreatedAt,
+						)
 						if err = l.DeleteEventBySerial(
 							l.Ctx, s, ev,
 						); chk.E(err) {
@@ -138,8 +149,11 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					// delete, for the e tag case the author is the signer of
 					// the event.
 					if !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
-						log.W.F("HandleDelete: attempted deletion of event %s by different user - delete pubkey=%s, event pubkey=%s", 
-							hex.Enc(ev.ID), hex.Enc(env.E.Pubkey), hex.Enc(ev.Pubkey))
+						log.W.F(
+							"HandleDelete: attempted deletion of event %s by different user - delete pubkey=%s, event pubkey=%s",
+							hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
+							hex.Enc(ev.Pubkey),
+						)
 						continue
 					}
 					validDeletionFound = true
@@ -147,8 +161,10 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					if ev.Kind == kind.EventDeletion.K {
 						continue
 					}
-					log.I.F("HandleDelete: deleting event %s by authorized user %s", 
-						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey))
+					log.I.F(
+						"HandleDelete: deleting event %s by authorized user %s",
+						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
+					)
 					if err = l.DeleteEventBySerial(l.Ctx, s, ev); chk.E(err) {
 						continue
 					}
@@ -196,11 +212,11 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 		}
 		continue
 	}
-	
+
 	// If no valid deletions were found, return an error
 	if !validDeletionFound {
 		return fmt.Errorf("blocked: cannot delete events that belong to other users")
 	}
-	
+
 	return
 }

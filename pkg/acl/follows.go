@@ -98,9 +98,9 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 				if ev, err = f.D.FetchEventBySerial(s); chk.E(err) {
 					continue
 				}
-				log.I.F("admin follow list:\n%s", ev.Serialize())
+				// log.I.F("admin follow list:\n%s", ev.Serialize())
 				for _, v := range ev.Tags.GetAll([]byte("p")) {
-					log.I.F("adding follow: %s", v.Value())
+					// log.I.F("adding follow: %s", v.Value())
 					var a []byte
 					if b, e := hex.Dec(string(v.Value())); chk.E(e) {
 						continue
