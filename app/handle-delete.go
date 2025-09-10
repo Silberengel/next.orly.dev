@@ -85,8 +85,16 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 							log.I.F("HandleDelete: skipping non-replaceable event %s - a-tags only apply to replaceable events", hex.Enc(ev.ID))
 							continue
 						}
-						log.I.F("HandleDelete: deleting event %s via a-tag %d:%s:%s", 
-							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey), string(at.DTag))
+						
+						// Only delete events that are older than or equal to the delete event timestamp
+						if ev.CreatedAt > env.E.CreatedAt {
+							log.I.F("HandleDelete: skipping newer event %s (created_at=%d) - delete event timestamp is %d", 
+								hex.Enc(ev.ID), ev.CreatedAt, env.E.CreatedAt)
+							continue
+						}
+						
+						log.I.F("HandleDelete: deleting event %s via a-tag %d:%s:%s (event_time=%d, delete_time=%d)", 
+							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey), string(at.DTag), ev.CreatedAt, env.E.CreatedAt)
 						if err = l.DeleteEventBySerial(
 							l.Ctx, s, ev,
 						); chk.E(err) {
