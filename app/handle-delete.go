@@ -71,11 +71,22 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						if ev, err = l.FetchEventBySerial(s); chk.E(err) {
 							continue
 						}
-						if !(kind.IsReplaceable(ev.Kind) && len(at.DTag) == 0) {
-							// skip a tags with no dtag if the kind is not
-							// replaceable.
+						// Only delete events that match the a-tag criteria:
+						// - For parameterized replaceable events: must have matching d-tag
+						// - For regular replaceable events: should not have d-tag constraint
+						if kind.IsParameterizedReplaceable(ev.Kind) {
+							// For parameterized replaceable, we need a DTag to match
+							if len(at.DTag) == 0 {
+								log.I.F("HandleDelete: skipping parameterized replaceable event %s - no DTag in a-tag", hex.Enc(ev.ID))
+								continue
+							}
+						} else if !kind.IsReplaceable(ev.Kind) {
+							// For non-replaceable events, a-tags don't apply
+							log.I.F("HandleDelete: skipping non-replaceable event %s - a-tags only apply to replaceable events", hex.Enc(ev.ID))
 							continue
 						}
+						log.I.F("HandleDelete: deleting event %s via a-tag %d:%s:%s", 
+							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey), string(at.DTag))
 						if err = l.DeleteEventBySerial(
 							l.Ctx, s, ev,
 						); chk.E(err) {
