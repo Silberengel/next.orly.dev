@@ -23,7 +23,7 @@ func (l *Listener) GetSerialsFromFilter(f *filter.F) (
 	return l.D.GetSerialsFromFilter(f)
 }
 
-func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
+func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 	log.I.C(
 		func() string {
 			return fmt.Sprintf(
@@ -39,15 +39,17 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
 		}
 	}
 	// process the tags in the delete event
-	var err error
+	var deleteErr error
+	var validDeletionFound bool
 	for _, t := range *env.E.Tags {
 		// first search for a tags, as these are the simplest to process
 		if utils.FastEqual(t.Key(), []byte("a")) {
 			at := new(atag.T)
-			if _, err = at.Unmarshal(t.Value()); chk.E(err) {
+			if _, deleteErr = at.Unmarshal(t.Value()); chk.E(deleteErr) {
 				continue
 			}
 			if ownerDelete || utils.FastEqual(env.E.Pubkey, at.Pubkey) {
+				validDeletionFound = true
 				// find the event and delete it
 				f := &filter.F{
 					Authors: tag.NewFromBytesSlice(at.Pubkey),
@@ -114,15 +116,20 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
 						continue
 					}
 					// check that the author is the same as the signer of the
-					// delete, for the k tag case the author is the signer of
+					// delete, for the e tag case the author is the signer of
 					// the event.
 					if !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
+						log.W.F("HandleDelete: attempted deletion of event %s by different user - delete pubkey=%s, event pubkey=%s", 
+							hex.Enc(ev.ID), hex.Enc(env.E.Pubkey), hex.Enc(ev.Pubkey))
 						continue
 					}
+					validDeletionFound = true
 					// exclude delete events
 					if ev.Kind == kind.EventDeletion.K {
 						continue
 					}
+					log.I.F("HandleDelete: deleting event %s by authorized user %s", 
+						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey))
 					if err = l.DeleteEventBySerial(l.Ctx, s, ev); chk.E(err) {
 						continue
 					}
@@ -170,5 +177,11 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) {
 		}
 		continue
 	}
+	
+	// If no valid deletions were found, return an error
+	if !validDeletionFound {
+		return fmt.Errorf("blocked: cannot delete events that belong to other users")
+	}
+	
 	return
 }

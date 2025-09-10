@@ -103,7 +103,17 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
-		l.HandleDelete(env)
+		if err = l.HandleDelete(env); err != nil {
+			if strings.HasPrefix(err.Error(), "blocked:") {
+				errStr := err.Error()[len("blocked: "):len(err.Error())]
+				if err = Ok.Error(
+					l, env, errStr,
+				); chk.E(err) {
+					return
+				}
+				return
+			}
+		}
 	} else {
 		// check if the event was deleted
 		if err = l.CheckForDeleted(env.E, l.Admins); err != nil {
