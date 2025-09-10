@@ -281,6 +281,67 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
 				continue
 			}
+			
+			// Add logging for tag filter debugging
+			if f.Tags != nil && f.Tags.Len() > 0 {
+				var eventTags []string
+				if ev.Tags != nil && ev.Tags.Len() > 0 {
+					for _, t := range *ev.Tags {
+						if t.Len() >= 2 {
+							eventTags = append(eventTags, string(t.Key())+"="+string(t.Value()))
+						}
+					}
+				}
+				log.T.F("QueryEvents: processing event ID=%s kind=%d tags=%v", hex.Enc(ev.ID), ev.Kind, eventTags)
+				
+				// Check if this event matches ALL required tags in the filter
+				tagMatches := 0
+				for _, filterTag := range *f.Tags {
+					if filterTag.Len() >= 2 {
+						filterKey := filterTag.Key()
+						// Handle filter keys that start with # (remove the prefix for comparison)
+						var actualKey []byte
+						if len(filterKey) == 2 && filterKey[0] == '#' {
+							actualKey = filterKey[1:]
+						} else {
+							actualKey = filterKey
+						}
+						
+						// Check if event has this tag key with any of the filter's values
+						eventHasTag := false
+						if ev.Tags != nil {
+							for _, eventTag := range *ev.Tags {
+								if eventTag.Len() >= 2 && bytes.Equal(eventTag.Key(), actualKey) {
+									// Check if the event's tag value matches any of the filter's values
+									for _, filterValue := range filterTag.T[1:] {
+										if bytes.Equal(eventTag.Value(), filterValue) {
+											eventHasTag = true
+											break
+										}
+									}
+									if eventHasTag {
+										break
+									}
+								}
+							}
+						}
+						if eventHasTag {
+							tagMatches++
+						}
+						log.T.F("QueryEvents: tag filter %s (actual key: %s) matches: %v (total matches: %d/%d)", 
+							string(filterKey), string(actualKey), eventHasTag, tagMatches, f.Tags.Len())
+					}
+				}
+				
+				// If not all tags match, skip this event
+				if tagMatches < f.Tags.Len() {
+					log.T.F("QueryEvents: event ID=%s SKIPPED - only matches %d/%d required tags", 
+						hex.Enc(ev.ID), tagMatches, f.Tags.Len())
+					continue
+				}
+				log.T.F("QueryEvents: event ID=%s PASSES all tag filters", hex.Enc(ev.ID))
+			}
+			
 			// Skip events with kind 5 (Deletion)
 			if ev.Kind == kind.Deletion.K {
 				continue
