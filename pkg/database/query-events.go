@@ -42,21 +42,31 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	var expDeletes types.Uint40s
 	var expEvs event.S
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		for _, idx := range f.Ids.T {
+		log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
+  for _, idx := range f.Ids.T {
+  			log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
 			// we know there is only Ids in this, so run the ID query and fetch.
 			var ser *types.Uint40
 			if ser, err = d.GetSerialById(idx); chk.E(err) {
+				log.T.F("QueryEvents: id miss or error id=%s err=%v", hex.Enc(idx), err)
 				continue
 			}
 			// fetch the events
 			var ev *event.E
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
+				log.T.F("QueryEvents: fetch by serial failed for id=%s ser=%v err=%v", hex.Enc(idx), ser, err)
 				continue
 			}
+			log.T.F("QueryEvents: found id=%s kind=%d created_at=%d", hex.Enc(ev.ID), ev.Kind, ev.CreatedAt)
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
 				expDeletes = append(expDeletes, ser)
 				expEvs = append(expEvs, ev)
+				continue
+			}
+			// skip events that have been deleted by a proper deletion event
+			if derr := d.CheckForDeleted(ev, nil); derr != nil {
+				log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", hex.Enc(ev.ID), derr)
 				continue
 			}
 			evs = append(evs, ev)
@@ -68,10 +78,15 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			},
 		)
 	} else {
+		// non-IDs path
 		var idPkTs []*store.IdPkTs
+		if f.Authors != nil && f.Authors.Len() > 0 && f.Kinds != nil && f.Kinds.Len() > 0 {
+			log.T.F("QueryEvents: authors+kinds path, authors=%d kinds=%d", f.Authors.Len(), f.Kinds.Len())
+		}
 		if idPkTs, err = d.QueryForIds(c, f); chk.E(err) {
 			return
 		}
+		log.T.F("QueryEvents: QueryForIds returned %d candidates", len(idPkTs))
 		// Create a map to store the latest version of replaceable events
 		replaceableEvents := make(map[string]*event.E)
 		// Create a map to store the latest version of parameterized replaceable
@@ -83,8 +98,8 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 		// events)
 		deletionsByKindPubkey := make(map[string]bool)
 		// Map to track deletion events by kind, pubkey, and d-tag (for
-		// parameterized replaceable events)
-		deletionsByKindPubkeyDTag := make(map[string]map[string]bool)
+		// parameterized replaceable events). We store the newest delete timestamp per d-tag.
+		deletionsByKindPubkeyDTag := make(map[string]map[string]int64)
 		// Map to track specific event IDs that have been deleted
 		deletedEventIds := make(map[string]bool)
 		// Query for deletion events separately if we have authors in the filter
@@ -169,11 +184,13 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 					key := hex.Enc(pk) + ":" + strconv.Itoa(int(kk.K))
 					// Initialize the inner map if it doesn't exist
 					if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
-						deletionsByKindPubkeyDTag[key] = make(map[string]bool)
+						deletionsByKindPubkeyDTag[key] = make(map[string]int64)
 					}
-					// Mark this d-tag as deleted
+					// Record the newest delete timestamp for this d-tag
 					dValue := string(split[2])
-					deletionsByKindPubkeyDTag[key][dValue] = true
+					if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
+						deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
+					}
 					// Debug logging
 				}
 				// For replaceable events, we need to check if there are any
@@ -223,12 +240,14 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 							// If no 'd' tag, use empty string
 							dValue = ""
 						}
-						// Initialize the inner map if it doesn't exist
-						if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
-							deletionsByKindPubkeyDTag[key] = make(map[string]bool)
-						}
-						// Mark this d-tag as deleted
-						deletionsByKindPubkeyDTag[key][dValue] = true
+ 					// Initialize the inner map if it doesn't exist
+ 					if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
+ 						deletionsByKindPubkeyDTag[key] = make(map[string]int64)
+ 					}
+ 					// Record the newest delete timestamp for this d-tag
+ 					if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
+ 						deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
+ 					}
 					}
 				}
 			}
@@ -308,10 +327,10 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 
 				// Check if this event has been deleted via an a-tag
 				if deletionMap, exists := deletionsByKindPubkeyDTag[key]; exists {
-					// If the d-tag value is in the deletion map and this event
-					// is not specifically requested by ID, skip it
-					if deletionMap[dValue] && !isIdInFilter {
-						log.T.F("Debug: Event deleted - skipping")
+					// If there is a deletion timestamp and this event is older than the deletion,
+					// and this event is not specifically requested by ID, skip it
+					if delTs, ok := deletionMap[dValue]; ok && ev.CreatedAt < delTs && !isIdInFilter {
+						log.T.F("Debug: Event deleted by a-tag (older than delete) - skipping")
 						continue
 					}
 				}

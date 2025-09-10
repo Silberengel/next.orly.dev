@@ -29,7 +29,7 @@ type C struct {
 	Port        int      `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
 	LogLevel    string   `env:"ORLY_LOG_LEVEL" default:"info" usage:"relay log level: fatal error warn info debug trace"`
 	DBLogLevel  string   `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
-	LogToStdout bool     `env:"ORLY_LOG_TO_STDOUT" usage:"log to stdout instead of stderr"`
+	LogToStdout bool     `env:"ORLY_LOG_TO_STDOUT" default:"false" usage:"log to stdout instead of stderr"`
 	Pprof       string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation"`
 	IPWhitelist []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
 	Admins      []string `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`

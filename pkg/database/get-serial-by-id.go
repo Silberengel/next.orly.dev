@@ -6,12 +6,15 @@ import (
 	"database.orly/indexes/types"
 	"encoders.orly/filter"
 	"encoders.orly/tag"
+	"encoders.orly/hex"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"lol.mleku.dev/log"
 )
 
 func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
+	log.T.F("GetSerialById: input id=%s", hex.Enc(id))
 	var idxs []Range
 	if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.NewFromBytesSlice(id)}); chk.E(err) {
 		return

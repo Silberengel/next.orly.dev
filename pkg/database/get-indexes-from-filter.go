@@ -306,8 +306,8 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 			for _, author := range f.Authors.T {
 				kind := new(types2.Uint16)
 				kind.Set(k)
-				p := new(types2.PubHash)
-				if err = p.FromPubkey(author); chk.E(err) {
+				var p *types2.PubHash
+				if p, err = CreatePubHashFromData(author); chk.E(err) {
 					return
 				}
 				start, end := new(bytes.Buffer), new(bytes.Buffer)
@@ -351,8 +351,8 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	// Pubkey pc-
 	if f.Authors != nil && f.Authors.Len() > 0 {
 		for _, author := range f.Authors.T {
-			p := new(types2.PubHash)
-			if err = p.FromPubkey(author); chk.E(err) {
+			var p *types2.PubHash
+			if p, err = CreatePubHashFromData(author); chk.E(err) {
 				return
 			}
 			start, end := new(bytes.Buffer), new(bytes.Buffer)
