@@ -101,17 +101,17 @@ func (p *P) Receive(msg typer.T) {
 		if m.Cancel {
 			if m.Id == "" {
 				p.removeSubscriber(m.Conn)
-				log.D.F("removed listener %s", m.remote)
+				// log.D.F("removed listener %s", m.remote)
 			} else {
 				p.removeSubscriberId(m.Conn, m.Id)
-				log.D.C(
-					func() string {
-						return fmt.Sprintf(
-							"removed subscription %s for %s", m.Id,
-							m.remote,
-						)
-					},
-				)
+				// log.D.C(
+				// 	func() string {
+				// 		return fmt.Sprintf(
+				// 			"removed subscription %s for %s", m.Id,
+				// 			m.remote,
+				// 		)
+				// 	},
+				// )
 			}
 			return
 		}
@@ -119,27 +119,31 @@ func (p *P) Receive(msg typer.T) {
 		defer p.Mx.Unlock()
 		if subs, ok := p.Map[m.Conn]; !ok {
 			subs = make(map[string]Subscription)
-			subs[m.Id] = Subscription{S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey}
+			subs[m.Id] = Subscription{
+				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+			}
 			p.Map[m.Conn] = subs
-			log.D.C(
-				func() string {
-					return fmt.Sprintf(
-						"created new subscription for %s, %s",
-						m.remote,
-						m.Filters.Marshal(nil),
-					)
-				},
-			)
+			// log.D.C(
+			// 	func() string {
+			// 		return fmt.Sprintf(
+			// 			"created new subscription for %s, %s",
+			// 			m.remote,
+			// 			m.Filters.Marshal(nil),
+			// 		)
+			// 	},
+			// )
 		} else {
-			subs[m.Id] = Subscription{S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey}
-			log.D.C(
-				func() string {
-					return fmt.Sprintf(
-						"added subscription %s for %s", m.Id,
-						m.remote,
-					)
-				},
-			)
+			subs[m.Id] = Subscription{
+				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+			}
+			// log.D.C(
+			// 	func() string {
+			// 		return fmt.Sprintf(
+			// 			"added subscription %s for %s", m.Id,
+			// 			m.remote,
+			// 		)
+			// 	},
+			// )
 		}
 	}
 }
@@ -168,7 +172,9 @@ func (p *P) Deliver(ev *event.E) {
 	for w, subs := range p.Map {
 		for id, subscriber := range subs {
 			if subscriber.Match(ev) {
-				deliveries = append(deliveries, delivery{w: w, id: id, sub: subscriber})
+				deliveries = append(
+					deliveries, delivery{w: w, id: id, sub: subscriber},
+				)
 			}
 		}
 	}

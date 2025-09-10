@@ -46,7 +46,7 @@ func (l *Listener) HandleAuth(b []byte) (err error) {
 			return
 		}
 		log.D.F(
-			"%s authed to pubkey,%0x", l.remote,
+			"%s authed to pubkey %0x", l.remote,
 			env.Event.Pubkey,
 		)
 		l.authedPubkey.Store(env.Event.Pubkey)

@@ -73,7 +73,7 @@ whitelist:
 	listener.challenge.Store([]byte(hex.Enc(chal)))
 	// If admins are configured, immediately prompt client to AUTH (NIP-42)
 	if len(s.Config.Admins) > 0 {
-		log.D.F("sending initial AUTH challenge to %s", remote)
+		// log.D.F("sending initial AUTH challenge to %s", remote)
 		if err = authenvelope.NewChallengeWith(listener.challenge.Load()).
 			Write(listener); chk.E(err) {
 			return
@@ -82,7 +82,7 @@ whitelist:
 	ticker := time.NewTicker(DefaultPingWait)
 	go s.Pinger(ctx, conn, ticker, cancel)
 	defer func() {
-		log.D.F("closing websocket connection from %s", remote)
+		// log.D.F("closing websocket connection from %s", remote)
 		cancel()
 		ticker.Stop()
 		listener.publishers.Receive(&W{Cancel: true})
@@ -95,7 +95,7 @@ whitelist:
 		}
 		var typ websocket.MessageType
 		var msg []byte
-		log.T.F("waiting for message from %s", remote)
+		// log.T.F("waiting for message from %s", remote)
 		if typ, msg, err = conn.Read(ctx); chk.E(err) {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",

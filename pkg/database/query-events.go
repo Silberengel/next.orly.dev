@@ -47,18 +47,24 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			log.T.F("QueryEvents: looking for ID=%s", hex.Enc(id))
 		}
 		log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
-  for _, idx := range f.Ids.T {
-  			log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
+		for _, idx := range f.Ids.T {
+			log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
 			// we know there is only Ids in this, so run the ID query and fetch.
 			var ser *types.Uint40
 			var idErr error
 			if ser, idErr = d.GetSerialById(idx); idErr != nil {
 				// Check if this is a "not found" error which is expected for IDs we don't have
 				if strings.Contains(idErr.Error(), "id not found in database") {
-					log.T.F("QueryEvents: ID not found in database: %s", hex.Enc(idx))
+					log.T.F(
+						"QueryEvents: ID not found in database: %s",
+						hex.Enc(idx),
+					)
 				} else {
 					// Log unexpected errors but continue processing other IDs
-					log.E.F("QueryEvents: error looking up id=%s err=%v", hex.Enc(idx), idErr)
+					log.E.F(
+						"QueryEvents: error looking up id=%s err=%v",
+						hex.Enc(idx), idErr,
+					)
 				}
 				continue
 			}
@@ -70,23 +76,38 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			// fetch the events
 			var ev *event.E
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
-				log.T.F("QueryEvents: fetch by serial failed for id=%s ser=%v err=%v", hex.Enc(idx), ser, err)
+				log.T.F(
+					"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
+					hex.Enc(idx), ser, err,
+				)
 				continue
 			}
-			log.T.F("QueryEvents: found id=%s kind=%d created_at=%d", hex.Enc(ev.ID), ev.Kind, ev.CreatedAt)
+			log.T.F(
+				"QueryEvents: found id=%s kind=%d created_at=%d",
+				hex.Enc(ev.ID), ev.Kind, ev.CreatedAt,
+			)
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
-				log.T.F("QueryEvents: id=%s filtered out due to expiration", hex.Enc(ev.ID))
+				log.T.F(
+					"QueryEvents: id=%s filtered out due to expiration",
+					hex.Enc(ev.ID),
+				)
 				expDeletes = append(expDeletes, ser)
 				expEvs = append(expEvs, ev)
 				continue
 			}
 			// skip events that have been deleted by a proper deletion event
 			if derr := d.CheckForDeleted(ev, nil); derr != nil {
-				log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", hex.Enc(ev.ID), derr)
+				log.T.F(
+					"QueryEvents: id=%s filtered out due to deletion: %v",
+					hex.Enc(ev.ID), derr,
+				)
 				continue
 			}
-			log.T.F("QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results", hex.Enc(ev.ID))
+			log.T.F(
+				"QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results",
+				hex.Enc(ev.ID),
+			)
 			evs = append(evs, ev)
 		}
 		// sort the events by timestamp
@@ -98,13 +119,13 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	} else {
 		// non-IDs path
 		var idPkTs []*store.IdPkTs
-		if f.Authors != nil && f.Authors.Len() > 0 && f.Kinds != nil && f.Kinds.Len() > 0 {
-			log.T.F("QueryEvents: authors+kinds path, authors=%d kinds=%d", f.Authors.Len(), f.Kinds.Len())
-		}
+		// if f.Authors != nil && f.Authors.Len() > 0 && f.Kinds != nil && f.Kinds.Len() > 0 {
+		// log.T.F("QueryEvents: authors+kinds path, authors=%d kinds=%d", f.Authors.Len(), f.Kinds.Len())
+		// }
 		if idPkTs, err = d.QueryForIds(c, f); chk.E(err) {
 			return
 		}
-		log.T.F("QueryEvents: QueryForIds returned %d candidates", len(idPkTs))
+		// log.T.F("QueryEvents: QueryForIds returned %d candidates", len(idPkTs))
 		// Create a map to store the latest version of replaceable events
 		replaceableEvents := make(map[string]*event.E)
 		// Create a map to store the latest version of parameterized replaceable
@@ -258,19 +279,18 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 							// If no 'd' tag, use empty string
 							dValue = ""
 						}
- 					// Initialize the inner map if it doesn't exist
- 					if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
- 						deletionsByKindPubkeyDTag[key] = make(map[string]int64)
- 					}
- 					// Record the newest delete timestamp for this d-tag
- 					if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
- 						deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
- 					}
+						// Initialize the inner map if it doesn't exist
+						if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
+							deletionsByKindPubkeyDTag[key] = make(map[string]int64)
+						}
+						// Record the newest delete timestamp for this d-tag
+						if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
+							deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
+						}
 					}
 				}
 			}
 		}
-
 		// Second pass: process all events, filtering out deleted ones
 		for _, idpk := range idPkTs {
 			var ev *event.E
@@ -281,19 +301,24 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
 				continue
 			}
-			
+
 			// Add logging for tag filter debugging
 			if f.Tags != nil && f.Tags.Len() > 0 {
 				var eventTags []string
 				if ev.Tags != nil && ev.Tags.Len() > 0 {
 					for _, t := range *ev.Tags {
 						if t.Len() >= 2 {
-							eventTags = append(eventTags, string(t.Key())+"="+string(t.Value()))
+							eventTags = append(
+								eventTags,
+								string(t.Key())+"="+string(t.Value()),
+							)
 						}
 					}
 				}
-				log.T.F("QueryEvents: processing event ID=%s kind=%d tags=%v", hex.Enc(ev.ID), ev.Kind, eventTags)
-				
+				// log.T.F(
+				// 	"QueryEvents: processing event ID=%s kind=%d tags=%v",
+				// 	hex.Enc(ev.ID), ev.Kind, eventTags,
+				// )
 				// Check if this event matches ALL required tags in the filter
 				tagMatches := 0
 				for _, filterTag := range *f.Tags {
@@ -306,15 +331,18 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 						} else {
 							actualKey = filterKey
 						}
-						
 						// Check if event has this tag key with any of the filter's values
 						eventHasTag := false
 						if ev.Tags != nil {
 							for _, eventTag := range *ev.Tags {
-								if eventTag.Len() >= 2 && bytes.Equal(eventTag.Key(), actualKey) {
+								if eventTag.Len() >= 2 && bytes.Equal(
+									eventTag.Key(), actualKey,
+								) {
 									// Check if the event's tag value matches any of the filter's values
 									for _, filterValue := range filterTag.T[1:] {
-										if bytes.Equal(eventTag.Value(), filterValue) {
+										if bytes.Equal(
+											eventTag.Value(), filterValue,
+										) {
 											eventHasTag = true
 											break
 										}
@@ -328,20 +356,28 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 						if eventHasTag {
 							tagMatches++
 						}
-						log.T.F("QueryEvents: tag filter %s (actual key: %s) matches: %v (total matches: %d/%d)", 
-							string(filterKey), string(actualKey), eventHasTag, tagMatches, f.Tags.Len())
+						// log.T.F(
+						// 	"QueryEvents: tag filter %s (actual key: %s) matches: %v (total matches: %d/%d)",
+						// 	string(filterKey), string(actualKey), eventHasTag,
+						// 	tagMatches, f.Tags.Len(),
+						// )
 					}
 				}
-				
+
 				// If not all tags match, skip this event
 				if tagMatches < f.Tags.Len() {
-					log.T.F("QueryEvents: event ID=%s SKIPPED - only matches %d/%d required tags", 
-						hex.Enc(ev.ID), tagMatches, f.Tags.Len())
+					// log.T.F(
+					// 	"QueryEvents: event ID=%s SKIPPED - only matches %d/%d required tags",
+					// 	hex.Enc(ev.ID), tagMatches, f.Tags.Len(),
+					// )
 					continue
 				}
-				log.T.F("QueryEvents: event ID=%s PASSES all tag filters", hex.Enc(ev.ID))
+				// log.T.F(
+				// 	"QueryEvents: event ID=%s PASSES all tag filters",
+				// 	hex.Enc(ev.ID),
+				// )
 			}
-			
+
 			// Skip events with kind 5 (Deletion)
 			if ev.Kind == kind.Deletion.K {
 				continue

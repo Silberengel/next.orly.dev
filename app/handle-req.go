@@ -25,7 +25,7 @@ import (
 )
 
 func (l *Listener) HandleReq(msg []byte) (err error) {
-	log.T.F("HandleReq: from %s", l.remote)
+	// log.T.F("HandleReq: from %s", l.remote)
 	var rem []byte
 	env := reqenvelope.New()
 	if rem, err = env.Unmarshal(msg); chk.E(err) {
@@ -54,42 +54,42 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		return
 	default:
 		// user has read access or better, continue
-		log.D.F("user has %s access", accessLevel)
+		// log.D.F("user has %s access", accessLevel)
 	}
- var events event.S
- for _, f := range *env.Filters {
- 		idsLen := 0; kindsLen := 0; authorsLen := 0; tagsLen := 0
- 		if f != nil {
- 			if f.Ids != nil { idsLen = f.Ids.Len() }
- 			if f.Kinds != nil { kindsLen = f.Kinds.Len() }
- 			if f.Authors != nil { authorsLen = f.Authors.Len() }
- 			if f.Tags != nil { tagsLen = f.Tags.Len() }
- 		}
- 		log.T.F("REQ %s: filter summary ids=%d kinds=%d authors=%d tags=%d", env.Subscription, idsLen, kindsLen, authorsLen, tagsLen)
- 		if f != nil && f.Authors != nil && f.Authors.Len() > 0 {
- 			var authors []string
- 			for _, a := range f.Authors.T { authors = append(authors, hex.Enc(a)) }
- 			log.T.F("REQ %s: authors=%v", env.Subscription, authors)
- 		}
- 		if f != nil && f.Kinds != nil && f.Kinds.Len() > 0 {
- 			log.T.F("REQ %s: kinds=%v", env.Subscription, f.Kinds.ToUint16())
- 		}
-		if f != nil && f.Ids != nil && f.Ids.Len() > 0 {
-			var ids []string
-			for _, id := range f.Ids.T {
-				ids = append(ids, hex.Enc(id))
-			}
-			var lim any
-			if pointers.Present(f.Limit) {
-				lim = *f.Limit
-			} else {
-				lim = nil
-			}
-			log.T.F(
-				"REQ %s: ids filter count=%d ids=%v limit=%v", env.Subscription,
-				f.Ids.Len(), ids, lim,
-			)
-		}
+	var events event.S
+	for _, f := range *env.Filters {
+		// idsLen := 0; kindsLen := 0; authorsLen := 0; tagsLen := 0
+		// if f != nil {
+		// 	if f.Ids != nil { idsLen = f.Ids.Len() }
+		// 	if f.Kinds != nil { kindsLen = f.Kinds.Len() }
+		// 	if f.Authors != nil { authorsLen = f.Authors.Len() }
+		// 	if f.Tags != nil { tagsLen = f.Tags.Len() }
+		// }
+		// log.T.F("REQ %s: filter summary ids=%d kinds=%d authors=%d tags=%d", env.Subscription, idsLen, kindsLen, authorsLen, tagsLen)
+		// if f != nil && f.Authors != nil && f.Authors.Len() > 0 {
+		// 	var authors []string
+		// 	for _, a := range f.Authors.T { authors = append(authors, hex.Enc(a)) }
+		// 	log.T.F("REQ %s: authors=%v", env.Subscription, authors)
+		// }
+		// if f != nil && f.Kinds != nil && f.Kinds.Len() > 0 {
+		// 	log.T.F("REQ %s: kinds=%v", env.Subscription, f.Kinds.ToUint16())
+		// }
+		// if f != nil && f.Ids != nil && f.Ids.Len() > 0 {
+		// 	var ids []string
+		// 	for _, id := range f.Ids.T {
+		// 		ids = append(ids, hex.Enc(id))
+		// 	}
+		// 	var lim any
+		// 	if pointers.Present(f.Limit) {
+		// 		lim = *f.Limit
+		// 	} else {
+		// 		lim = nil
+		// 	}
+		// 	log.T.F(
+		// 		"REQ %s: ids filter count=%d ids=%v limit=%v", env.Subscription,
+		// 		f.Ids.Len(), ids, lim,
+		// 	)
+		// }
 		if pointers.Present(f.Limit) {
 			if *f.Limit == 0 {
 				continue
@@ -107,16 +107,16 @@ privCheck:
 	for _, ev := range events {
 		if kind.IsPrivileged(ev.Kind) &&
 			accessLevel != "admin" { // admins can see all events
-			log.I.F("checking privileged event %s", ev.ID)
+			// log.I.F("checking privileged event %s", ev.ID)
 			pk := l.authedPubkey.Load()
 			if pk == nil {
 				continue
 			}
 			if utils.FastEqual(ev.Pubkey, pk) {
-				log.I.F(
-					"privileged event %s is for logged in pubkey %0x", ev.ID,
-					pk,
-				)
+				// log.I.F(
+				// 	"privileged event %s is for logged in pubkey %0x", ev.ID,
+				// 	pk,
+				// )
 				tmp = append(tmp, ev)
 				continue
 			}
@@ -127,10 +127,10 @@ privCheck:
 					continue
 				}
 				if utils.FastEqual(pt, pk) {
-					log.I.F(
-						"privileged event %s is for logged in pubkey %0x",
-						ev.ID, pk,
-					)
+					// log.I.F(
+					// 	"privileged event %s is for logged in pubkey %0x",
+					// 	ev.ID, pk,
+					// )
 					tmp = append(tmp, ev)
 					continue privCheck
 				}
@@ -146,10 +146,10 @@ privCheck:
 	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
-		log.T.F(
-			"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
-			hex.Enc(ev.ID), ev.Kind,
-		)
+		// log.T.F(
+		// 	"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
+		// 	hex.Enc(ev.ID), ev.Kind,
+		// )
 		var res *eventenvelope.Result
 		if res, err = eventenvelope.NewResultWith(
 			env.Subscription, ev,
@@ -164,7 +164,7 @@ privCheck:
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
-	log.T.F("sending EOSE to %s", l.remote)
+	// log.T.F("sending EOSE to %s", l.remote)
 	if err = eoseenvelope.NewFrom(env.Subscription).
 		Write(l); chk.E(err) {
 		return
@@ -172,7 +172,10 @@ privCheck:
 	// if the query was for just Ids, we know there can't be any more results,
 	// so cancel the subscription.
 	cancel := true
-	log.T.F("REQ %s: computing cancel/subscription; events_sent=%d", env.Subscription, len(events))
+	// log.T.F(
+	// 	"REQ %s: computing cancel/subscription; events_sent=%d",
+	// 	env.Subscription, len(events),
+	// )
 	var subbedFilters filter.S
 	for _, f := range *env.Filters {
 		if f.Ids.Len() < 1 {
@@ -187,7 +190,10 @@ privCheck:
 				}
 				notFounds = append(notFounds, id)
 			}
-			log.T.F("REQ %s: ids outstanding=%d of %d", env.Subscription, len(notFounds), f.Ids.Len())
+			// log.T.F(
+			// 	"REQ %s: ids outstanding=%d of %d", env.Subscription,
+			// 	len(notFounds), f.Ids.Len(),
+			// )
 			// if all were found, don't add to subbedFilters
 			if len(notFounds) == 0 {
 				continue

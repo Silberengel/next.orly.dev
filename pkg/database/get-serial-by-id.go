@@ -5,8 +5,8 @@ import (
 
 	"database.orly/indexes/types"
 	"encoders.orly/filter"
-	"encoders.orly/tag"
 	"encoders.orly/hex"
+	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
@@ -19,15 +19,18 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 	if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.NewFromBytesSlice(id)}); chk.E(err) {
 		return
 	}
-	
+
 	for i, idx := range idxs {
-		log.T.F("GetSerialById: searching range %d: start=%x, end=%x", i, idx.Start, idx.End)
+		log.T.F(
+			"GetSerialById: searching range %d: start=%x, end=%x", i, idx.Start,
+			idx.End,
+		)
 	}
 	if len(idxs) == 0 {
 		err = errorf.E("no indexes found for id %0x", id)
 		return
 	}
-	
+
 	idFound := false
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
@@ -46,19 +49,21 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 				idFound = true
 			} else {
 				// Item not found in database
-				log.T.F("GetSerialById: ID not found in database: %s", hex.Enc(id))
+				log.T.F(
+					"GetSerialById: ID not found in database: %s", hex.Enc(id),
+				)
 			}
 			return
 		},
 	); chk.E(err) {
 		return
 	}
-	
+
 	if !idFound {
-		err = errorf.E("id not found in database: %s", hex.Enc(id))
+		err = errorf.T("id not found in database: %s", hex.Enc(id))
 		return
 	}
-	
+
 	return
 }
 

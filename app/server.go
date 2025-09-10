@@ -2,14 +2,12 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"database.orly"
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 	"protocol.orly/publish"
 )
@@ -25,11 +23,11 @@ type Server struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log.T.C(
-		func() string {
-			return fmt.Sprintf("path %v header %v", r.URL, r.Header)
-		},
-	)
+	// log.T.C(
+	// 	func() string {
+	// 		return fmt.Sprintf("path %v header %v", r.URL, r.Header)
+	// 	},
+	// )
 	if r.Header.Get("Upgrade") == "websocket" {
 		s.HandleWebsocket(w, r)
 	} else if r.Header.Get("Accept") == "application/nostr+json" {

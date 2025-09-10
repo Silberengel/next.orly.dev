@@ -45,13 +45,13 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 	for _, ca := range cfg {
 		switch c := ca.(type) {
 		case *config.C:
-			log.D.F("setting ACL config: %v", c)
+			// log.D.F("setting ACL config: %v", c)
 			f.cfg = c
 		case *database.D:
-			log.D.F("setting ACL database: %s", c.Path())
+			// log.D.F("setting ACL database: %s", c.Path())
 			f.D = c
 		case context.Context:
-			log.D.F("setting ACL context: %s", c.Value("id"))
+			// log.D.F("setting ACL context: %s", c.Value("id"))
 			f.Ctx = c
 		default:
 			err = errorf.E("invalid type: %T", reflect.TypeOf(ca))
@@ -64,10 +64,10 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 	// find admin follow lists
 	f.followsMx.Lock()
 	defer f.followsMx.Unlock()
-	log.I.F("finding admins")
+	// log.I.F("finding admins")
 	f.follows, f.admins = nil, nil
 	for _, admin := range f.cfg.Admins {
-		log.I.F("%s", admin)
+		// log.I.F("%s", admin)
 		var adm []byte
 		if a, e := bech32encoding.NpubOrHexToPublicKeyBinary(admin); chk.E(e) {
 			continue
@@ -207,7 +207,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 		log.W.F("follows syncer: no admin relays found in DB (kind 10002)")
 		return
 	}
-	log.I.F(
+	log.T.F(
 		"follows syncer: subscribing to %d relays for %d authors", len(urls),
 		len(authors),
 	)
@@ -244,13 +244,13 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				}
 				*ff = append(*ff, f1)
 				req := reqenvelope.NewFrom([]byte("follows-sync"), ff)
-				if err := c.Write(
+				if err = c.Write(
 					ctx, websocket.MessageText, req.Marshal(nil),
 				); chk.E(err) {
 					_ = c.Close(websocket.StatusInternalError, "write failed")
 					continue
 				}
-				log.I.F("sent REQ to %s for follows subscription", u)
+				log.T.F("sent REQ to %s for follows subscription", u)
 				// read loop
 				for {
 					select {
@@ -337,6 +337,7 @@ func (f *Follows) Syncer() {
 			}
 		}
 	}()
+	f.updated <- struct{}{}
 }
 
 func init() {
