@@ -20,7 +20,15 @@ func (d *D) GetSerialsByRange(idx Range) (
 				},
 			)
 			defer it.Close()
-			for it.Seek(idx.End); it.Valid(); it.Next() {
+			// Start from a position that includes the end boundary (until timestamp)
+			// We create an end boundary that's slightly beyond the actual end to ensure inclusivity
+			endBoundary := make([]byte, len(idx.End))
+			copy(endBoundary, idx.End)
+			// Add 0xff bytes to ensure we capture all events at the exact until timestamp
+			for i := 0; i < 5; i++ {
+				endBoundary = append(endBoundary, 0xff)
+			}
+			for it.Seek(endBoundary); it.Valid(); it.Next() {
 				item := it.Item()
 				var key []byte
 				key = item.Key()

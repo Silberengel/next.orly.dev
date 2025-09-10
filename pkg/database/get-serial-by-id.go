@@ -19,9 +19,16 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 	if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.NewFromBytesSlice(id)}); chk.E(err) {
 		return
 	}
+	
+	for i, idx := range idxs {
+		log.T.F("GetSerialById: searching range %d: start=%x, end=%x", i, idx.Start, idx.End)
+	}
 	if len(idxs) == 0 {
 		err = errorf.E("no indexes found for id %0x", id)
+		return
 	}
+	
+	idFound := false
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
 			it := txn.NewIterator(badger.DefaultIteratorOptions)
@@ -36,15 +43,22 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 				if err = ser.UnmarshalRead(buf); chk.E(err) {
 					return
 				}
+				idFound = true
 			} else {
-				// just don't return what we don't have? others may be
-				// found tho.
+				// Item not found in database
+				log.T.F("GetSerialById: ID not found in database: %s", hex.Enc(id))
 			}
 			return
 		},
 	); chk.E(err) {
 		return
 	}
+	
+	if !idFound {
+		err = errorf.E("id not found in database: %s", hex.Enc(id))
+		return
+	}
+	
 	return
 }
 

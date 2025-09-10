@@ -15,13 +15,7 @@ import (
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
-	log.D.C(
-		func() string {
-			return fmt.Sprintf(
-				"%s received message:\n%s", remote, msg,
-			)
-		},
-	)
+	log.D.F("%s received message:\n%s", remote, msg)
 	var err error
 	var t string
 	var rem []byte

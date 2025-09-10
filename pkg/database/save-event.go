@@ -3,11 +3,13 @@ package database
 import (
 	"bytes"
 	"context"
+	"strings"
 
 	"database.orly/indexes"
 	"database.orly/indexes/types"
 	"encoders.orly/event"
 	"encoders.orly/filter"
+	"encoders.orly/hex"
 	"encoders.orly/kind"
 	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
@@ -43,6 +45,16 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {
 		err = errorf.E("event already exists: %0x", ev.ID)
+		return
+	}
+	
+	// If the error is "id not found", we can proceed with saving the event
+	if err != nil && strings.Contains(err.Error(), "id not found in database") {
+		// Reset error since this is expected for new events
+		err = nil
+	} else if err != nil {
+		// For any other error, return it
+		log.E.F("error checking if event exists: %s", err)
 		return
 	}
 	// check for replacement
@@ -153,6 +165,6 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 			return
 		},
 	)
-	log.T.F("total data written: %d bytes keys %d bytes values", kc, vc)
+	log.T.F("total data written: %d bytes keys %d bytes values for event ID %s", kc, vc, hex.Enc(ev.ID))
 	return
 }

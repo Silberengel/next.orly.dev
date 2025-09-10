@@ -89,12 +89,23 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 					return
 				}
 				buf := new(bytes.Buffer)
+				// Create an index prefix without the serial number
 				idx := indexes.IdEnc(i, nil)
 				if err = idx.MarshalWrite(buf); chk.E(err) {
 					return
 				}
 				b := buf.Bytes()
-				r := Range{b, b}
+				
+				// Create range that will match any serial value with this ID prefix
+				end := make([]byte, len(b))
+				copy(end, b)
+				
+				// Fill the end range with 0xff bytes to match all possible serial values
+				for i := 0; i < 5; i++ {
+					end = append(end, 0xff)
+				}
+				
+				r := Range{b, end}
 				idxs = append(idxs, r)
 				return
 			}(); chk.E(err) {

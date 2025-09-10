@@ -5,6 +5,7 @@ import (
 	"context"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"crypto.orly/sha256"
@@ -42,13 +43,28 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	var expDeletes types.Uint40s
 	var expEvs event.S
 	if f.Ids != nil && f.Ids.Len() > 0 {
+		for _, id := range f.Ids.T {
+			log.T.F("QueryEvents: looking for ID=%s", hex.Enc(id))
+		}
 		log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
   for _, idx := range f.Ids.T {
   			log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
 			// we know there is only Ids in this, so run the ID query and fetch.
 			var ser *types.Uint40
-			if ser, err = d.GetSerialById(idx); chk.E(err) {
-				log.T.F("QueryEvents: id miss or error id=%s err=%v", hex.Enc(idx), err)
+			var idErr error
+			if ser, idErr = d.GetSerialById(idx); idErr != nil {
+				// Check if this is a "not found" error which is expected for IDs we don't have
+				if strings.Contains(idErr.Error(), "id not found in database") {
+					log.T.F("QueryEvents: ID not found in database: %s", hex.Enc(idx))
+				} else {
+					// Log unexpected errors but continue processing other IDs
+					log.E.F("QueryEvents: error looking up id=%s err=%v", hex.Enc(idx), idErr)
+				}
+				continue
+			}
+			// Check if the serial is nil, which indicates the ID wasn't found
+			if ser == nil {
+				log.T.F("QueryEvents: Serial is nil for ID: %s", hex.Enc(idx))
 				continue
 			}
 			// fetch the events
@@ -60,6 +76,7 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			log.T.F("QueryEvents: found id=%s kind=%d created_at=%d", hex.Enc(ev.ID), ev.Kind, ev.CreatedAt)
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
+				log.T.F("QueryEvents: id=%s filtered out due to expiration", hex.Enc(ev.ID))
 				expDeletes = append(expDeletes, ser)
 				expEvs = append(expEvs, ev)
 				continue
@@ -69,6 +86,7 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 				log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", hex.Enc(ev.ID), derr)
 				continue
 			}
+			log.T.F("QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results", hex.Enc(ev.ID))
 			evs = append(evs, ev)
 		}
 		// sort the events by timestamp
