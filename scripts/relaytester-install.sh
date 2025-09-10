@@ -16,4 +16,4 @@ cd relay-tester
 cargo build -r
 cp target/release/relay-tester $GOBIN/
 cd ..
-rm -rf relay-tester
+#rm -rf relay-tester
