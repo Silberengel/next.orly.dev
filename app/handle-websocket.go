@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"encoders.orly/envelopes/authenvelope"
 	"encoders.orly/hex"
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
@@ -70,6 +71,14 @@ whitelist:
 	chal := make([]byte, 32)
 	rand.Read(chal)
 	listener.challenge.Store([]byte(hex.Enc(chal)))
+	// If admins are configured, immediately prompt client to AUTH (NIP-42)
+	if len(s.Config.Admins) > 0 {
+		log.D.F("sending initial AUTH challenge to %s", remote)
+		if err = authenvelope.NewChallengeWith(listener.challenge.Load()).
+			Write(listener); chk.E(err) {
+			return
+		}
+	}
 	ticker := time.NewTicker(DefaultPingWait)
 	go s.Pinger(ctx, conn, ticker, cancel)
 	defer func() {

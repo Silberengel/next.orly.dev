@@ -7,6 +7,7 @@ if ! command -v "relay-tester" &> /dev/null; then
     echo "./scripts/relaytester-install.sh"
     exit
 fi
+rm -rf ~/.local/share/ORLY
 export ORLY_LOG_LEVEL=off
 export ORLY_LISTEN=127.0.0.1
 export ORLY_PORT=3334
