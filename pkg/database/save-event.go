@@ -3,6 +3,7 @@ package database
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	"database.orly/indexes"
@@ -234,6 +235,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	log.T.F(
 		"total data written: %d bytes keys %d bytes values for event ID %s", kc,
 		vc, hex.Enc(ev.ID),
+	)
+	log.T.C(
+		func() string {
+			return fmt.Sprintf("event:\n%s\n", ev.Serialize())
+		},
 	)
 	return
 }

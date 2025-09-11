@@ -15,10 +15,13 @@ const PubHashLen = 8
 type PubHash struct{ val [PubHashLen]byte }
 
 func (ph *PubHash) FromPubkey(pk []byte) (err error) {
+	if len(pk) == 0 {
+		panic("nil pubkey")
+	}
 	if len(pk) != schnorr.PubKeyBytesLen {
 		err = errorf.E(
-			"invalid Pubkey length, got %d require %d",
-			len(pk), schnorr.PubKeyBytesLen,
+			"invalid Pubkey length, got %d require %d %0x",
+			len(pk), schnorr.PubKeyBytesLen, pk,
 		)
 		return
 	}

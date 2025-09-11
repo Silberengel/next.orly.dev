@@ -333,7 +333,7 @@ var (
 	CommunityDefinition = &K{34550}
 	ACLEvent            = &K{39998}
 	// ParameterizedReplaceableEnd is an event type that...
-	ParameterizedReplaceableEnd = &K{39999}
+	ParameterizedReplaceableEnd = &K{40000}
 )
 
 var MapMx sync.RWMutex

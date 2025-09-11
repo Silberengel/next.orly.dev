@@ -95,11 +95,18 @@ whitelist:
 		}
 		var typ websocket.MessageType
 		var msg []byte
-		// log.T.F("waiting for message from %s", remote)
-		if typ, msg, err = conn.Read(ctx); chk.E(err) {
+		log.T.F("waiting for message from %s", remote)
+		if typ, msg, err = conn.Read(ctx); err != nil {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
+				return
+			}
+			// Handle EOF errors gracefully - these occur when client closes connection
+			// or sends incomplete/malformed WebSocket frames
+			if strings.Contains(err.Error(), "EOF") ||
+				strings.Contains(err.Error(), "failed to read frame header") {
+				log.T.F("connection from %s closed: %v", remote, err)
 				return
 			}
 			status := websocket.CloseStatus(err)
@@ -109,6 +116,7 @@ whitelist:
 				websocket.StatusNoStatusRcvd,
 				websocket.StatusAbnormalClosure,
 				websocket.StatusProtocolError:
+				log.T.F("connection from %s closed with status: %v", remote, status)
 			default:
 				log.E.F("unexpected close error from %s: %v", remote, err)
 			}

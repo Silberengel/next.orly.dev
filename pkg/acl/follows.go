@@ -282,7 +282,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 							ctx, res.Event,
 						); err != nil {
 							if !strings.HasPrefix(
-								err.Error(), "event already exists",
+								err.Error(), "blocked:",
 							) {
 								log.W.F(
 									"follows syncer: save event failed: %v",

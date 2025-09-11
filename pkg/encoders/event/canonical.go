@@ -5,7 +5,6 @@ import (
 	"encoders.orly/hex"
 	"encoders.orly/ints"
 	"encoders.orly/text"
-	"lol.mleku.dev/log"
 )
 
 // ToCanonical converts the event to the canonical encoding used to derive the
@@ -23,7 +22,7 @@ func (ev *E) ToCanonical(dst []byte) (b []byte) {
 	b = append(b, ',')
 	b = text.AppendQuote(b, ev.Content, text.NostrEscape)
 	b = append(b, ']')
-	log.D.F("canonical: %s", b)
+	// log.D.F("canonical: %s", b)
 	return
 }
 

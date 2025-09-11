@@ -101,17 +101,17 @@ func (p *P) Receive(msg typer.T) {
 		if m.Cancel {
 			if m.Id == "" {
 				p.removeSubscriber(m.Conn)
-				// log.D.F("removed listener %s", m.remote)
+				log.D.F("removed listener %s", m.remote)
 			} else {
 				p.removeSubscriberId(m.Conn, m.Id)
-				// log.D.C(
-				// 	func() string {
-				// 		return fmt.Sprintf(
-				// 			"removed subscription %s for %s", m.Id,
-				// 			m.remote,
-				// 		)
-				// 	},
-				// )
+				log.D.C(
+					func() string {
+						return fmt.Sprintf(
+							"removed subscription %s for %s", m.Id,
+							m.remote,
+						)
+					},
+				)
 			}
 			return
 		}
@@ -123,27 +123,27 @@ func (p *P) Receive(msg typer.T) {
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
 			}
 			p.Map[m.Conn] = subs
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"created new subscription for %s, %s",
-			// 			m.remote,
-			// 			m.Filters.Marshal(nil),
-			// 		)
-			// 	},
-			// )
+			log.D.C(
+				func() string {
+					return fmt.Sprintf(
+						"created new subscription for %s, %s",
+						m.remote,
+						m.Filters.Marshal(nil),
+					)
+				},
+			)
 		} else {
 			subs[m.Id] = Subscription{
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
 			}
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"added subscription %s for %s", m.Id,
-			// 			m.remote,
-			// 		)
-			// 	},
-			// )
+			log.D.C(
+				func() string {
+					return fmt.Sprintf(
+						"added subscription %s for %s", m.Id,
+						m.remote,
+					)
+				},
+			)
 		}
 	}
 }
@@ -179,14 +179,16 @@ func (p *P) Deliver(ev *event.E) {
 		}
 	}
 	p.Mx.RUnlock()
-	log.D.C(
-		func() string {
-			return fmt.Sprintf(
-				"delivering event %0x to websocket subscribers %d", ev.ID,
-				len(deliveries),
-			)
-		},
-	)
+	if len(deliveries) > 0 {
+		log.D.C(
+			func() string {
+				return fmt.Sprintf(
+					"delivering event %0x to websocket subscribers %d", ev.ID,
+					len(deliveries),
+				)
+			},
+		)
+	}
 	for _, d := range deliveries {
 		// If the event is privileged, enforce that the subscriber's authed pubkey matches
 		// either the event pubkey or appears in any 'p' tag of the event.
@@ -218,8 +220,15 @@ func (p *P) Deliver(ev *event.E) {
 		if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
 			continue
 		}
+		// Use a separate context with timeout for writes to prevent race conditions
+		// where the publisher context gets cancelled while writing events
+		writeCtx, cancel := context.WithTimeout(
+			context.Background(), WriteTimeout,
+		)
+		defer cancel()
+
 		if err = d.w.Write(
-			p.c, websocket.MessageText, res.Marshal(nil),
+			writeCtx, websocket.MessageText, res.Marshal(nil),
 		); chk.E(err) {
 			// On error, remove the subscriber connection safely
 			p.removeSubscriber(d.w)
@@ -245,9 +254,9 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 	var subs map[string]Subscription
 	var ok bool
 	if subs, ok = p.Map[ws]; ok {
-		delete(p.Map[ws], id)
-		_ = subs
-		if len(subs) == 0 {
+		delete(subs, id)
+		// Check the actual map after deletion, not the original reference
+		if len(p.Map[ws]) == 0 {
 			delete(p.Map, ws)
 		}
 	}

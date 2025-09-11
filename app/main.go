@@ -28,6 +28,9 @@ func Run(
 	var err error
 	var adminKeys [][]byte
 	for _, admin := range cfg.Admins {
+		if len(admin) == 0 {
+			continue
+		}
 		var pk []byte
 		if pk, err = bech32encoding.NpubOrHexToPublicKeyBinary(admin); chk.E(err) {
 			continue

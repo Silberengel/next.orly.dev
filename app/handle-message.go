@@ -9,10 +9,11 @@ import (
 	"encoders.orly/envelopes/reqenvelope"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"lol.mleku.dev/log"
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
-	// log.D.F("%s received message:\n%s", remote, msg)
+	log.D.F("%s received message:\n%s", remote, msg)
 	var err error
 	var t string
 	var rem []byte

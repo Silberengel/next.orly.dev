@@ -9,6 +9,7 @@ import (
 	types2 "database.orly/indexes/types"
 	"encoders.orly/filter"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 )
 
 type Range struct {
@@ -95,16 +96,13 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 					return
 				}
 				b := buf.Bytes()
-				
 				// Create range that will match any serial value with this ID prefix
 				end := make([]byte, len(b))
 				copy(end, b)
-				
 				// Fill the end range with 0xff bytes to match all possible serial values
 				for i := 0; i < 5; i++ {
 					end = append(end, 0xff)
 				}
-				
 				r := Range{b, end}
 				idxs = append(idxs, r)
 				return
@@ -241,6 +239,7 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 			for _, t := range *f.Tags {
 				if t.Len() >= 2 && (len(t.Key()) == 1 || (len(t.Key()) == 2 && t.Key()[0] == '#')) {
 					var p *types2.PubHash
+					log.I.S(author)
 					if p, err = CreatePubHashFromData(author); chk.E(err) {
 						return
 					}
@@ -363,6 +362,7 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	if f.Authors != nil && f.Authors.Len() > 0 {
 		for _, author := range f.Authors.T {
 			var p *types2.PubHash
+			log.I.S(author)
 			if p, err = CreatePubHashFromData(author); chk.E(err) {
 				return
 			}

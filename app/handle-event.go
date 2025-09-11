@@ -99,7 +99,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	default:
 		// user has write access or better, continue
-		log.D.F("user has %s access", accessLevel)
+		// log.D.F("user has %s access", accessLevel)
 	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
@@ -146,7 +146,8 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	if err = Ok.Ok(l, env, ""); chk.E(err) {
 		return
 	}
-	defer l.publishers.Deliver(env.E)
+	// Deliver the event to subscribers immediately after sending OK response
+	l.publishers.Deliver(env.E)
 	log.D.F("saved event %0x", env.E.ID)
 	var isNewFromAdmin bool
 	for _, admin := range l.Admins {
@@ -156,11 +157,16 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	if isNewFromAdmin {
+		log.I.F("new event from admin %0x", env.E.Pubkey)
 		// if a follow list was saved, reconfigure ACLs now that it is persisted
 		if env.E.Kind == kind.FollowList.K ||
 			env.E.Kind == kind.RelayListMetadata.K {
-			if err = acl.Registry.Configure(); chk.E(err) {
-			}
+			// Run ACL reconfiguration asynchronously to prevent blocking websocket operations
+			go func() {
+				if err := acl.Registry.Configure(); chk.E(err) {
+					log.E.F("failed to reconfigure ACL: %v", err)
+				}
+			}()
 		}
 	}
 	return
