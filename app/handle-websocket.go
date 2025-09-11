@@ -20,6 +20,7 @@ const (
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
 	DefaultReadTimeout    = 3 * time.Second // Read timeout to detect stalled connections
+	DefaultWriteTimeout   = 3 * time.Second
 	DefaultMaxMessageSize = 1 * units.Mb
 
 	// CloseMessage denotes a close control message. The optional message
@@ -140,9 +141,15 @@ whitelist:
 			return
 		}
 		if typ == PingMessage {
-			if err = conn.Write(ctx, PongMessage, msg); chk.E(err) {
+			// Create a write context with timeout for pong response
+			writeCtx, writeCancel := context.WithTimeout(
+				ctx, DefaultWriteTimeout,
+			)
+			if err = conn.Write(writeCtx, PongMessage, msg); chk.E(err) {
+				writeCancel()
 				return
 			}
+			writeCancel()
 			continue
 		}
 		log.T.F("received message from %s: %s", remote, string(msg))
@@ -162,9 +169,13 @@ func (s *Server) Pinger(
 	for {
 		select {
 		case <-ticker.C:
-			if err = conn.Ping(ctx); chk.E(err) {
+			// Create a write context with timeout for ping operation
+			pingCtx, pingCancel := context.WithTimeout(ctx, DefaultWriteTimeout)
+			if err = conn.Ping(pingCtx); chk.E(err) {
+				pingCancel()
 				return
 			}
+			pingCancel()
 		case <-ctx.Done():
 			return
 		}
