@@ -114,33 +114,56 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				continue
 			}
 		}
- 	// Use a separate context for QueryEvents to prevent cancellation issues
- 	queryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
- 	defer cancel()
- 	log.T.F("HandleReq: About to QueryEvents for %s, main context done: %v", l.remote, l.ctx.Err() != nil)
- 	if events, err = l.QueryEvents(queryCtx, f); chk.E(err) {
- 		if errors.Is(err, badger.ErrDBClosed) {
- 			return
- 		}
- 		log.T.F("HandleReq: QueryEvents error for %s: %v", l.remote, err)
- 		err = nil
- 	}
- 	log.T.F("HandleReq: QueryEvents completed for %s, found %d events", l.remote, len(events))
+		// Use a separate context for QueryEvents to prevent cancellation issues
+		queryCtx, cancel := context.WithTimeout(
+			context.Background(), 30*time.Second,
+		)
+		defer cancel()
+		log.T.F(
+			"HandleReq: About to QueryEvents for %s, main context done: %v",
+			l.remote, l.ctx.Err() != nil,
+		)
+		if events, err = l.QueryEvents(queryCtx, f); chk.E(err) {
+			if errors.Is(err, badger.ErrDBClosed) {
+				return
+			}
+			log.T.F("HandleReq: QueryEvents error for %s: %v", l.remote, err)
+			err = nil
+		}
+		defer func() {
+			for _, ev := range events {
+				ev.Free()
+			}
+		}()
+		log.T.F(
+			"HandleReq: QueryEvents completed for %s, found %d events",
+			l.remote, len(events),
+		)
 	}
 	var tmp event.S
 privCheck:
 	for _, ev := range events {
 		if kind.IsPrivileged(ev.Kind) &&
 			accessLevel != "admin" { // admins can see all events
-			log.I.F("checking privileged event %s", ev.ID)
+			log.T.C(
+				func() string {
+					return fmt.Sprintf(
+						"checking privileged event %0x", ev.ID,
+					)
+				},
+			)
 			pk := l.authedPubkey.Load()
 			if pk == nil {
 				continue
 			}
 			if utils.FastEqual(ev.Pubkey, pk) {
-				log.I.F(
-					"privileged event %s is for logged in pubkey %0x", ev.ID,
-					pk,
+				log.T.C(
+					func() string {
+						return fmt.Sprintf(
+							"privileged event %s is for logged in pubkey %0x",
+							ev.ID, pk,
+						)
+					},
 				)
 				tmp = append(tmp, ev)
 				continue
@@ -152,17 +175,25 @@ privCheck:
 					continue
 				}
 				if utils.FastEqual(pt, pk) {
-					log.I.F(
-						"privileged event %s is for logged in pubkey %0x",
-						ev.ID, pk,
+					log.T.C(
+						func() string {
+							return fmt.Sprintf(
+								"privileged event %s is for logged in pubkey %0x",
+								ev.ID, pk,
+							)
+						},
 					)
 					tmp = append(tmp, ev)
 					continue privCheck
 				}
 			}
-			log.W.F(
-				"privileged event %s does not contain the logged in pubkey %0x",
-				ev.ID, pk,
+			log.T.C(
+				func() string {
+					return fmt.Sprintf(
+						"privileged event %s does not contain the logged in pubkey %0x",
+						ev.ID, pk,
+					)
+				},
 			)
 		} else {
 			tmp = append(tmp, ev)
@@ -171,9 +202,13 @@ privCheck:
 	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
-		log.T.F(
-			"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
-			hex.Enc(ev.ID), ev.Kind,
+		log.D.C(
+			func() string {
+				return fmt.Sprintf(
+					"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
+					hex.Enc(ev.ID), ev.Kind,
+				)
+			},
 		)
 		log.T.C(
 			func() string {

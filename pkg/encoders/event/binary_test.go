@@ -48,6 +48,9 @@ func TestTMarshalBinary_UnmarshalBinary(t *testing.T) {
 
 		// Marshal unmarshaled binary event back to JSON
 		unmarshaledJSON := eb.Serialize()
+		defer func(ev *E) {
+			eb.Free()
+		}(eb)
 
 		// Compare the two JSON representations
 		if !utils.FastEqual(b, unmarshaledJSON) {
