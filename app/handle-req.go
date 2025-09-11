@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	acl "acl.orly"
 	"encoders.orly/envelopes/authenvelope"
@@ -26,7 +28,7 @@ import (
 )
 
 func (l *Listener) HandleReq(msg []byte) (err error) {
-	log.T.F("HandleReq: from %s\n%s\n", l.remote, msg)
+	log.T.F("HandleReq: START processing from %s\n%s\n", l.remote, msg)
 	var rem []byte
 	env := reqenvelope.New()
 	if rem, err = env.Unmarshal(msg); chk.E(err) {
@@ -112,12 +114,18 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				continue
 			}
 		}
-		if events, err = l.QueryEvents(l.Ctx, f); chk.E(err) {
-			if errors.Is(err, badger.ErrDBClosed) {
-				return
-			}
-			err = nil
-		}
+ 	// Use a separate context for QueryEvents to prevent cancellation issues
+ 	queryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+ 	defer cancel()
+ 	log.T.F("HandleReq: About to QueryEvents for %s, main context done: %v", l.remote, l.ctx.Err() != nil)
+ 	if events, err = l.QueryEvents(queryCtx, f); chk.E(err) {
+ 		if errors.Is(err, badger.ErrDBClosed) {
+ 			return
+ 		}
+ 		log.T.F("HandleReq: QueryEvents error for %s: %v", l.remote, err)
+ 		err = nil
+ 	}
+ 	log.T.F("HandleReq: QueryEvents completed for %s, found %d events", l.remote, len(events))
 	}
 	var tmp event.S
 privCheck:
@@ -252,5 +260,6 @@ privCheck:
 			return
 		}
 	}
+	log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
 	return
 }

@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	acl "acl.orly"
 	"encoders.orly/envelopes/authenvelope"
@@ -127,9 +129,11 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			}
 		}
 	}
-	// store the event
+	// store the event - use a separate context to prevent cancellation issues
+	saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 	// log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
-	if _, _, err = l.SaveEvent(l.Ctx, env.E); err != nil {
+	if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
 		if strings.HasPrefix(err.Error(), "blocked:") {
 			errStr := err.Error()[len("blocked: "):len(err.Error())]
 			if err = Ok.Error(

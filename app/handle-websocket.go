@@ -19,6 +19,7 @@ const (
 	DefaultWriteWait      = 10 * time.Second
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
+	DefaultReadTimeout    = 3 * time.Second // Read timeout to detect stalled connections
 	DefaultMaxMessageSize = 1 * units.Mb
 
 	// CloseMessage denotes a close control message. The optional message
@@ -96,10 +97,24 @@ whitelist:
 		var typ websocket.MessageType
 		var msg []byte
 		log.T.F("waiting for message from %s", remote)
-		if typ, msg, err = conn.Read(ctx); err != nil {
+
+		// Create a read context with timeout to prevent indefinite blocking
+		readCtx, readCancel := context.WithTimeout(ctx, DefaultReadTimeout)
+		typ, msg, err = conn.Read(readCtx)
+		readCancel()
+
+		if err != nil {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
+				return
+			}
+			// Handle timeout errors - occurs when client becomes unresponsive
+			if strings.Contains(err.Error(), "context deadline exceeded") {
+				log.T.F(
+					"connection from %s timed out after %v", remote,
+					DefaultReadTimeout,
+				)
 				return
 			}
 			// Handle EOF errors gracefully - these occur when client closes connection
@@ -116,7 +131,9 @@ whitelist:
 				websocket.StatusNoStatusRcvd,
 				websocket.StatusAbnormalClosure,
 				websocket.StatusProtocolError:
-				log.T.F("connection from %s closed with status: %v", remote, status)
+				log.T.F(
+					"connection from %s closed with status: %v", remote, status,
+				)
 			default:
 				log.E.F("unexpected close error from %s: %v", remote, err)
 			}
@@ -128,6 +145,7 @@ whitelist:
 			}
 			continue
 		}
+		log.T.F("received message from %s: %s", remote, string(msg))
 		go listener.HandleMessage(msg, remote)
 	}
 }

@@ -22,6 +22,12 @@ type Listener struct {
 	authedPubkey atomic.Bytes
 }
 
+// Ctx returns the listener's context, but creates a new context for each operation
+// to prevent cancellation from affecting subsequent operations
+func (l *Listener) Ctx() context.Context {
+	return l.ctx
+}
+
 func (l *Listener) Write(p []byte) (n int, err error) {
 	// Use a separate context with timeout for writes to prevent race conditions
 	// where the main connection context gets cancelled while writing events

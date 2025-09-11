@@ -107,7 +107,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 							string(at.DTag), ev.CreatedAt, env.E.CreatedAt,
 						)
 						if err = l.DeleteEventBySerial(
-							l.Ctx, s, ev,
+							l.Ctx(), s, ev,
 						); chk.E(err) {
 							continue
 						}
@@ -165,7 +165,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						"HandleDelete: deleting event %s by authorized user %s",
 						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
 					)
-					if err = l.DeleteEventBySerial(l.Ctx, s, ev); chk.E(err) {
+					if err = l.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
 						continue
 					}
 				}
