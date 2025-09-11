@@ -223,7 +223,7 @@ func (p *P) Deliver(ev *event.E) {
 		// Use a separate context with timeout for writes to prevent race conditions
 		// where the publisher context gets cancelled while writing events
 		writeCtx, cancel := context.WithTimeout(
-			context.Background(), WriteTimeout,
+			context.Background(), DefaultWriteTimeout,
 		)
 		defer cancel()
 
