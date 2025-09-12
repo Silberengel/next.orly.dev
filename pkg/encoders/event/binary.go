@@ -3,10 +3,10 @@ package event
 import (
 	"io"
 
-	"crypto.orly/ec/schnorr"
-	"encoders.orly/tag"
-	"encoders.orly/varint"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/varint"
 )
 
 // MarshalBinary writes a binary encoding of an event.

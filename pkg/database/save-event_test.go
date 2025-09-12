@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"crypto.orly/p256k"
-	"encoders.orly/event"
-	"encoders.orly/event/examples"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
 )
 
 // TestSaveEvents tests saving all events from examples.Cache to the database

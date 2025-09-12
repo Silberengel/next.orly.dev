@@ -6,9 +6,9 @@ import (
 	"os"
 	"runtime/debug"
 
-	"encoders.orly/event"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/encoders/event"
 )
 
 const maxLen = 500000000

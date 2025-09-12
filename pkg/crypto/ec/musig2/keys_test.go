@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/encoders/hex"
 
 	"github.com/stretchr/testify/require"
 )

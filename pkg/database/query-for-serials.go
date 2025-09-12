@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 
-	"database.orly/indexes/types"
-	"encoders.orly/filter"
-	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/interfaces/store"
 )
 
 // QueryForSerials takes a filter and returns the serials of events that match,

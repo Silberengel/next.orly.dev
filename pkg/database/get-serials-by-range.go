@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"sort"
 
-	"database.orly/indexes/types"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/database/indexes/types"
 )
 
 func (d *D) GetSerialsByRange(idx Range) (

@@ -4,11 +4,11 @@
 package btcec
 
 import (
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/interfaces/signer"
 )
 
 // Signer is an implementation of signer.I that uses the btcec library.

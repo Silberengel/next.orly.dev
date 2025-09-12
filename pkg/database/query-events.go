@@ -8,18 +8,18 @@ import (
 	"strings"
 	"time"
 
-	"crypto.orly/sha256"
-	"database.orly/indexes/types"
-	"encoders.orly/event"
-	"encoders.orly/filter"
-	"encoders.orly/hex"
-	"encoders.orly/ints"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/store"
+	"next.orly.dev/pkg/utils"
 )
 
 func CheckExpiration(ev *event.E) (expired bool) {

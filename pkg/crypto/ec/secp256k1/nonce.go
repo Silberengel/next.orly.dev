@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"hash"
 
-	"crypto.orly/sha256"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 // References:

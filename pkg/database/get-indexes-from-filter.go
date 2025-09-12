@@ -5,11 +5,11 @@ import (
 	"math"
 	"sort"
 
-	"database.orly/indexes"
-	types2 "database.orly/indexes/types"
-	"encoders.orly/filter"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/database/indexes"
+	types2 "next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/filter"
 )
 
 type Range struct {

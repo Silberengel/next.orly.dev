@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-sudo apt -y install build-essential autoconf libtool
+apt -y install build-essential autoconf libtool git wget
 cd $SCRIPT_DIR
 rm -rf secp256k1
 git clone https://github.com/bitcoin-core/secp256k1.git

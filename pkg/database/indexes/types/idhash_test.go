@@ -5,10 +5,10 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"crypto.orly/sha256"
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestFromIdHash(t *testing.T) {

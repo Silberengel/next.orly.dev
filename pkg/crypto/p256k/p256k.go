@@ -4,12 +4,12 @@ package p256k
 
 import "C"
 import (
-	"crypto.orly/ec"
-	"crypto.orly/ec/secp256k1"
-	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/interfaces/signer"
 )
 
 func init() {

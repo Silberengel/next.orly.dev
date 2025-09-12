@@ -3,11 +3,11 @@ package text
 import (
 	"io"
 
-	"encoders.orly/hex"
 	"github.com/templexxx/xhex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"utils.orly"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
 )
 
 // JSONKey generates the JSON format for an object key and terminates with the semicolon.

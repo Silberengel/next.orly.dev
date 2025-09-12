@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 )
 
 // TestBech32 tests whether decoding and re-encoding the valid BIP-173 test

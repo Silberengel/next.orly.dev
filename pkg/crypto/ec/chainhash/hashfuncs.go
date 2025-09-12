@@ -6,7 +6,7 @@
 package chainhash
 
 import (
-	"crypto.orly/sha256"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 // HashB calculates hash(b) and returns the resulting bytes.

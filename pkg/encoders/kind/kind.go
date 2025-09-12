@@ -6,9 +6,9 @@ package kind
 import (
 	"sync"
 
-	"encoders.orly/ints"
 	"golang.org/x/exp/constraints"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/encoders/ints"
 )
 
 // K - which will be externally referenced as kind.K is the event type in the

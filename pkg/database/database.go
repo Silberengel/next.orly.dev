@@ -12,8 +12,8 @@ import (
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly/apputil"
-	"utils.orly/units"
+	"next.orly.dev/pkg/utils/apputil"
+	"next.orly.dev/pkg/utils/units"
 )
 
 type D struct {

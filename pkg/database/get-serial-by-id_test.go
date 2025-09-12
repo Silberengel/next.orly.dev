@@ -7,9 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"encoders.orly/event"
-	"encoders.orly/event/examples"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/event/examples"
 )
 
 func TestGetSerialById(t *testing.T) {

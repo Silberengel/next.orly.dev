@@ -3,8 +3,8 @@
 package p256k
 
 import (
-	"crypto.orly/p256k/btcec"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/p256k/btcec"
 )
 
 func init() {

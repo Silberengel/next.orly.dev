@@ -7,11 +7,11 @@ import (
 	"sort"
 	"sync"
 
-	"encoders.orly/kind"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly/number"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils/number"
 )
 
 // NIP is a number and description of a nostr "improvement" possibility.

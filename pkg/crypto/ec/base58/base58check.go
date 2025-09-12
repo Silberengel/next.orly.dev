@@ -7,7 +7,7 @@ package base58
 import (
 	"errors"
 
-	"crypto.orly/sha256"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 // ErrChecksum indicates that the checksum of a check-encoded string does not verify against

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"net/http"
 
-	database "database.orly"
-	"encoders.orly/bech32encoding"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
-	"protocol.orly/publish"
+	database "next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/encoders/bech32encoding"
+	"next.orly.dev/pkg/protocol/publish"
 )
 
 func Run(

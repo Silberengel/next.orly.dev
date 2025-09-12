@@ -5,15 +5,15 @@ import (
 	"math"
 	"testing"
 
-	"crypto.orly/sha256"
-	"database.orly/indexes"
-	types2 "database.orly/indexes/types"
-	"encoders.orly/filter"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/database/indexes"
+	types2 "next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils"
 )
 
 // TestGetIndexesFromFilter tests the GetIndexesFromFilter function

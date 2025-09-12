@@ -3,7 +3,7 @@ package pointers
 import (
 	"time"
 
-	"encoders.orly/timestamp"
+	"next.orly.dev/pkg/encoders/timestamp"
 )
 
 // PointerToValue is a generic interface (type constraint) to refer to any

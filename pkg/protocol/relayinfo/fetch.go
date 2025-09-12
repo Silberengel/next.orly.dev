@@ -9,7 +9,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"utils.orly/normalize"
+	"next.orly.dev/pkg/utils/normalize"
 )
 
 // Fetch fetches the NIP-11 Info.

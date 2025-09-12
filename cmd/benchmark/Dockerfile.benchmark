@@ -1,0 +1,46 @@
+# Dockerfile for benchmark runner
+FROM golang:1.25-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates
+
+# Set working directory
+WORKDIR /build
+
+# Copy go modules
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the benchmark tool
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o benchmark cmd/benchmark/main.go
+
+# Final stage
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates curl wget
+
+WORKDIR /app
+
+# Copy benchmark binary
+COPY --from=builder /build/benchmark /app/benchmark
+
+# Copy benchmark runner script
+COPY cmd/benchmark/benchmark-runner.sh /app/benchmark-runner
+
+# Make scripts executable
+RUN chmod +x /app/benchmark-runner
+
+# Create reports directory
+RUN mkdir -p /reports
+
+# Environment variables
+ENV BENCHMARK_EVENTS=10000
+ENV BENCHMARK_WORKERS=8
+ENV BENCHMARK_DURATION=60s
+
+# Run the benchmark runner
+CMD ["/app/benchmark-runner"]

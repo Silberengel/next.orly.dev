@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"testing"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/sha256"
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestPubHash_FromPubkey(t *testing.T) {

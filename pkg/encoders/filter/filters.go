@@ -1,11 +1,16 @@
 package filter
 
 import (
-	"encoders.orly/event"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/encoders/event"
 )
 
 type S []*F
+
+func NewS(ff ...*F) *S {
+	s := S(ff)
+	return &s
+}
 
 // Match checks if a set of filters.T matches on an event.F.
 func (s *S) Match(event *event.E) bool {
@@ -19,11 +24,14 @@ func (s *S) Match(event *event.E) bool {
 
 // Marshal encodes a slice of filters as a JSON array of objects.
 // It appends the result to dst and returns the resulting slice.
-func (s S) Marshal(dst []byte) (b []byte) {
+func (s *S) Marshal(dst []byte) (b []byte) {
+	if s == nil {
+		panic("nil filter slice")
+	}
 	b = dst
 	b = append(b, '[')
 	first := false
-	for _, f := range s {
+	for _, f := range *s {
 		if f == nil {
 			continue
 		}
@@ -81,4 +89,12 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 		)
 		return
 	}
+}
+func (s *S) MatchIgnoringTimestampConstraints(ev *event.E) bool {
+	for _, ff := range *s {
+		if ff.MatchesIgnoringTimestampConstraints(ev) {
+			return true
+		}
+	}
+	return false
 }

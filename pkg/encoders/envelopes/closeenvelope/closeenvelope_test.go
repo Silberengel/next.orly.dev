@@ -5,11 +5,11 @@ import (
 	"math"
 	"testing"
 
-	"encoders.orly/envelopes"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"utils.orly"
-	"utils.orly/bufpool"
+	"next.orly.dev/pkg/encoders/envelopes"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 func TestMarshalUnmarshal(t *testing.T) {

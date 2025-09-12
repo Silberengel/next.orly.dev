@@ -3,18 +3,18 @@ package app
 import (
 	"fmt"
 
-	"database.orly/indexes/types"
-	"encoders.orly/envelopes/eventenvelope"
-	"encoders.orly/event"
-	"encoders.orly/filter"
-	"encoders.orly/hex"
-	"encoders.orly/ints"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/tag/atag"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	utils "utils.orly"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/tag/atag"
+	utils "next.orly.dev/pkg/utils"
 )
 
 func (l *Listener) GetSerialsFromFilter(f *filter.F) (

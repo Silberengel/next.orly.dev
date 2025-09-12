@@ -1,9 +1,9 @@
 package publish
 
 import (
-	"encoders.orly/event"
-	"interfaces.orly/publisher"
-	"interfaces.orly/typer"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/interfaces/publisher"
+	"next.orly.dev/pkg/interfaces/typer"
 )
 
 // S is the control structure for the subscription management scheme.

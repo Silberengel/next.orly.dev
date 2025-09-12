@@ -10,8 +10,8 @@ import (
 	"runtime"
 
 	"lol.mleku.dev/log"
-	"utils.orly/atomic"
-	"utils.orly/qu"
+	"next.orly.dev/pkg/utils/atomic"
+	"next.orly.dev/pkg/utils/qu"
 )
 
 // HandlerWithSource is an interrupt handling closure and the source location

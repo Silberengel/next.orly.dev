@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 
-	"crypto.orly/sha256"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 func TestFromId(t *testing.T) {

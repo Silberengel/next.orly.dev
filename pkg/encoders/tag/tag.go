@@ -6,10 +6,10 @@ package tag
 import (
 	"bytes"
 
-	"encoders.orly/text"
 	"lol.mleku.dev/errorf"
-	utils "utils.orly"
-	"utils.orly/bufpool"
+	"next.orly.dev/pkg/encoders/text"
+	utils "next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // The tag position meanings, so they are clear when reading.

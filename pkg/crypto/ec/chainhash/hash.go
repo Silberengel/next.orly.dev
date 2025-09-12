@@ -9,8 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"crypto.orly/sha256"
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 const (

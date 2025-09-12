@@ -5,10 +5,10 @@ package schnorr
 import (
 	"fmt"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/chainhash"
-	"crypto.orly/ec/secp256k1"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/chainhash"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
 )
 
 const (

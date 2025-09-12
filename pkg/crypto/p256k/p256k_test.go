@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"crypto.orly/p256k"
-	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/interfaces/signer"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestSigner_Generate(t *testing.T) {

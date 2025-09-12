@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"sort"
 
-	"database.orly/indexes"
-	"database.orly/indexes/types"
-	"encoders.orly/event"
-	"encoders.orly/ints"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/database/indexes"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/ints"
 )
 
 const (

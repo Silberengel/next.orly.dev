@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"io"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/sha256"
-	"encoders.orly/ints"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/text"
 	"github.com/templexxx/xhex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"utils.orly"
-	"utils.orly/bufpool"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/text"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // E is the primary datatype of nostr. This is the form of the structure that
@@ -28,7 +28,7 @@ import (
 // library. Either call MarshalJSON directly or use a json.Encoder with html
 // escaping disabled.
 //
-// Or import "encoders.orly/json" and use json.Marshal which is the
+// Or import "next.orly.dev/pkg/encoders/json" and use json.Marshal which is the
 // same as go 1.25 json v1 except with this one stupidity removed.
 type E struct {
 

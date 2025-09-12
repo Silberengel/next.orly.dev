@@ -10,11 +10,11 @@ import (
 	"context"
 	"io"
 
-	"database.orly/indexes/types"
-	"encoders.orly/event"
-	"encoders.orly/filter"
-	"encoders.orly/tag"
 	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/tag"
 )
 
 // I am a type for a persistence layer for nostr events handled by a relay.

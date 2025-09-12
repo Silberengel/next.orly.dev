@@ -6,12 +6,12 @@ import (
 	"os"
 	"os/signal"
 
-	acl "acl.orly"
-	database "database.orly"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app"
 	"next.orly.dev/app/config"
+	acl "next.orly.dev/pkg/acl"
+	database "next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/version"
 )
 

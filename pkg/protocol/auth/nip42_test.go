@@ -3,9 +3,9 @@ package auth
 import (
 	"testing"
 
-	"crypto.orly/p256k"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/p256k"
 )
 
 func TestCreateUnsigned(t *testing.T) {

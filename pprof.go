@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/pkg/profile"
-	"utils.orly/interrupt"
+	"next.orly.dev/pkg/utils/interrupt"
 )
 
 func startProfiler(mode string) {

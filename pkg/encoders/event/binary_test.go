@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"encoders.orly/event/examples"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestTMarshalBinary_UnmarshalBinary(t *testing.T) {

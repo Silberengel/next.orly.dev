@@ -5,15 +5,15 @@ package eventenvelope
 import (
 	"io"
 
-	"encoders.orly/envelopes"
-	"encoders.orly/event"
-	"encoders.orly/text"
-	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"utils.orly/bufpool"
-	"utils.orly/constraints"
-	"utils.orly/units"
+	"next.orly.dev/pkg/encoders/envelopes"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/text"
+	"next.orly.dev/pkg/interfaces/codec"
+	"next.orly.dev/pkg/utils/bufpool"
+	"next.orly.dev/pkg/utils/constraints"
+	"next.orly.dev/pkg/utils/units"
 )
 
 // L is the label associated with this type of codec.Envelope.

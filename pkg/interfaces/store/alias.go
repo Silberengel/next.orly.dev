@@ -3,7 +3,7 @@ package store
 import (
 	"net/http"
 
-	"encoders.orly/envelopes/okenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
 )
 
 type Responder = http.ResponseWriter

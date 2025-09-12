@@ -6,7 +6,7 @@ import (
 
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
-	"utils.orly/atomic"
+	"next.orly.dev/pkg/utils/atomic"
 )
 
 type Listener struct {

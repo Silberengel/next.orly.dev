@@ -3,16 +3,16 @@ package filter
 import (
 	"math"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	"crypto.orly/sha256"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"utils.orly/values"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils/values"
 )
 
 // GenFilter is a testing tool to create random arbitrary filters for tests.

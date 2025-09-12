@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"testing"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/schnorr"
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 var (

@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	b32 "encoders.orly/bech32encoding"
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	b32 "next.orly.dev/pkg/encoders/bech32encoding"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 func usage() {

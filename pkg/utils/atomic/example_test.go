@@ -22,7 +22,7 @@ package atomic_test
 
 import (
 	"fmt"
-	"utils.orly/atomic"
+	"next.orly.dev/pkg/utils/atomic"
 )
 
 func Example() {

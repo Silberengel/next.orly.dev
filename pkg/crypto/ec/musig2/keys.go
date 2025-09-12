@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"sort"
 
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/chainhash"
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/chainhash"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
 )
 
 var (

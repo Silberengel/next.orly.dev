@@ -8,7 +8,7 @@ package secp256k1
 import (
 	"math/bits"
 
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 // References:

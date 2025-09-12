@@ -4,11 +4,11 @@ import (
 	"context"
 	"sort"
 
-	"database.orly/indexes/types"
-	"encoders.orly/filter"
-	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/interfaces/store"
 )
 
 // QueryForIds retrieves a list of IdPkTs based on the provided filter.

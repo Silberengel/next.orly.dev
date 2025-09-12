@@ -3,9 +3,9 @@ package text
 import (
 	"testing"
 
-	"crypto.orly/sha256"
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 func TestUnescapeByteString(t *testing.T) {

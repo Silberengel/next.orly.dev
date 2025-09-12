@@ -4,13 +4,13 @@ import (
 	"math"
 	"testing"
 
-	"crypto.orly/ec/schnorr"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"lukechampine.com/frand"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestT_Marshal_Unmarshal(t *testing.T) {

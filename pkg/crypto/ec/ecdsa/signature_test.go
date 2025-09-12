@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"crypto.orly/ec/secp256k1"
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
 )
 
 // hexToBytes converts the passed hex string into bytes and will panic if there

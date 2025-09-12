@@ -11,7 +11,7 @@ package btcec
 import (
 	"testing"
 
-	"encoders.orly/hex"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 func FuzzParsePubKey(f *testing.F) {

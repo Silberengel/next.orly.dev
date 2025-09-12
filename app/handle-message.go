@@ -1,15 +1,15 @@
 package app
 
 import (
-	"encoders.orly/envelopes"
-	"encoders.orly/envelopes/authenvelope"
-	"encoders.orly/envelopes/closeenvelope"
-	"encoders.orly/envelopes/eventenvelope"
-	"encoders.orly/envelopes/noticeenvelope"
-	"encoders.orly/envelopes/reqenvelope"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/encoders/envelopes"
+	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/closeenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/noticeenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/reqenvelope"
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {

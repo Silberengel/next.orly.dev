@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 )
 
 // TestParsePubKey ensures that public keys are properly parsed according

@@ -6,15 +6,15 @@ package okenvelope
 import (
 	"io"
 
-	"crypto.orly/sha256"
-	"encoders.orly/envelopes"
-	"encoders.orly/hex"
-	"encoders.orly/text"
-	"interfaces.orly/codec"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"utils.orly/constraints"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/envelopes"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/text"
+	"next.orly.dev/pkg/interfaces/codec"
+	"next.orly.dev/pkg/utils/constraints"
 )
 
 // L is the label associated with this type of codec.Envelope.

@@ -3,14 +3,14 @@ package database
 import (
 	"bytes"
 
-	"database.orly/indexes/types"
-	"encoders.orly/filter"
-	"encoders.orly/hex"
-	"encoders.orly/tag"
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/tag"
 )
 
 func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {

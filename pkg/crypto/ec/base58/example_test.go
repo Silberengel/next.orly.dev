@@ -7,7 +7,7 @@ package base58_test
 import (
 	"fmt"
 
-	"crypto.orly/ec/base58"
+	"next.orly.dev/pkg/crypto/ec/base58"
 )
 
 // This example demonstrates how to decode modified base58 encoded data.

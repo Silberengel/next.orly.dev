@@ -3,11 +3,11 @@ package database
 import (
 	"bytes"
 
-	"database.orly/indexes"
-	"database.orly/indexes/types"
 	"github.com/dgraph-io/badger/v4"
-	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/database/indexes"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/interfaces/store"
 )
 
 // GetFullIdPubkeyBySerials seeks directly to each serial's prefix in the

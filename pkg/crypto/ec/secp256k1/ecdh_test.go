@@ -8,7 +8,7 @@ package secp256k1
 import (
 	"testing"
 
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestGenerateSharedSecret(t *testing.T) {

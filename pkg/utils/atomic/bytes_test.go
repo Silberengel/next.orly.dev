@@ -22,10 +22,10 @@ package atomic
 
 import (
 	"encoding/json"
+	"next.orly.dev/pkg/utils"
 	"runtime"
 	"sync"
 	"testing"
-	"utils.orly"
 
 	"github.com/stretchr/testify/require"
 )

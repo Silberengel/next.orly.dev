@@ -1,8 +1,8 @@
 package acl
 
 import (
-	"interfaces.orly/acl"
-	"utils.orly/atomic"
+	"next.orly.dev/pkg/interfaces/acl"
+	"next.orly.dev/pkg/utils/atomic"
 )
 
 var Registry = &S{}

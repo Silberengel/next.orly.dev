@@ -7,14 +7,14 @@ import (
 	"os"
 	"testing"
 
-	"encoders.orly/event"
-	"encoders.orly/event/examples"
-	"encoders.orly/filter"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"interfaces.orly/store"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/store"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestQueryForKindsAuthorsTags(t *testing.T) {

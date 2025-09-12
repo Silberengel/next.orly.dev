@@ -4,17 +4,17 @@ import (
 	"bytes"
 	"sort"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/sha256"
-	"encoders.orly/event"
-	"encoders.orly/ints"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/text"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"utils.orly/pointers"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/text"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils/pointers"
 )
 
 // F is the primary query form for requesting events from a nostr relay.

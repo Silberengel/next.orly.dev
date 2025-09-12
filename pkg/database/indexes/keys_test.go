@@ -5,9 +5,9 @@ import (
 	"io"
 	"testing"
 
-	"database.orly/indexes/types"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/utils"
 )
 
 // TestNewPrefix tests the NewPrefix function with and without arguments

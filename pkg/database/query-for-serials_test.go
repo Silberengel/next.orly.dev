@@ -7,15 +7,15 @@ import (
 	"os"
 	"testing"
 
-	"database.orly/indexes/types"
-	"encoders.orly/event"
-	"encoders.orly/event/examples"
-	"encoders.orly/filter"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestQueryForSerials(t *testing.T) {

@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  # Next.orly.dev relay (this repository)
+  next-orly:
+    build:
+      context: ../..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    container_name: benchmark-next-orly
+    environment:
+      - DATA_DIR=/data
+      - LISTEN=0.0.0.0
+      - PORT=8080
+      - LOG_LEVEL=info
+    volumes:
+      - ./data/next-orly:/data
+    ports:
+      - "8001:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Khatru with SQLite
+  khatru-sqlite:
+    build:
+      context: ./external/khatru
+      dockerfile: ../../Dockerfile.khatru-sqlite
+    container_name: benchmark-khatru-sqlite
+    environment:
+      - DATABASE_TYPE=sqlite
+      - DATABASE_PATH=/data/khatru.db
+      - PORT=8080
+    volumes:
+      - ./data/khatru-sqlite:/data
+    ports:
+      - "8002:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Khatru with Badger
+  khatru-badger:
+    build:
+      context: ./external/khatru
+      dockerfile: ../../Dockerfile.khatru-badger
+    container_name: benchmark-khatru-badger
+    environment:
+      - DATABASE_TYPE=badger
+      - DATABASE_PATH=/data/badger
+      - PORT=8080
+    volumes:
+      - ./data/khatru-badger:/data
+    ports:
+      - "8003:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Relayer basic example
+  relayer-basic:
+    build:
+      context: ./external/relayer
+      dockerfile: ../../Dockerfile.relayer-basic
+    container_name: benchmark-relayer-basic
+    environment:
+      - PORT=8080
+      - DATABASE_PATH=/data/relayer.db
+    volumes:
+      - ./data/relayer-basic:/data
+    ports:
+      - "8004:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Strfry
+  strfry:
+    build:
+      context: ./external/strfry
+      dockerfile: ../../Dockerfile.strfry
+    container_name: benchmark-strfry
+    environment:
+      - STRFRY_DB_PATH=/data/strfry.lmdb
+      - STRFRY_RELAY_PORT=8080
+    volumes:
+      - ./data/strfry:/data
+      - ./configs/strfry.conf:/etc/strfry.conf
+    ports:
+      - "8005:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nostr-rs-relay
+  nostr-rs-relay:
+    build:
+      context: ./external/nostr-rs-relay
+      dockerfile: ../../Dockerfile.nostr-rs-relay
+    container_name: benchmark-nostr-rs-relay
+    environment:
+      - RUST_LOG=info
+    volumes:
+      - ./data/nostr-rs-relay:/data
+      - ./configs/config.toml:/app/config.toml
+    ports:
+      - "8006:8080"
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Benchmark runner
+  benchmark-runner:
+    build:
+      context: ../..
+      dockerfile: cmd/benchmark/Dockerfile.benchmark
+    container_name: benchmark-runner
+    depends_on:
+      next-orly:
+        condition: service_healthy
+      khatru-sqlite:
+        condition: service_healthy
+      khatru-badger:
+        condition: service_healthy
+      relayer-basic:
+        condition: service_healthy
+      strfry:
+        condition: service_healthy
+      nostr-rs-relay:
+        condition: service_healthy
+    environment:
+      - BENCHMARK_TARGETS=next-orly:8001,khatru-sqlite:8002,khatru-badger:8003,relayer-basic:8004,strfry:8005,nostr-rs-relay:8006
+      - BENCHMARK_EVENTS=10000
+      - BENCHMARK_WORKERS=8
+      - BENCHMARK_DURATION=60s
+    volumes:
+      - ./reports:/reports
+    networks:
+      - benchmark-net
+    command: >
+      sh -c "
+        echo 'Waiting for all relays to be ready...' &&
+        sleep 30 &&
+        echo 'Starting benchmark tests...' &&
+        /app/benchmark-runner --output-dir=/reports
+      "
+
+networks:
+  benchmark-net:
+    driver: bridge
+
+volumes:
+  benchmark-data:
+    driver: local

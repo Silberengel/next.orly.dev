@@ -1,12 +1,12 @@
 package event
 
 import (
-	"crypto.orly/p256k"
-	"interfaces.orly/signer"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/interfaces/signer"
+	"next.orly.dev/pkg/utils"
 )
 
 // Sign the event using the signer.I. Uses github.com/bitcoin-core/secp256k1 if

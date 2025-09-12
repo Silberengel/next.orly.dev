@@ -3,10 +3,10 @@ package database
 import (
 	"bytes"
 
-	"database.orly/indexes"
-	. "database.orly/indexes/types"
-	"encoders.orly/event"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/database/indexes"
+	. "next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
 )
 
 // appendIndexBytes marshals an index to a byte slice and appends it to the idxs slice

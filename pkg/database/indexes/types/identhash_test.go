@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"crypto.orly/sha256"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestFromIdent(t *testing.T) {

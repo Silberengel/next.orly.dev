@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"encoders.orly/event/examples"
-	"encoders.orly/hex"
-	"encoders.orly/json"
-	"encoders.orly/tag"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"lukechampine.com/frand"
-	"utils.orly"
-	"utils.orly/bufpool"
-	"utils.orly/units"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/json"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
+	"next.orly.dev/pkg/utils/units"
 )
 
 func TestMarshalJSONUnmarshalJSON(t *testing.T) {

@@ -5,10 +5,10 @@ package atag
 import (
 	"bytes"
 
-	"encoders.orly/hex"
-	"encoders.orly/ints"
-	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/ints"
+	"next.orly.dev/pkg/encoders/kind"
 )
 
 // T is a data structure for what is found in an `a` tag: kind:pubkey:arbitrary data

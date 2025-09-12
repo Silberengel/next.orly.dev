@@ -2,7 +2,7 @@
 package acl
 
 import (
-	"interfaces.orly/typer"
+	"next.orly.dev/pkg/interfaces/typer"
 )
 
 const (

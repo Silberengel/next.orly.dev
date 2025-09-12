@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"encoders.orly/envelopes/authenvelope"
-	"encoders.orly/hex"
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly/units"
+	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils/units"
 )
 
 const (

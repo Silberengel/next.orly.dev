@@ -3,7 +3,7 @@
 package pointers
 
 import (
-	"encoders.orly/kind"
+	"next.orly.dev/pkg/encoders/kind"
 )
 
 // Profile pointer is a combination of pubkey and relay list.

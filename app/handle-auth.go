@@ -1,11 +1,11 @@
 package app
 
 import (
-	"encoders.orly/envelopes/authenvelope"
-	"encoders.orly/envelopes/okenvelope"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"protocol.orly/auth"
+	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
+	"next.orly.dev/pkg/protocol/auth"
 )
 
 func (l *Listener) HandleAuth(b []byte) (err error) {

@@ -3,7 +3,7 @@ package bufpool
 import (
 	"sync"
 
-	"utils.orly/units"
+	"next.orly.dev/pkg/utils/units"
 )
 
 const (

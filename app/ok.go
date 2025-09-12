@@ -1,9 +1,9 @@
 package app
 
 import (
-	"encoders.orly/envelopes/eventenvelope"
-	"encoders.orly/envelopes/okenvelope"
-	"encoders.orly/reason"
+	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
+	"next.orly.dev/pkg/encoders/reason"
 )
 
 // OK represents a function that processes events or operations, using provided

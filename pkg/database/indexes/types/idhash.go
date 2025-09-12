@@ -4,10 +4,10 @@ import (
 	"encoding/base64"
 	"io"
 
-	"crypto.orly/sha256"
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
 )
 
 const IdHashLen = 8

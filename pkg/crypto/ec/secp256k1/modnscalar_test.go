@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
 )
 
 // SetHex interprets the provided hex string as a 256-bit big-endian unsigned

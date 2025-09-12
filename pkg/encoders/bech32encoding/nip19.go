@@ -4,17 +4,17 @@ import (
 	"bytes"
 	"encoding/binary"
 
-	"crypto.orly/ec/bech32"
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/sha256"
-	"encoders.orly/bech32encoding/pointers"
-	"encoders.orly/bech32encoding/tlv"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/ec/bech32"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/bech32encoding/pointers"
+	"next.orly.dev/pkg/encoders/bech32encoding/tlv"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/utils"
 )
 
 var (

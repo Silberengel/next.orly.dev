@@ -9,10 +9,10 @@ import (
 	"errors"
 	"io"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/chainhash"
-	"crypto.orly/ec/schnorr"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/chainhash"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
 )
 
 const (

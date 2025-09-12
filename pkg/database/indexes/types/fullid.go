@@ -3,8 +3,8 @@ package types
 import (
 	"io"
 
-	"crypto.orly/sha256"
 	"lol.mleku.dev/errorf"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 const IdLen = sha256.Size

@@ -29,6 +29,7 @@ node_modules/**
 # and others
 /go.work.sum
 /secp256k1/
+cmd/benchmark/external
 
 # But not these files...
 !/.gitignore
@@ -87,6 +88,9 @@ node_modules/**
 !.gitignore
 !version
 !out.jsonl
+!Dockerfile*
+!strfry.conf
+!config.toml
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
@@ -108,3 +112,4 @@ pkg/database/testrealy
 /.idea/inspectionProfiles/Project_Default.xml
 /.idea/.name
 /ctxproxy.config.yml
+cmd/benchmark/external/**

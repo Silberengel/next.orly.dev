@@ -5,12 +5,12 @@ import (
 	"bytes"
 	"testing"
 
-	"encoders.orly/envelopes"
-	"encoders.orly/event"
-	"encoders.orly/event/examples"
 	"lol.mleku.dev/chk"
-	"utils.orly"
-	"utils.orly/bufpool"
+	"next.orly.dev/pkg/encoders/envelopes"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/event/examples"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 func TestSubmission(t *testing.T) {

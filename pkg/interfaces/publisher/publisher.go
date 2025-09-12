@@ -1,8 +1,8 @@
 package publisher
 
 import (
-	"encoders.orly/event"
-	"interfaces.orly/typer"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/interfaces/typer"
 )
 
 type I interface {

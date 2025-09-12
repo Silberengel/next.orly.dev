@@ -3,7 +3,7 @@ package types
 import (
 	"io"
 
-	"crypto.orly/sha256"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 const IdentLen = 8

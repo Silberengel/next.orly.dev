@@ -5,15 +5,15 @@ import (
 	"os"
 	"testing"
 
-	"crypto.orly/p256k"
-	"encoders.orly/event"
-	"encoders.orly/filter"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
-	"encoders.orly/timestamp"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils"
 )
 
 // TestMultipleParameterizedReplaceableEvents tests that when multiple parameterized

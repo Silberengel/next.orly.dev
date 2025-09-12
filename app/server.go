@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"database.orly"
 	"lol.mleku.dev/chk"
 	"next.orly.dev/app/config"
-	"protocol.orly/publish"
+	"next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/protocol/publish"
 )
 
 type Server struct {

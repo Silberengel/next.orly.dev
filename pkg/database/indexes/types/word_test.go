@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"testing"
 
-	"database.orly/indexes/types"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestT(t *testing.T) {

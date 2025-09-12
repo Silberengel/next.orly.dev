@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"encoders.orly/json"
 	"github.com/dgraph-io/badger/v4"
+	"next.orly.dev/pkg/encoders/json"
 )
 
 type Subscription struct {

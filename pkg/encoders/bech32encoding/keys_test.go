@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestConvertBits(t *testing.T) {

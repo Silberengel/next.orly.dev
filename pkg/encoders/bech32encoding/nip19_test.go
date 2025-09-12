@@ -4,13 +4,13 @@ import (
 	"reflect"
 	"testing"
 
-	"encoders.orly/bech32encoding/pointers"
-	"encoders.orly/hex"
-	"encoders.orly/kind"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly"
-	"utils.orly/constraints"
+	"next.orly.dev/pkg/encoders/bech32encoding/pointers"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/constraints"
 )
 
 func TestEncodeNpub(t *testing.T) {

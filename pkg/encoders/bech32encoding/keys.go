@@ -4,15 +4,15 @@ import (
 	"bytes"
 	"strings"
 
-	"crypto.orly/ec"
-	"crypto.orly/ec/bech32"
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	"encoders.orly/hex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"utils.orly"
-	"utils.orly/constraints"
+	"next.orly.dev/pkg/crypto/ec"
+	"next.orly.dev/pkg/crypto/ec/bech32"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/constraints"
 )
 
 const (

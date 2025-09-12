@@ -6,15 +6,15 @@ import (
 	"strings"
 	"time"
 
-	acl "acl.orly"
-	"encoders.orly/envelopes/authenvelope"
-	"encoders.orly/envelopes/eventenvelope"
-	"encoders.orly/envelopes/okenvelope"
-	"encoders.orly/kind"
-	"encoders.orly/reason"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	utils "utils.orly"
+	acl "next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
+	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/reason"
+	utils "next.orly.dev/pkg/utils"
 )
 
 func (l *Listener) HandleEvent(msg []byte) (err error) {

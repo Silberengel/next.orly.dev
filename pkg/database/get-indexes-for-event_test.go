@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"testing"
 
-	"crypto.orly/sha256"
-	"database.orly/indexes"
-	types2 "database.orly/indexes/types"
-	"encoders.orly/event"
-	"encoders.orly/kind"
-	"encoders.orly/tag"
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/database/indexes"
+	types2 "next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestGetIndexesForEvent(t *testing.T) {

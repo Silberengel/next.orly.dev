@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestT_MarshalUnmarshal(t *testing.T) {

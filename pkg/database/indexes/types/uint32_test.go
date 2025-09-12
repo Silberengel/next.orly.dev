@@ -8,7 +8,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"utils.orly"
+	"next.orly.dev/pkg/utils"
 )
 
 func TestUint32(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 	"crypto/rand"
 	"unsafe"
 
-	"crypto.orly/ec/schnorr"
-	"crypto.orly/ec/secp256k1"
-	"crypto.orly/sha256"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/crypto/sha256"
 )
 
 /*

@@ -4,8 +4,8 @@ import (
 	"bytes"
 
 	"lol.mleku.dev/chk"
-	"utils.orly"
-	"utils.orly/bufpool"
+	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // S is a list of tag.T - which are lists of string elements with ordering and
