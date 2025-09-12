@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"time"
 
 	"github.com/pkg/profile"
@@ -19,6 +20,7 @@ import (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	var err error
 	var cfg *config.C
 	if cfg, err = config.New(); chk.T(err) {

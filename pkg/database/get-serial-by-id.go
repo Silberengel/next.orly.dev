@@ -19,18 +19,16 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 	if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.NewFromBytesSlice(id)}); chk.E(err) {
 		return
 	}
-
-	for i, idx := range idxs {
-		log.T.F(
-			"GetSerialById: searching range %d: start=%x, end=%x", i, idx.Start,
-			idx.End,
-		)
-	}
+	// for i, idx := range idxs {
+	// 	log.T.F(
+	// 		"GetSerialById: searching range %d: start=%x, end=%x", i, idx.Start,
+	// 		idx.End,
+	// 	)
+	// }
 	if len(idxs) == 0 {
 		err = errorf.E("no indexes found for id %0x", id)
 		return
 	}
-
 	idFound := false
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
@@ -49,16 +47,15 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 				idFound = true
 			} else {
 				// Item not found in database
-				log.T.F(
-					"GetSerialById: ID not found in database: %s", hex.Enc(id),
-				)
+				// log.T.F(
+				// 	"GetSerialById: ID not found in database: %s", hex.Enc(id),
+				// )
 			}
 			return
 		},
 	); chk.E(err) {
 		return
 	}
-
 	if !idFound {
 		err = errorf.T("id not found in database: %s", hex.Enc(id))
 		return
@@ -67,7 +64,6 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 	return
 }
 
-//
 // func (d *D) GetSerialBytesById(id []byte) (ser []byte, err error) {
 // 	var idxs []Range
 // 	if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.New(id)}); chk.E(err) {

@@ -43,49 +43,49 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	var expDeletes types.Uint40s
 	var expEvs event.S
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		for _, id := range f.Ids.T {
-			log.T.F("QueryEvents: looking for ID=%s", hex.Enc(id))
-		}
-		log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
+		// for _, id := range f.Ids.T {
+		// 	log.T.F("QueryEvents: looking for ID=%s", hex.Enc(id))
+		// }
+		// log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
 		for _, idx := range f.Ids.T {
-			log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
+			// log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
 			// we know there is only Ids in this, so run the ID query and fetch.
 			var ser *types.Uint40
 			var idErr error
 			if ser, idErr = d.GetSerialById(idx); idErr != nil {
 				// Check if this is a "not found" error which is expected for IDs we don't have
 				if strings.Contains(idErr.Error(), "id not found in database") {
-					log.T.F(
-						"QueryEvents: ID not found in database: %s",
-						hex.Enc(idx),
-					)
+					// log.T.F(
+					// 	"QueryEvents: ID not found in database: %s",
+					// 	hex.Enc(idx),
+					// )
 				} else {
 					// Log unexpected errors but continue processing other IDs
-					log.E.F(
-						"QueryEvents: error looking up id=%s err=%v",
-						hex.Enc(idx), idErr,
-					)
+					// log.E.F(
+					// 	"QueryEvents: error looking up id=%s err=%v",
+					// 	hex.Enc(idx), idErr,
+					// )
 				}
 				continue
 			}
 			// Check if the serial is nil, which indicates the ID wasn't found
 			if ser == nil {
-				log.T.F("QueryEvents: Serial is nil for ID: %s", hex.Enc(idx))
+				// log.T.F("QueryEvents: Serial is nil for ID: %s", hex.Enc(idx))
 				continue
 			}
 			// fetch the events
 			var ev *event.E
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
-				log.T.F(
-					"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
-					hex.Enc(idx), ser, err,
-				)
+				// log.T.F(
+				// 	"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
+				// 	hex.Enc(idx), ser, err,
+				// )
 				continue
 			}
-			log.T.F(
-				"QueryEvents: found id=%s kind=%d created_at=%d",
-				hex.Enc(ev.ID), ev.Kind, ev.CreatedAt,
-			)
+			// log.T.F(
+			// 	"QueryEvents: found id=%s kind=%d created_at=%d",
+			// 	hex.Enc(ev.ID), ev.Kind, ev.CreatedAt,
+			// )
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
 				log.T.F(
@@ -98,16 +98,16 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			}
 			// skip events that have been deleted by a proper deletion event
 			if derr := d.CheckForDeleted(ev, nil); derr != nil {
-				log.T.F(
-					"QueryEvents: id=%s filtered out due to deletion: %v",
-					hex.Enc(ev.ID), derr,
-				)
+				// log.T.F(
+				// 	"QueryEvents: id=%s filtered out due to deletion: %v",
+				// 	hex.Enc(ev.ID), derr,
+				// )
 				continue
 			}
-			log.T.F(
-				"QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results",
-				hex.Enc(ev.ID),
-			)
+			// log.T.F(
+			// 	"QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results",
+			// 	hex.Enc(ev.ID),
+			// )
 			evs = append(evs, ev)
 		}
 		// sort the events by timestamp
@@ -301,20 +301,19 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
 				continue
 			}
-
 			// Add logging for tag filter debugging
 			if f.Tags != nil && f.Tags.Len() > 0 {
-				var eventTags []string
-				if ev.Tags != nil && ev.Tags.Len() > 0 {
-					for _, t := range *ev.Tags {
-						if t.Len() >= 2 {
-							eventTags = append(
-								eventTags,
-								string(t.Key())+"="+string(t.Value()),
-							)
-						}
-					}
-				}
+				// var eventTags []string
+				// if ev.Tags != nil && ev.Tags.Len() > 0 {
+				// 	for _, t := range *ev.Tags {
+				// 		if t.Len() >= 2 {
+				// 			eventTags = append(
+				// 				eventTags,
+				// 				string(t.Key())+"="+string(t.Value()),
+				// 			)
+				// 		}
+				// 	}
+				// }
 				// log.T.F(
 				// 	"QueryEvents: processing event ID=%s kind=%d tags=%v",
 				// 	hex.Enc(ev.ID), ev.Kind, eventTags,

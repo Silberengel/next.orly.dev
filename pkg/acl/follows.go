@@ -12,7 +12,7 @@ import (
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
-	database "next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/envelopes"
@@ -25,7 +25,7 @@ import (
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/protocol/publish"
-	utils "next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/normalize"
 	"next.orly.dev/pkg/utils/values"
 )
@@ -298,7 +298,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 						} else {
 							// Only dispatch if the event was newly saved (no error)
 							if f.pubs != nil {
-								f.pubs.Deliver(res.Event)
+								go f.pubs.Deliver(res.Event)
 							}
 							log.I.F(
 								"saved new event from follows syncer: %0x",

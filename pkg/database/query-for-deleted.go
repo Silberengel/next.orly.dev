@@ -123,7 +123,7 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 				}
 			}
 			if ev.CreatedAt < maxTs {
-				err = errorf.E(
+				err = fmt.Errorf(
 					"blocked: %0x was deleted: the event is older than the delete event %0x: event: %d delete: %d",
 					ev.ID, maxId, ev.CreatedAt, maxTs,
 				)
@@ -165,17 +165,17 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 			idPkTss = append(idPkTss, tmp...)
 			// find the newest deletion without sorting to reduce cost
 			maxTs := idPkTss[0].Ts
-			maxId := idPkTss[0].Id
+			// maxId := idPkTss[0].Id
 			for i := 1; i < len(idPkTss); i++ {
 				if idPkTss[i].Ts > maxTs {
 					maxTs = idPkTss[i].Ts
-					maxId = idPkTss[i].Id
+					// maxId = idPkTss[i].Id
 				}
 			}
 			if ev.CreatedAt < maxTs {
-				err = errorf.E(
-					"blocked: %0x was deleted by address %s: event is older than the delete: event: %d delete: %d",
-					ev.ID, at, maxId, ev.CreatedAt, maxTs,
+				err = fmt.Errorf(
+					"blocked: was deleted by address %s: event is older than the delete: event: %d delete: %d",
+					at, ev.CreatedAt, maxTs,
 				)
 				return
 			}
@@ -206,8 +206,8 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 			// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
 			// regardless of timestamp, since it's a specific deletion of this exact event
 			err = errorf.E(
-				"blocked: %0x was deleted by ID and cannot be resubmitted",
-				ev.ID,
+				"blocked: was deleted by ID and cannot be resubmitted",
+				// ev.ID,
 			)
 			return
 		}
@@ -216,8 +216,8 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 		// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
 		// regardless of timestamp, since it's a specific deletion of this exact event
 		err = errorf.E(
-			"blocked: %0x was deleted by ID and cannot be resubmitted",
-			ev.ID,
+			"blocked: was deleted by ID and cannot be resubmitted",
+			// ev.ID,
 		)
 		return
 	}

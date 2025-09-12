@@ -48,7 +48,7 @@ func (d *D) IsSubscriptionActive(pubkey []byte) (bool, error) {
 	err := d.DB.Update(
 		func(txn *badger.Txn) error {
 			item, err := txn.Get([]byte(key))
-			if err == badger.ErrKeyNotFound {
+			if errors.Is(err, badger.ErrKeyNotFound) {
 				sub := &Subscription{TrialEnd: now.AddDate(0, 0, 30)}
 				data, err := json.Marshal(sub)
 				if err != nil {
@@ -90,7 +90,7 @@ func (d *D) ExtendSubscription(pubkey []byte, days int) error {
 		func(txn *badger.Txn) error {
 			var sub Subscription
 			item, err := txn.Get([]byte(key))
-			if err == badger.ErrKeyNotFound {
+			if errors.Is(err, badger.ErrKeyNotFound) {
 				sub.PaidUntil = now.AddDate(0, 0, days)
 			} else if err != nil {
 				return err

@@ -3,18 +3,16 @@ package database
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/errorf"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
-	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
 )
@@ -39,13 +37,13 @@ func (d *D) GetSerialsFromFilter(f *filter.F) (
 // SaveEvent saves an event to the database, generating all the necessary indexes.
 func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	if ev == nil {
-		err = errorf.E("nil event")
+		err = errors.New("nil event")
 		return
 	}
 	// check if the event already exists
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {
-		err = errorf.E("blocked: event already exists: %0x", ev.ID)
+		err = errors.New("blocked: event already exists")
 		return
 	}
 
@@ -55,7 +53,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		err = nil
 	} else if err != nil {
 		// For any other error, return it
-		log.E.F("error checking if event exists: %s", err)
+		// log.E.F("error checking if event exists: %s", err)
 		return
 	}
 
@@ -65,7 +63,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		// 	"SaveEvent: rejecting resubmission of deleted event ID=%s: %v",
 		// 	hex.Enc(ev.ID), err,
 		// )
-		err = errorf.E("blocked: %s", err.Error())
+		err = fmt.Errorf("blocked: %s", err.Error())
 		return
 	}
 	// check for replacement
@@ -89,11 +87,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 				// Only replace if the new event is newer or same timestamp
 				if ev.CreatedAt < oldEv.CreatedAt {
-					log.I.F(
-						"SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
-						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
-						oldEv.CreatedAt,
-					)
+					// log.I.F(
+					// 	"SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
+					// 	hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
+					// 	oldEv.CreatedAt,
+					// )
 					shouldReplace = false
 					break
 				}
@@ -104,11 +102,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					log.I.F(
-						"SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
-						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
-						ev.CreatedAt,
-					)
+					// log.I.F(
+					// 	"SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
+					// 	hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
+					// 	ev.CreatedAt,
+					// )
 					if err = d.DeleteEventBySerial(
 						c, s, oldEv,
 					); chk.E(err) {
@@ -117,7 +115,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 			} else {
 				// Don't save the older event - return an error
-				err = errorf.E("blocked: event is older than existing replaceable event")
+				err = errors.New("blocked: event is older than existing replaceable event")
 				return
 			}
 		}
@@ -125,7 +123,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		// find the events and check timestamps before deleting
 		dTag := ev.Tags.GetFirst([]byte("d"))
 		if dTag == nil {
-			err = errorf.E("event is missing a d tag identifier")
+			err = errors.New("event is missing a d tag identifier")
 			return
 		}
 		f := &filter.F{
@@ -149,11 +147,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 				// Only replace if the new event is newer or same timestamp
 				if ev.CreatedAt < oldEv.CreatedAt {
-					log.I.F(
-						"SaveEvent: rejecting older addressable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
-						hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
-						oldEv.CreatedAt,
-					)
+					// log.I.F(
+					// 	"SaveEvent: rejecting older addressable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
+					// 	hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
+					// 	oldEv.CreatedAt,
+					// )
 					shouldReplace = false
 					break
 				}
@@ -164,11 +162,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					log.I.F(
-						"SaveEvent: replacing older addressable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
-						hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
-						ev.CreatedAt,
-					)
+					// log.I.F(
+					// 	"SaveEvent: replacing older addressable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
+					// 	hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
+					// 	ev.CreatedAt,
+					// )
 					if err = d.DeleteEventBySerial(
 						c, s, oldEv,
 					); chk.E(err) {
@@ -177,7 +175,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 				}
 			} else {
 				// Don't save the older event - return an error
-				err = errorf.E("blocked: event is older than existing addressable event")
+				err = errors.New("blocked: event is older than existing addressable event")
 				return
 			}
 		}
@@ -232,14 +230,14 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 			return
 		},
 	)
-	log.T.F(
-		"total data written: %d bytes keys %d bytes values for event ID %s", kc,
-		vc, hex.Enc(ev.ID),
-	)
-	log.T.C(
-		func() string {
-			return fmt.Sprintf("event:\n%s\n", ev.Serialize())
-		},
-	)
+	// log.T.F(
+	// 	"total data written: %d bytes keys %d bytes values for event ID %s", kc,
+	// 	vc, hex.Enc(ev.ID),
+	// )
+	// log.T.C(
+	// 	func() string {
+	// 		return fmt.Sprintf("event:\n%s\n", ev.Serialize())
+	// 	},
+	// )
 	return
 }

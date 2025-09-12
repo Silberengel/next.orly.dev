@@ -8,13 +8,13 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	acl "next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/reason"
-	utils "next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils"
 )
 
 func (l *Listener) HandleEvent(msg []byte) (err error) {
@@ -151,7 +151,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	// Deliver the event to subscribers immediately after sending OK response
-	l.publishers.Deliver(env.E)
+	go l.publishers.Deliver(env.E)
 	log.D.F("saved event %0x", env.E.ID)
 	var isNewFromAdmin bool
 	for _, admin := range l.Admins {

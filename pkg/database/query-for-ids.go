@@ -2,10 +2,10 @@ package database
 
 import (
 	"context"
+	"errors"
 	"sort"
 
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/interfaces/store"
@@ -20,7 +20,7 @@ func (d *D) QueryForIds(c context.Context, f *filter.F) (
 ) {
 	if f.Ids != nil && f.Ids.Len() > 0 {
 		// if there is Ids in the query, this is an error for this query
-		err = errorf.E("query for Ids is invalid for a filter with Ids")
+		err = errors.New("query for Ids is invalid for a filter with Ids")
 		return
 	}
 	var idxs []Range
