@@ -24,6 +24,7 @@ import (
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/protocol/publish"
 	utils "next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/normalize"
 	"next.orly.dev/pkg/utils/values"
@@ -33,6 +34,7 @@ type Follows struct {
 	Ctx context.Context
 	cfg *config.C
 	*database.D
+	pubs       *publish.S
 	followsMx  sync.RWMutex
 	admins     [][]byte
 	follows    [][]byte
@@ -53,6 +55,9 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 		case context.Context:
 			// log.D.F("setting ACL context: %s", c.Value("id"))
 			f.Ctx = c
+		case *publish.S:
+			// set publisher for dispatching new events
+			f.pubs = c
 		default:
 			err = errorf.E("invalid type: %T", reflect.TypeOf(ca))
 		}
@@ -290,11 +295,16 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 								)
 							}
 							// ignore duplicates and continue
+						} else {
+							// Only dispatch if the event was newly saved (no error)
+							if f.pubs != nil {
+								f.pubs.Deliver(res.Event)
+							}
+							log.I.F(
+								"saved new event from follows syncer: %0x",
+								res.Event.ID,
+							)
 						}
-						log.I.F(
-							"saved new event from follows syncer: %0x",
-							res.Event.ID,
-						)
 					case eoseenvelope.L:
 						// ignore, continue subscription
 					default:

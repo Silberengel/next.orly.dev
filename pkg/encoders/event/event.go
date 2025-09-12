@@ -121,7 +121,7 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	// integrates properly with the buffer pool, reducing GC pressure and
 	// avoiding new heap allocations.
 	if cap(b) < len(b)+len(ev.Content)+7+256+2 {
-		b2 := make([]byte, len(b)+len(ev.Content)*2+512)
+		b2 := make([]byte, len(b)+len(ev.Content)*2+1024)
 		copy(b2, b)
 		b2 = b2[:len(b)]
 		// return the old buffer to the pool for reuse.
