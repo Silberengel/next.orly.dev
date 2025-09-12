@@ -1,0 +1,140 @@
+================================================================
+NOSTR RELAY BENCHMARK AGGREGATE REPORT
+================================================================
+Generated: 2025-09-12T22:43:29+00:00
+Benchmark Configuration:
+  Events per test: 10000
+  Concurrent workers: 8
+  Test duration: 60s
+  
+Relays tested: 6
+
+================================================================
+SUMMARY BY RELAY
+================================================================
+
+Relay: next-orly
+----------------------------------------
+Status: COMPLETED
+Events/sec: 18056.94
+Events/sec: 1492.32
+Events/sec: 16750.82
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 428.869µs
+Bottom 10% Avg Latency: 643.51µs
+Avg Latency: 178.04µs
+P95 Latency: 607.997µs
+P95 Latency: 243.954µs
+P95 Latency: 21.665387ms
+
+Relay: khatru-sqlite
+----------------------------------------
+Status: COMPLETED
+Events/sec: 17635.76
+Events/sec: 1510.39
+Events/sec: 16509.10
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 437.941µs
+Bottom 10% Avg Latency: 659.71µs
+Avg Latency: 203.563µs
+P95 Latency: 621.964µs
+P95 Latency: 330.729µs
+P95 Latency: 21.838576ms
+
+Relay: khatru-badger
+----------------------------------------
+Status: COMPLETED
+Events/sec: 17312.60
+Events/sec: 1508.54
+Events/sec: 15933.99
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 448.778µs
+Bottom 10% Avg Latency: 664.268µs
+Avg Latency: 196.38µs
+P95 Latency: 633.085µs
+P95 Latency: 293.579µs
+P95 Latency: 22.727378ms
+
+Relay: relayer-basic
+----------------------------------------
+Status: COMPLETED
+Events/sec: 15155.00
+Events/sec: 1545.44
+Events/sec: 14255.58
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 513.243µs
+Bottom 10% Avg Latency: 864.746µs
+Avg Latency: 273.645µs
+P95 Latency: 792.685µs
+P95 Latency: 498.989µs
+P95 Latency: 22.924497ms
+
+Relay: strfry
+----------------------------------------
+Status: COMPLETED
+Events/sec: 15245.05
+Events/sec: 1533.59
+Events/sec: 15507.07
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 510.383µs
+Bottom 10% Avg Latency: 831.211µs
+Avg Latency: 223.359µs
+P95 Latency: 769.085µs
+P95 Latency: 378.145µs
+P95 Latency: 22.152884ms
+
+Relay: nostr-rs-relay
+----------------------------------------
+Status: COMPLETED
+Events/sec: 16312.24
+Events/sec: 1502.05
+Events/sec: 14131.23
+Success Rate: 100.0%
+Success Rate: 100.0%
+Success Rate: 100.0%
+Avg Latency: 476.418µs
+Bottom 10% Avg Latency: 722.179µs
+Avg Latency: 182.765µs
+P95 Latency: 686.836µs
+P95 Latency: 257.082µs
+P95 Latency: 20.680962ms
+
+
+================================================================
+DETAILED RESULTS
+================================================================
+
+Individual relay reports are available in:
+  - /reports/run_20250912_222649/khatru-badger_results.txt
+  - /reports/run_20250912_222649/khatru-sqlite_results.txt
+  - /reports/run_20250912_222649/next-orly_results.txt
+  - /reports/run_20250912_222649/nostr-rs-relay_results.txt
+  - /reports/run_20250912_222649/relayer-basic_results.txt
+  - /reports/run_20250912_222649/strfry_results.txt
+
+================================================================
+BENCHMARK COMPARISON TABLE
+================================================================
+
+Relay                Status     Peak Tput/s     Avg Latency     Success Rate   
+----                 ------     -----------     -----------     ------------   
+next-orly            OK         18056.94        428.869µs      100.0%         
+khatru-sqlite        OK         17635.76        437.941µs      100.0%         
+khatru-badger        OK         17312.60        448.778µs      100.0%         
+relayer-basic        OK         15155.00        513.243µs      100.0%         
+strfry               OK         15245.05        510.383µs      100.0%         
+nostr-rs-relay       OK         16312.24        476.418µs      100.0%         
+
+================================================================
+End of Report
+================================================================

@@ -359,7 +359,7 @@ func (r *Client) ConnectWithTLS(
 						okCallback(env.OK, env.ReasonString())
 					} else {
 						log.I.F(
-							"{%s} got an unexpected OK message for event %s",
+							"{%s} got an unexpected OK message for event %0x",
 							r.URL,
 							env.EventID,
 						)

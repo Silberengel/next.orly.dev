@@ -1,0 +1,190 @@
+Starting Nostr Relay Benchmark
+Data Directory: /tmp/benchmark_khatru-sqlite_8
+Events: 10000, Workers: 8, Duration: 1m0s
+20250912222936300616 INF /tmp/benchmark_khatru-sqlite_8: All 0 tables opened in 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/levels.go:161 /build/pkg/database/logger.go:57
+20250912222936301606 INF /tmp/benchmark_khatru-sqlite_8: Discard stats nextEmptySlot: 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/discard.go:55 /build/pkg/database/logger.go:57
+20250912222936301647 INF /tmp/benchmark_khatru-sqlite_8: Set nextTxnTs to 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:358 /build/pkg/database/logger.go:57
+20250912222936301987 INF (*types.Uint32)(0xc0001c23f0)({
+ value: (uint32) 1
+})
+ /build/pkg/database/migrations.go:65
+20250912222936302060 INF migrating to version 1... /build/pkg/database/migrations.go:79
+
+=== Starting test round 1/2 ===
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 567.02963ms
+Events/sec: 17635.76
+Avg latency: 437.941µs
+P90 latency: 574.133µs
+P95 latency: 621.964µs
+P99 latency: 768.473µs
+Bottom 10% Avg latency: 659.71µs
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 172.012448ms
+Burst completed: 1000 events in 145.502701ms
+Burst completed: 1000 events in 153.928098ms
+Burst completed: 1000 events in 169.995269ms
+Burst completed: 1000 events in 147.617375ms
+Burst completed: 1000 events in 157.211387ms
+Burst completed: 1000 events in 153.332744ms
+Burst completed: 1000 events in 172.374938ms
+Burst completed: 1000 events in 167.518935ms
+Burst completed: 1000 events in 155.211871ms
+Burst test completed: 10000 events in 6.620785215s
+Events/sec: 1510.39
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 5000 reads in 35.700582016s
+Combined ops/sec: 280.11
+
+Pausing 10s before next round...
+
+=== Starting test round 2/2 ===
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 605.726547ms
+Events/sec: 16509.10
+Avg latency: 470.577µs
+P90 latency: 609.791µs
+P95 latency: 660.256µs
+P99 latency: 788.641µs
+Bottom 10% Avg latency: 687.847µs
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 135.310723ms
+Burst completed: 1000 events in 166.604305ms
+Burst completed: 1000 events in 141.453184ms
+Burst completed: 1000 events in 146.579351ms
+Burst completed: 1000 events in 154.453638ms
+Burst completed: 1000 events in 156.212516ms
+Burst completed: 1000 events in 142.309354ms
+Burst completed: 1000 events in 152.268188ms
+Burst completed: 1000 events in 144.187829ms
+Burst completed: 1000 events in 147.609002ms
+Burst test completed: 10000 events in 6.508461808s
+Events/sec: 1536.46
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 4662 reads in 1m0.040595326s
+Combined ops/sec: 160.92
+
+================================================================================
+BENCHMARK REPORT
+================================================================================
+
+Test: Peak Throughput
+Duration: 567.02963ms
+Total Events: 10000
+Events/sec: 17635.76
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 154 MB
+Avg Latency: 437.941µs
+P90 Latency: 574.133µs
+P95 Latency: 621.964µs
+P99 Latency: 768.473µs
+Bottom 10% Avg Latency: 659.71µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 6.620785215s
+Total Events: 10000
+Events/sec: 1510.39
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 208 MB
+Avg Latency: 203.563µs
+P90 Latency: 274.152µs
+P95 Latency: 330.729µs
+P99 Latency: 521.483µs
+Bottom 10% Avg Latency: 378.237µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 35.700582016s
+Total Events: 10000
+Events/sec: 280.11
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 232 MB
+Avg Latency: 9.150925ms
+P90 Latency: 20.1434ms
+P95 Latency: 21.838576ms
+P99 Latency: 24.0106ms
+Bottom 10% Avg Latency: 22.04901ms
+----------------------------------------
+
+Test: Peak Throughput
+Duration: 605.726547ms
+Total Events: 10000
+Events/sec: 16509.10
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 139 MB
+Avg Latency: 470.577µs
+P90 Latency: 609.791µs
+P95 Latency: 660.256µs
+P99 Latency: 788.641µs
+Bottom 10% Avg Latency: 687.847µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 6.508461808s
+Total Events: 10000
+Events/sec: 1536.46
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 182 MB
+Avg Latency: 199.49µs
+P90 Latency: 261.427µs
+P95 Latency: 294.771µs
+P99 Latency: 406.814µs
+Bottom 10% Avg Latency: 332.083µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 1m0.040595326s
+Total Events: 9662
+Events/sec: 160.92
+Success Rate: 96.6%
+Concurrent Workers: 8
+Memory Used: 204 MB
+Avg Latency: 19.935937ms
+P90 Latency: 44.802034ms
+P95 Latency: 48.282589ms
+P99 Latency: 52.169026ms
+Bottom 10% Avg Latency: 48.641697ms
+----------------------------------------
+
+Report saved to: /tmp/benchmark_khatru-sqlite_8/benchmark_report.txt
+AsciiDoc report saved to: /tmp/benchmark_khatru-sqlite_8/benchmark_report.adoc
+20250912223216370778 INF /tmp/benchmark_khatru-sqlite_8: Lifetime L0 stalled for: 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:536 /build/pkg/database/logger.go:57
+20250912223217349356 INF /tmp/benchmark_khatru-sqlite_8: 
+Level 0 [ ]: NumTables: 00. Size: 0 B of 0 B. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 64 MiB
+Level 1 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 2 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 3 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 4 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 5 [B]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 6 [ ]: NumTables: 02. Size: 41 MiB of 41 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 4.0 MiB
+Level Done
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:615 /build/pkg/database/logger.go:57
+20250912223217352393 INF /tmp/benchmark_khatru-sqlite_8: database closed /build/pkg/database/database.go:134
+
+RELAY_NAME: khatru-sqlite
+RELAY_URL: ws://khatru-sqlite:3334
+TEST_TIMESTAMP: 2025-09-12T22:32:17+00:00
+BENCHMARK_CONFIG:
+  Events: 10000
+  Workers: 8
+  Duration: 60s

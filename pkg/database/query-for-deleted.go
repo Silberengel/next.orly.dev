@@ -2,7 +2,6 @@ package database
 
 import (
 	"fmt"
-	"sort"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
@@ -64,17 +63,17 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 				return
 			}
 			idPkTss = append(idPkTss, tmp...)
-			// sort by timestamp, so the first is the newest, which the event
-			// must be newer to not be deleted.
-			sort.Slice(
-				idPkTss, func(i, j int) bool {
-					return idPkTss[i].Ts > idPkTss[j].Ts
-				},
-			)
-			if ev.CreatedAt < idPkTss[0].Ts {
+			// find the newest deletion timestamp without sorting to reduce cost
+			maxTs := idPkTss[0].Ts
+			for i := 1; i < len(idPkTss); i++ {
+				if idPkTss[i].Ts > maxTs {
+					maxTs = idPkTss[i].Ts
+				}
+			}
+			if ev.CreatedAt < maxTs {
 				err = errorf.E(
 					"blocked: %0x was deleted by address %s because it is older than the delete: event: %d delete: %d",
-					ev.ID, at, ev.CreatedAt, idPkTss[0].Ts,
+					ev.ID, at, ev.CreatedAt, maxTs,
 				)
 				return
 			}
@@ -114,17 +113,19 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 				return
 			}
 			idPkTss = append(idPkTss, tmp...)
-			// sort by timestamp, so the first is the newest, which the event
-			// must be newer to not be deleted.
-			sort.Slice(
-				idPkTss, func(i, j int) bool {
-					return idPkTss[i].Ts > idPkTss[j].Ts
-				},
-			)
-			if ev.CreatedAt < idPkTss[0].Ts {
+			// find the newest deletion without sorting to reduce cost
+			maxTs := idPkTss[0].Ts
+			maxId := idPkTss[0].Id
+			for i := 1; i < len(idPkTss); i++ {
+				if idPkTss[i].Ts > maxTs {
+					maxTs = idPkTss[i].Ts
+					maxId = idPkTss[i].Id
+				}
+			}
+			if ev.CreatedAt < maxTs {
 				err = errorf.E(
 					"blocked: %0x was deleted: the event is older than the delete event %0x: event: %d delete: %d",
-					ev.ID, idPkTss[0].Id, ev.CreatedAt, idPkTss[0].Ts,
+					ev.ID, maxId, ev.CreatedAt, maxTs,
 				)
 				return
 			}
@@ -162,20 +163,25 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 				return
 			}
 			idPkTss = append(idPkTss, tmp...)
-			// sort by timestamp, so the first is the newest
-			sort.Slice(
-				idPkTss, func(i, j int) bool {
-					return idPkTss[i].Ts > idPkTss[j].Ts
-				},
-			)
-			if ev.CreatedAt < idPkTss[0].Ts {
+			// find the newest deletion without sorting to reduce cost
+			maxTs := idPkTss[0].Ts
+			maxId := idPkTss[0].Id
+			for i := 1; i < len(idPkTss); i++ {
+				if idPkTss[i].Ts > maxTs {
+					maxTs = idPkTss[i].Ts
+					maxId = idPkTss[i].Id
+				}
+			}
+			if ev.CreatedAt < maxTs {
 				err = errorf.E(
 					"blocked: %0x was deleted by address %s: event is older than the delete: event: %d delete: %d",
-					ev.ID, at, idPkTss[0].Id, ev.CreatedAt, idPkTss[0].Ts,
+					ev.ID, at, maxId, ev.CreatedAt, maxTs,
 				)
 				return
 			}
+			return
 		}
+		return
 	}
 	// otherwise we check for a delete by event id
 	var idxs []Range
@@ -196,7 +202,15 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 		if s, err = d.GetSerialsByRange(idx); chk.E(err) {
 			return
 		}
-		sers = append(sers, s...)
+		if len(s) > 0 {
+			// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
+			// regardless of timestamp, since it's a specific deletion of this exact event
+			err = errorf.E(
+				"blocked: %0x was deleted by ID and cannot be resubmitted",
+				ev.ID,
+			)
+			return
+		}
 	}
 	if len(sers) > 0 {
 		// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted

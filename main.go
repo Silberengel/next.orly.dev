@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 
+	"github.com/pkg/profile"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app"
@@ -23,7 +24,17 @@ func main() {
 	if cfg, err = config.New(); chk.T(err) {
 	}
 	log.I.F("starting %s %s", cfg.AppName, version.V)
-	startProfiler(cfg.Pprof)
+	switch cfg.Pprof {
+	case "cpu":
+		prof := profile.Start(profile.CPUProfile)
+		defer prof.Stop()
+	case "memory":
+		prof := profile.Start(profile.MemProfile)
+		defer prof.Stop()
+	case "allocation":
+		prof := profile.Start(profile.MemProfileAllocs)
+		defer prof.Stop()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var db *database.D
 	if db, err = database.New(
