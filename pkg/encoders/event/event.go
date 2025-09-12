@@ -112,23 +112,7 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = append(b, '"')
 	b = append(b, jId...)
 	b = append(b, `":"`...)
-	// it can happen the slice has insufficient capacity to hold the content AND
-	// the signature at this point, because the signature encoder must have
-	// sufficient capacity pre-allocated as it does not append to the buffer.
-	// unlike every other encoding function up to this point. This also ensures
-	// that since the bufpool defaults to 1kb, most events won't have a
-	// re-allocation required, but if they do, it will be this next one, and it
-	// integrates properly with the buffer pool, reducing GC pressure and
-	// avoiding new heap allocations.
-	if cap(b) < len(b)+len(ev.Content)+7+256+2 {
-		b2 := make([]byte, len(b)+len(ev.Content)*2+1024)
-		copy(b2, b)
-		b2 = b2[:len(b)]
-		// return the old buffer to the pool for reuse.
-		bufpool.PutBytes(b)
-		b = b2
-	}
-	b = b[:len(b)+2*sha256.Size]
+	b = append(b, make([]byte, 2*sha256.Size)...)
 	xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
 	b = append(b, `","`...)
 	b = append(b, jPubkey...)
@@ -156,7 +140,7 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = append(b, `","`...)
 	b = append(b, jSig...)
 	b = append(b, `":"`...)
-	b = b[:len(b)+2*schnorr.SignatureSize]
+	b = append(b, make([]byte, 2*schnorr.SignatureSize)...)
 	xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
 	b = append(b, `"}`...)
 	return
