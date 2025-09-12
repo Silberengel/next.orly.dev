@@ -15,9 +15,9 @@ RUN apk --no-cache add ca-certificates sqlite wget
 WORKDIR /app
 COPY --from=builder /build/examples/basic/relayer-basic /app/
 RUN mkdir -p /data
-EXPOSE 8080
+EXPOSE 7447
 ENV DATABASE_PATH=/data/relayer.db
-ENV PORT=8080
+# PORT env is not used by relayer-basic; it always binds to 7447 in code.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8080 || exit 1
+  CMD wget --quiet --tries=1 --spider http://localhost:7447 || exit 1
 CMD ["/app/relayer-basic"]

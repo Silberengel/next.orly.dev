@@ -1,0 +1,104 @@
+Starting Nostr Relay Benchmark
+Data Directory: /tmp/benchmark_strfry_8
+Events: 10000, Workers: 8, Duration: 1m0s
+20250912200046745432 INF /tmp/benchmark_strfry_8: All 0 tables opened in 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/levels.go:161 /build/pkg/database/logger.go:57
+20250912200046746116 INF /tmp/benchmark_strfry_8: Discard stats nextEmptySlot: 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/discard.go:55 /build/pkg/database/logger.go:57
+20250912200046746193 INF /tmp/benchmark_strfry_8: Set nextTxnTs to 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:358 /build/pkg/database/logger.go:57
+20250912200046746576 INF (*types.Uint32)(0xc0002a9c4c)({
+ value: (uint32) 1
+})
+ /build/pkg/database/migrations.go:65
+20250912200046746636 INF migrating to version 1... /build/pkg/database/migrations.go:79
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 651.630667ms
+Events/sec: 15346.12
+Avg latency: 506.51µs
+P95 latency: 590.442µs
+P99 latency: 278.399µs
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 148.701372ms
+Burst completed: 1000 events in 161.333951ms
+Burst completed: 1000 events in 146.993646ms
+Burst completed: 1000 events in 155.768019ms
+Burst completed: 1000 events in 143.83944ms
+Burst completed: 1000 events in 156.208347ms
+Burst completed: 1000 events in 150.769887ms
+Burst completed: 1000 events in 140.217044ms
+Burst completed: 1000 events in 150.831164ms
+Burst completed: 1000 events in 135.759058ms
+Burst test completed: 10000 events in 6.515183689s
+Events/sec: 1534.88
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 5000 reads in 37.667054484s
+Combined ops/sec: 265.48
+
+================================================================================
+BENCHMARK REPORT
+================================================================================
+
+Test: Peak Throughput
+Duration: 651.630667ms
+Total Events: 10000
+Events/sec: 15346.12
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 152 MB
+Avg Latency: 506.51µs
+P95 Latency: 590.442µs
+P99 Latency: 278.399µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 6.515183689s
+Total Events: 10000
+Events/sec: 1534.88
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 203 MB
+Avg Latency: 216.564µs
+P95 Latency: 267.91µs
+P99 Latency: 310.46µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 37.667054484s
+Total Events: 10000
+Events/sec: 265.48
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 136 MB
+Avg Latency: 9.938991ms
+P95 Latency: 19.784708ms
+P99 Latency: 18.788985ms
+----------------------------------------
+
+Report saved to: /tmp/benchmark_strfry_8/benchmark_report.txt
+20250912200131581470 INF /tmp/benchmark_strfry_8: Lifetime L0 stalled for: 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:536 /build/pkg/database/logger.go:57
+20250912200132372653 INF /tmp/benchmark_strfry_8: 
+Level 0 [ ]: NumTables: 00. Size: 0 B of 0 B. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 64 MiB
+Level 1 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 2 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 3 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 4 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 5 [B]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 6 [ ]: NumTables: 01. Size: 21 MiB of 21 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 4.0 MiB
+Level Done
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:615 /build/pkg/database/logger.go:57
+20250912200132384548 INF /tmp/benchmark_strfry_8: database closed /build/pkg/database/database.go:134
+
+RELAY_NAME: strfry
+RELAY_URL: ws://strfry:8080
+TEST_TIMESTAMP: 2025-09-12T20:01:32+00:00
+BENCHMARK_CONFIG:
+  Events: 10000
+  Workers: 8
+  Duration: 60s

@@ -8,10 +8,10 @@ services:
       dockerfile: cmd/benchmark/Dockerfile.next-orly
     container_name: benchmark-next-orly
     environment:
-      - DATA_DIR=/data
-      - LISTEN=0.0.0.0
-      - PORT=8080
-      - LOG_LEVEL=info
+      - ORLY_DATA_DIR=/data
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=8080
+      - ORLY_LOG_LEVEL=info
     volumes:
       - ./data/next-orly:/data
     ports:
@@ -19,7 +19,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 || echo 000); echo $$code | grep -E '^(101|200|400|404|426)$' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -34,15 +34,14 @@ services:
     environment:
       - DATABASE_TYPE=sqlite
       - DATABASE_PATH=/data/khatru.db
-      - PORT=8080
     volumes:
       - ./data/khatru-sqlite:/data
     ports:
-      - "8002:8080"
+      - "8002:3334"
     networks:
       - benchmark-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      test: ["CMD-SHELL", "wget --quiet --server-response --tries=1 http://localhost:3334 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -57,15 +56,14 @@ services:
     environment:
       - DATABASE_TYPE=badger
       - DATABASE_PATH=/data/badger
-      - PORT=8080
     volumes:
       - ./data/khatru-badger:/data
     ports:
-      - "8003:8080"
+      - "8003:3334"
     networks:
       - benchmark-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      test: ["CMD-SHELL", "wget --quiet --server-response --tries=1 http://localhost:3334 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -78,16 +76,18 @@ services:
       dockerfile: ../../Dockerfile.relayer-basic
     container_name: benchmark-relayer-basic
     environment:
-      - PORT=8080
-      - DATABASE_PATH=/data/relayer.db
+      - POSTGRESQL_DATABASE=postgres://relayer:relayerpass@postgres:5432/relayerdb?sslmode=disable
     volumes:
       - ./data/relayer-basic:/data
     ports:
-      - "8004:8080"
+      - "8004:7447"
     networks:
       - benchmark-net
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
+      test: ["CMD-SHELL", "wget --quiet --server-response --tries=1 http://localhost:7447 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -95,9 +95,7 @@ services:
 
   # Strfry
   strfry:
-    build:
-      context: ./external/strfry
-      dockerfile: ../../Dockerfile.strfry
+    image: ghcr.io/hoytech/strfry:latest
     container_name: benchmark-strfry
     environment:
       - STRFRY_DB_PATH=/data/strfry.lmdb
@@ -110,7 +108,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      test: ["CMD-SHELL", "wget --quiet --server-response --tries=1 http://127.0.0.1:8080 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404|426)' >/dev/null"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -158,7 +156,7 @@ services:
       nostr-rs-relay:
         condition: service_healthy
     environment:
-      - BENCHMARK_TARGETS=next-orly:8001,khatru-sqlite:8002,khatru-badger:8003,relayer-basic:8004,strfry:8005,nostr-rs-relay:8006
+      - BENCHMARK_TARGETS=next-orly:8080,khatru-sqlite:3334,khatru-badger:3334,relayer-basic:7447,strfry:8080,nostr-rs-relay:8080
       - BENCHMARK_EVENTS=10000
       - BENCHMARK_WORKERS=8
       - BENCHMARK_DURATION=60s
@@ -173,6 +171,25 @@ services:
         echo 'Starting benchmark tests...' &&
         /app/benchmark-runner --output-dir=/reports
       "
+
+  # PostgreSQL for relayer-basic
+  postgres:
+    image: postgres:16-alpine
+    container_name: benchmark-postgres
+    environment:
+      - POSTGRES_DB=relayerdb
+      - POSTGRES_USER=relayer
+      - POSTGRES_PASSWORD=relayerpass
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayer -d relayerdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 networks:
   benchmark-net:

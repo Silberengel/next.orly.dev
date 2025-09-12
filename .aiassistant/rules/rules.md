@@ -93,3 +93,5 @@ A good typical example:
 use the source of the relay-tester to help guide what expectations the test has, 
 and use context7 for information about the nostr protocol, and use additional 
 log statements to help locate the cause of bugs
+
+always use Go v1.25.1 for everything involving Go

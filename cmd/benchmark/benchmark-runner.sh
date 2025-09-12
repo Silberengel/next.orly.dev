@@ -9,7 +9,7 @@ set -e
 BENCHMARK_EVENTS="${BENCHMARK_EVENTS:-10000}"
 BENCHMARK_WORKERS="${BENCHMARK_WORKERS:-8}"
 BENCHMARK_DURATION="${BENCHMARK_DURATION:-60s}"
-BENCHMARK_TARGETS="${BENCHMARK_TARGETS:-next-orly:8001,khatru-sqlite:8002,khatru-badger:8003,relayer-basic:8004,strfry:8005,nostr-rs-relay:8006}"
+BENCHMARK_TARGETS="${BENCHMARK_TARGETS:-next-orly:8080,khatru-sqlite:3334,khatru-badger:3334,relayer-basic:7447,strfry:8080,nostr-rs-relay:8080}"
 OUTPUT_DIR="${OUTPUT_DIR:-/reports}"
 
 # Create output directory
@@ -40,14 +40,24 @@ wait_for_relay() {
     echo "Waiting for ${name} to be ready at ${url}..."
     
     while [ $attempt -lt $max_attempts ]; do
-        if wget --quiet --tries=1 --spider --timeout=5 "http://${url}" 2>/dev/null || \
-           curl -f --connect-timeout 5 --max-time 5 "http://${url}" >/dev/null 2>&1; then
-            echo "${name} is ready!"
-            return 0
+        # Try wget first to obtain an HTTP status code
+        local status=""
+        status=$(wget --quiet --server-response --tries=1 --timeout=5 "http://${url}" 2>&1 | awk '/^  HTTP\//{print $2; exit}')
+        
+        # Fallback to curl to obtain an HTTP status code
+        if [ -z "$status" ]; then
+            status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 5 "http://${url}" || echo 000)
         fi
         
+        case "$status" in
+            101|200|400|404|426)
+                echo "${name} is ready! (HTTP ${status})"
+                return 0
+                ;;
+        esac
+        
         attempt=$((attempt + 1))
-        echo "  Attempt ${attempt}/${max_attempts}: ${name} not ready yet..."
+        echo "  Attempt ${attempt}/${max_attempts}: ${name} not ready yet (HTTP ${status:-none})..."
         sleep 2
     done
     

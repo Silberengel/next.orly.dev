@@ -3,14 +3,21 @@ FROM ubuntu:22.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y git g++ make libssl-dev zlib1g-dev liblmdb-dev libflatbuffers-dev libsecp256k1-dev libzstd-dev \
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    liblmdb-dev \
+    libsecp256k1-dev \
+    pkg-config \
+    libtool \
+    autoconf \
+    automake \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-COPY . .
 
-# Initialize git submodules
-RUN git submodule update --init --recursive
+# Fetch strfry source with submodules to ensure golpe is present
+RUN git clone --recurse-submodules https://github.com/hoytech/strfry .
 
 # Build strfry
 RUN make setup-golpe && \
@@ -21,34 +28,17 @@ RUN apt-get update && apt-get install -y \
     liblmdb0 \
     libsecp256k1-0 \
     curl \
-    bash \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /build/strfry /app/
-COPY --from=builder /build/strfry.conf /app/
-
-# Create the data directory placeholder (may be masked by volume at runtime)
-RUN mkdir -p /data && \
-    chmod 755 /data
-
-# Update strfry.conf to bind to all interfaces and use port 8080
-RUN sed -i 's/bind = "127.0.0.1"/bind = "0.0.0.0"/' /app/strfry.conf && \
-    sed -i 's/port = 7777/port = 8080/' /app/strfry.conf
-
-# Entrypoint ensures the LMDB directory exists inside the mounted volume before starting
-ENV STRFRY_DB_PATH=/data/strfry.lmdb
-RUN echo '#!/usr/bin/env bash' > /entrypoint.sh && \
-    echo 'set -euo pipefail' >> /entrypoint.sh && \
-    echo 'DB_PATH="${STRFRY_DB_PATH:-/data/strfry.lmdb}"' >> /entrypoint.sh && \
-    echo 'mkdir -p "$DB_PATH"' >> /entrypoint.sh && \
-    echo 'chown -R root:root "$(dirname "$DB_PATH")"' >> /entrypoint.sh && \
-    echo 'exec /app/strfry relay' >> /entrypoint.sh && \
-    chmod +x /entrypoint.sh
+RUN mkdir -p /data
 
 EXPOSE 8080
+ENV STRFRY_DB_PATH=/data/strfry.lmdb
+ENV STRFRY_RELAY_PORT=8080
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080 || exit 1
 
-ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app/strfry", "relay"]

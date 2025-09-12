@@ -2,7 +2,7 @@
 FROM ubuntu:22.04 as builder
 
 # Set environment variables
-ARG GOLANG_VERSION=1.25.1
+ARG GOLANG_VERSION=1.22.5
 
 # Update package list and install dependencies
 RUN apt-get update && \
@@ -67,14 +67,14 @@ RUN mkdir -p /data
 EXPOSE 8080
 
 # Set environment variables
-ENV DATA_DIR=/data
-ENV LISTEN=0.0.0.0
-ENV PORT=8080
-ENV LOG_LEVEL=info
+ENV ORLY_DATA_DIR=/data
+ENV ORLY_LISTEN=0.0.0.0
+ENV ORLY_PORT=8080
+ENV ORLY_LOG_LEVEL=info
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080 || exit 1
+  CMD bash -lc "code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080 || echo 000); echo \$code | grep -E '^(101|200|400|404|426)$' >/dev/null || exit 1"
 
 # Run the relay
 CMD ["/app/relay"]

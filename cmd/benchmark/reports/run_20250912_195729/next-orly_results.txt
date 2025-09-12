@@ -1,0 +1,104 @@
+Starting Nostr Relay Benchmark
+Data Directory: /tmp/benchmark_next-orly_8
+Events: 10000, Workers: 8, Duration: 1m0s
+20250912195729240522 INF /tmp/benchmark_next-orly_8: All 0 tables opened in 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/levels.go:161 /build/pkg/database/logger.go:57
+20250912195729241087 INF /tmp/benchmark_next-orly_8: Discard stats nextEmptySlot: 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/discard.go:55 /build/pkg/database/logger.go:57
+20250912195729241168 INF /tmp/benchmark_next-orly_8: Set nextTxnTs to 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:358 /build/pkg/database/logger.go:57
+20250912195729241759 INF (*types.Uint32)(0xc0001de49c)({
+ value: (uint32) 1
+})
+ /build/pkg/database/migrations.go:65
+20250912195729241847 INF migrating to version 1... /build/pkg/database/migrations.go:79
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 558.618706ms
+Events/sec: 17901.30
+Avg latency: 433.058µs
+P95 latency: 456.738µs
+P99 latency: 337.231µs
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 172.949275ms
+Burst completed: 1000 events in 175.209401ms
+Burst completed: 1000 events in 156.532197ms
+Burst completed: 1000 events in 157.913421ms
+Burst completed: 1000 events in 151.37659ms
+Burst completed: 1000 events in 161.938783ms
+Burst completed: 1000 events in 168.47761ms
+Burst completed: 1000 events in 159.951768ms
+Burst completed: 1000 events in 170.308111ms
+Burst completed: 1000 events in 146.767432ms
+Burst test completed: 10000 events in 6.646634323s
+Events/sec: 1504.52
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 5000 reads in 35.548232107s
+Combined ops/sec: 281.31
+
+================================================================================
+BENCHMARK REPORT
+================================================================================
+
+Test: Peak Throughput
+Duration: 558.618706ms
+Total Events: 10000
+Events/sec: 17901.30
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 154 MB
+Avg Latency: 433.058µs
+P95 Latency: 456.738µs
+P99 Latency: 337.231µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 6.646634323s
+Total Events: 10000
+Events/sec: 1504.52
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 207 MB
+Avg Latency: 182.813µs
+P95 Latency: 152.86µs
+P99 Latency: 204.198µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 35.548232107s
+Total Events: 10000
+Events/sec: 281.31
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 215 MB
+Avg Latency: 9.086952ms
+P95 Latency: 18.156339ms
+P99 Latency: 24.346573ms
+----------------------------------------
+
+Report saved to: /tmp/benchmark_next-orly_8/benchmark_report.txt
+20250912195811996353 INF /tmp/benchmark_next-orly_8: Lifetime L0 stalled for: 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:536 /build/pkg/database/logger.go:57
+20250912195812308400 INF /tmp/benchmark_next-orly_8: 
+Level 0 [ ]: NumTables: 00. Size: 0 B of 0 B. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 64 MiB
+Level 1 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 2 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 3 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 4 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 5 [B]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 6 [ ]: NumTables: 01. Size: 21 MiB of 21 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 4.0 MiB
+Level Done
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:615 /build/pkg/database/logger.go:57
+20250912195812310341 INF /tmp/benchmark_next-orly_8: database closed /build/pkg/database/database.go:134
+
+RELAY_NAME: next-orly
+RELAY_URL: ws://next-orly:8080
+TEST_TIMESTAMP: 2025-09-12T19:58:12+00:00
+BENCHMARK_CONFIG:
+  Events: 10000
+  Workers: 8
+  Duration: 60s

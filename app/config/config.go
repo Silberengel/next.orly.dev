@@ -27,6 +27,7 @@ type C struct {
 	DataDir     string   `env:"ORLY_DATA_DIR" usage:"storage location for the event store" default:"~/.local/share/ORLY"`
 	Listen      string   `env:"ORLY_LISTEN" default:"0.0.0.0" usage:"network listen address"`
 	Port        int      `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
+	HealthPort  int      `env:"ORLY_HEALTH_PORT" default:"0" usage:"optional health check HTTP port; 0 disables"`
 	LogLevel    string   `env:"ORLY_LOG_LEVEL" default:"info" usage:"relay log level: fatal error warn info debug trace"`
 	DBLogLevel  string   `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
 	LogToStdout bool     `env:"ORLY_LOG_TO_STDOUT" default:"false" usage:"log to stdout instead of stderr"`

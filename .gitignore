@@ -30,7 +30,7 @@ node_modules/**
 /go.work.sum
 /secp256k1/
 cmd/benchmark/external
-
+cmd/benchmark/data
 # But not these files...
 !/.gitignore
 !*.go
