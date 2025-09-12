@@ -34,7 +34,7 @@ type C struct {
 	IPWhitelist []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
 	Admins      []string `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
 	Owners      []string `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`
-	ACLMode     string   `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"follows"`
+	ACLMode     string   `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
 }
 
 // New creates and initializes a new configuration object for the relay
