@@ -43,8 +43,8 @@ if [[ -z "$ALLOC_FILE" ]]; then echo "[analyze] WARNING: Alloc profile not found
   echo
 
   if [[ -n "$CPU_FILE" && -s "$CPU_FILE" ]]; then
-    echo "-- CPU Hotspots (top by flat CPU) --"
-    go tool pprof -top -nodecount=15 "$BIN" "$CPU_FILE" 2>/dev/null | sed '1,2d'
+    echo "-- CPU Functions (full list by flat CPU) --"
+    go tool pprof -top -nodecount=0 "$BIN" "$CPU_FILE" 2>/dev/null | sed '1,2d'
     echo
   else
     echo "CPU profile: not available"
@@ -52,8 +52,8 @@ if [[ -z "$ALLOC_FILE" ]]; then echo "[analyze] WARNING: Alloc profile not found
   fi
 
   if [[ -n "$MEM_FILE" && -s "$MEM_FILE" ]]; then
-    echo "-- Memory (In-Use Space) Hotspots --"
-    go tool pprof -top -sample_index=inuse_space -nodecount=15 "$BIN" "$MEM_FILE" 2>/dev/null | sed '1,2d'
+    echo "-- Memory (In-Use Space) Functions (full list) --"
+    go tool pprof -top -sample_index=inuse_space -nodecount=0 "$BIN" "$MEM_FILE" 2>/dev/null | sed '1,2d'
     echo
   else
     echo "Memory (in-use) profile: not available"
@@ -61,11 +61,11 @@ if [[ -z "$ALLOC_FILE" ]]; then echo "[analyze] WARNING: Alloc profile not found
   fi
 
   if [[ -n "$ALLOC_FILE" && -s "$ALLOC_FILE" ]]; then
-    echo "-- Allocations (Total Alloc Space) Hotspots --"
-    go tool pprof -top -sample_index=alloc_space -nodecount=15 "$BIN" "$ALLOC_FILE" 2>/dev/null | sed '1,2d'
+    echo "-- Allocations (Total Alloc Space) Functions (full list) --"
+    go tool pprof -top -sample_index=alloc_space -nodecount=0 "$BIN" "$ALLOC_FILE" 2>/dev/null | sed '1,2d'
     echo
-    echo "-- Allocation Frequency (Alloc Objects) --"
-    go tool pprof -top -sample_index=alloc_objects -nodecount=15 "$BIN" "$ALLOC_FILE" 2>/dev/null | sed '1,2d'
+    echo "-- Allocation Frequency (Alloc Objects) Functions (full list) --"
+    go tool pprof -top -sample_index=alloc_objects -nodecount=0 "$BIN" "$ALLOC_FILE" 2>/dev/null | sed '1,2d'
     echo
   else
     echo "Allocation profile: not available"

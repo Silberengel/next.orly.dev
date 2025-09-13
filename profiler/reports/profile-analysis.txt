@@ -1,81 +1,188 @@
 ==== next.orly.dev Profiling Analysis ====
-Sat Sep 13 11:46:40 UTC 2025
+Sat Sep 13 15:15:09 UTC 2025
 
--- CPU Hotspots (top by flat CPU) --
+-- CPU Functions (full list by flat CPU) --
 Type: cpu
-Time: Sep 13, 2025 at 11:39am (UTC)
-Duration: 400.39s, Total samples = 2620ms ( 0.65%)
-Showing nodes accounting for 1950ms, 74.43% of 2620ms total
-Dropped 58 nodes (cum <= 13.10ms)
-Showing top 15 nodes out of 78
+Time: Sep 13, 2025 at 3:08pm (UTC)
+Duration: 401.93s, Total samples = 2.67s ( 0.66%)
+Showing nodes accounting for 2.48s, 92.88% of 2.67s total
+Dropped 51 nodes (cum <= 0.01s)
       flat  flat%   sum%        cum   cum%
-     870ms 33.21% 33.21%      870ms 33.21%  internal/runtime/syscall.Syscall6
-     220ms  8.40% 41.60%      220ms  8.40%  runtime.futex
-     210ms  8.02% 49.62%      400ms 15.27%  runtime.stealWork
-     160ms  6.11% 55.73%      160ms  6.11%  runtime.write1
-      70ms  2.67% 58.40%       70ms  2.67%  runtime.nanotime1
-      60ms  2.29% 60.69%       60ms  2.29%  runtime.pMask.read (inline)
-      50ms  1.91% 62.60%      380ms 14.50%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor
-      50ms  1.91% 64.50%       50ms  1.91%  runtime.(*randomEnum).next (inline)
-      50ms  1.91% 66.41%     1980ms 75.57%  runtime.findRunnable
-      40ms  1.53% 67.94%       40ms  1.53%  runtime.memclrNoHeapPointers
-      40ms  1.53% 69.47%      930ms 35.50%  runtime.netpoll
-      40ms  1.53% 70.99%      150ms  5.73%  runtime.selectgo
-      30ms  1.15% 72.14%      860ms 32.82%  internal/runtime/syscall.EpollWait
-      30ms  1.15% 73.28%       40ms  1.53%  runtime.(*mcache).prepareForSweep
-      30ms  1.15% 74.43%       30ms  1.15%  runtime.cheaprand (inline)
+     0.78s 29.21% 29.21%      0.78s 29.21%  internal/runtime/syscall.Syscall6
+     0.27s 10.11% 39.33%      0.27s 10.11%  runtime.futex
+     0.12s  4.49% 43.82%      0.12s  4.49%  runtime.write1
+     0.11s  4.12% 47.94%      0.34s 12.73%  runtime.stealWork
+     0.09s  3.37% 51.31%      0.09s  3.37%  runtime.read
+     0.08s  3.00% 54.31%      1.94s 72.66%  runtime.findRunnable
+     0.08s  3.00% 57.30%      0.08s  3.00%  runtime.pMask.read (inline)
+     0.05s  1.87% 59.18%      0.06s  2.25%  runtime.sellock
+     0.05s  1.87% 61.05%      0.05s  1.87%  runtime.unlock2
+     0.04s  1.50% 62.55%      0.43s 16.10%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor
+     0.04s  1.50% 64.04%      0.89s 33.33%  runtime.netpoll
+     0.04s  1.50% 65.54%      0.16s  5.99%  runtime.selectgo
+     0.03s  1.12% 66.67%      0.04s  1.50%  github.com/dgraph-io/ristretto/v2/z.(*Closer).HasBeenClosed (inline)
+     0.03s  1.12% 67.79%      0.03s  1.12%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+     0.03s  1.12% 68.91%      0.04s  1.50%  runtime.mallocgcSmallNoscan
+     0.03s  1.12% 70.04%      0.03s  1.12%  runtime.pMask.set (inline)
+     0.03s  1.12% 71.16%      0.03s  1.12%  runtime.releaseSudog
+     0.03s  1.12% 72.28%      0.03s  1.12%  sync/atomic.(*Int32).Add (inline)
+     0.02s  0.75% 73.03%      0.02s  0.75%  github.com/dgraph-io/badger/v4.(*compactStatus).delSize
+     0.02s  0.75% 73.78%      0.08s  3.00%  github.com/dgraph-io/badger/v4.(*levelsController).levelTargets
+     0.02s  0.75% 74.53%      0.20s  7.49%  github.com/dgraph-io/badger/v4.(*levelsController).pickCompactLevels
+     0.02s  0.75% 75.28%      0.02s  0.75%  internal/reflectlite.unpackEface (inline)
+     0.02s  0.75% 76.03%      0.02s  0.75%  internal/runtime/atomic.(*Uint32).Load (inline)
+     0.02s  0.75% 76.78%      0.04s  1.50%  runtime.(*mcache).prepareForSweep
+     0.02s  0.75% 77.53%      0.02s  0.75%  runtime.(*randomEnum).next (inline)
+     0.02s  0.75% 78.28%      0.03s  1.12%  runtime.casgstatus
+     0.02s  0.75% 79.03%      0.03s  1.12%  runtime.checkRunqsNoP
+     0.02s  0.75% 79.78%      0.02s  0.75%  runtime.execute
+     0.02s  0.75% 80.52%      0.19s  7.12%  runtime.futexsleep
+     0.02s  0.75% 81.27%      0.02s  0.75%  runtime.lock2
+     0.02s  0.75% 82.02%      0.02s  0.75%  runtime.nanotime1
+     0.02s  0.75% 82.77%      0.02s  0.75%  runtime.nextFreeFast (inline)
+     0.02s  0.75% 83.52%      0.02s  0.75%  runtime.pidleput
+     0.02s  0.75% 84.27%      0.02s  0.75%  runtime.runqget (inline)
+     0.02s  0.75% 85.02%      2.10s 78.65%  runtime.schedule
+     0.02s  0.75% 85.77%      0.02s  0.75%  runtime.traceEnabled (inline)
+     0.02s  0.75% 86.52%      0.03s  1.12%  time.Now
+     0.02s  0.75% 87.27%      0.03s  1.12%  time.Time.Add
+     0.01s  0.37% 87.64%      0.04s  1.50%  github.com/dgraph-io/badger/v4.(*levelHandler).getTotalSize
+     0.01s  0.37% 88.01%      0.76s 28.46%  internal/runtime/syscall.EpollWait
+     0.01s  0.37% 88.39%      0.14s  5.24%  runtime.(*timer).unlockAndRun
+     0.01s  0.37% 88.76%      0.03s  1.12%  runtime.(*waitq).dequeue (inline)
+     0.01s  0.37% 89.14%      0.07s  2.62%  runtime.acquirep
+     0.01s  0.37% 89.51%      0.04s  1.50%  runtime.checkTimersNoP
+     0.01s  0.37% 89.89%      0.02s  0.75%  runtime.mallocgcSmallScanNoHeader
+     0.01s  0.37% 90.26%      0.02s  0.75%  runtime.markroot
+     0.01s  0.37% 90.64%      2.12s 79.40%  runtime.mcall
+     0.01s  0.37% 91.01%      2.11s 79.03%  runtime.park_m
+     0.01s  0.37% 91.39%      0.02s  0.75%  runtime.traceAcquire (inline)
+     0.01s  0.37% 91.76%      0.12s  4.49%  runtime.wakep
+     0.01s  0.37% 92.13%      0.13s  4.87%  runtime.write
+     0.01s  0.37% 92.51%      0.03s  1.12%  sort.Slice
+     0.01s  0.37% 92.88%      0.13s  4.87%  time.sendTime
+         0     0% 92.88%      0.02s  0.75%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0% 92.88%      0.02s  0.75%  github.com/dgraph-io/badger/v4.(*DB).openMemTables
+         0     0% 92.88%      0.20s  7.49%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor.func3
+         0     0% 92.88%      0.02s  0.75%  github.com/dgraph-io/badger/v4.(*logFile).Truncate
+         0     0% 92.88%      0.03s  1.12%  github.com/dgraph-io/badger/v4.Open
+         0     0% 92.88%      0.02s  0.75%  github.com/dgraph-io/ristretto/v2/z.(*MmapFile).Truncate
+         0     0% 92.88%      0.02s  0.75%  internal/poll.(*FD).Ftruncate
+         0     0% 92.88%      0.02s  0.75%  internal/poll.(*FD).Ftruncate.func1 (inline)
+         0     0% 92.88%      0.02s  0.75%  internal/poll.ignoringEINTR (inline)
+         0     0% 92.88%      0.02s  0.75%  internal/reflectlite.ValueOf (inline)
+         0     0% 92.88%      0.03s  1.12%  main.main
+         0     0% 92.88%      0.03s  1.12%  next.orly.dev/pkg/database.New
+         0     0% 92.88%      0.02s  0.75%  os.(*File).Truncate
+         0     0% 92.88%      0.17s  6.37%  runtime.(*timers).check
+         0     0% 92.88%      0.14s  5.24%  runtime.(*timers).run
+         0     0% 92.88%      0.06s  2.25%  runtime.chansend
+         0     0% 92.88%      0.02s  0.75%  runtime.convTslice
+         0     0% 92.88%      0.10s  3.75%  runtime.futexwakeup
+         0     0% 92.88%      0.02s  0.75%  runtime.gcBgMarkWorker
+         0     0% 92.88%      0.02s  0.75%  runtime.gcBgMarkWorker.func2
+         0     0% 92.88%      0.02s  0.75%  runtime.gcDrain
+         0     0% 92.88%      0.02s  0.75%  runtime.gcDrainMarkWorkerDedicated (inline)
+         0     0% 92.88%      0.03s  1.12%  runtime.goready (inline)
+         0     0% 92.88%      0.02s  0.75%  runtime.lock (inline)
+         0     0% 92.88%      0.02s  0.75%  runtime.lockWithRank (inline)
+         0     0% 92.88%      0.19s  7.12%  runtime.mPark (inline)
+         0     0% 92.88%      0.03s  1.12%  runtime.main
+         0     0% 92.88%      0.05s  1.87%  runtime.makeslice
+         0     0% 92.88%      0.07s  2.62%  runtime.mallocgc
+         0     0% 92.88%      0.13s  4.87%  runtime.netpollBreak
+         0     0% 92.88%      0.19s  7.12%  runtime.notesleep
+         0     0% 92.88%      0.10s  3.75%  runtime.notewakeup
+         0     0% 92.88%      0.04s  1.50%  runtime.pidleget
+         0     0% 92.88%      0.03s  1.12%  runtime.ready
+         0     0% 92.88%      0.12s  4.49%  runtime.resetspinning
+         0     0% 92.88%      0.06s  2.25%  runtime.selectnbsend
+         0     0% 92.88%      0.03s  1.12%  runtime.send
+         0     0% 92.88%      0.03s  1.12%  runtime.send.goready.func1
+         0     0% 92.88%      0.10s  3.75%  runtime.startm
+         0     0% 92.88%      0.21s  7.87%  runtime.stopm
+         0     0% 92.88%      0.03s  1.12%  runtime.systemstack
+         0     0% 92.88%      0.05s  1.87%  runtime.unlock (inline)
+         0     0% 92.88%      0.05s  1.87%  runtime.unlockWithRank (inline)
+         0     0% 92.88%      0.02s  0.75%  sync.(*RWMutex).RLock (inline)
+         0     0% 92.88%      0.02s  0.75%  syscall.Ftruncate
+         0     0% 92.88%      0.03s  1.12%  syscall.RawSyscall6
+         0     0% 92.88%      0.03s  1.12%  syscall.Syscall
 
--- Memory (In-Use Space) Hotspots --
+-- Memory (In-Use Space) Functions (full list) --
 Type: inuse_space
-Time: Sep 13, 2025 at 11:46am (UTC)
-Showing nodes accounting for 85209.25kB, 99.24% of 85865.58kB total
-Dropped 112 nodes (cum <= 429.33kB)
+Time: Sep 13, 2025 at 3:15pm (UTC)
+Showing nodes accounting for 85209.25kB, 99.24% of 85860.37kB total
+Dropped 121 nodes (cum <= 429.30kB)
       flat  flat%   sum%        cum   cum%
-   85200kB 99.22% 99.22%    85200kB 99.22%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
-    9.25kB 0.011% 99.24% 85654.66kB 99.75%  github.com/dgraph-io/badger/v4.Open
-         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
-         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
-         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
-         0     0% 99.24% 85654.66kB 99.75%  main.main
-         0     0% 99.24% 85654.66kB 99.75%  next.orly.dev/pkg/database.New
-         0     0% 99.24% 85654.66kB 99.75%  runtime.main
+   85200kB 99.23% 99.23%    85200kB 99.23%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+    9.25kB 0.011% 99.24% 85632.26kB 99.73%  github.com/dgraph-io/badger/v4.Open
+         0     0% 99.24%    85200kB 99.23%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0% 99.24%    85200kB 99.23%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0% 99.24%    85200kB 99.23%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0% 99.24% 85632.26kB 99.73%  main.main
+         0     0% 99.24% 85632.26kB 99.73%  next.orly.dev/pkg/database.New
+         0     0% 99.24% 85632.26kB 99.73%  runtime.main
 
--- Allocations (Total Alloc Space) Hotspots --
+-- Allocations (Total Alloc Space) Functions (full list) --
 Type: alloc_space
-Time: Sep 13, 2025 at 11:46am (UTC)
-Showing nodes accounting for 83.20MB, 100% of 83.21MB total
-Dropped 26 nodes (cum <= 0.42MB)
+Time: Sep 13, 2025 at 3:15pm (UTC)
+Showing nodes accounting for 87.20MB, 100% of 87.21MB total
+Dropped 15 nodes (cum <= 0.44MB)
       flat  flat%   sum%        cum   cum%
-   83.20MB   100%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
-         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
-         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
-         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.Open
-         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
-         0     0%   100%    83.20MB   100%  main.main
-         0     0%   100%    83.20MB   100%  next.orly.dev/pkg/database.New
-         0     0%   100%    83.20MB   100%  runtime.main
+   83.20MB 95.40% 95.40%    83.20MB 95.40%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+       4MB  4.59%   100%        4MB  4.59%  github.com/dgraph-io/ristretto/v2/z.Calloc (inline)
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/badger/v4.(*DB).flushMemtable
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/badger/v4.(*DB).handleMemTableFlush
+         0     0%   100%    83.20MB 95.40%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0%   100%    83.20MB 95.40%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0%   100%    83.20MB 95.40%  github.com/dgraph-io/badger/v4.Open
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/badger/v4.Open.func5
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/badger/v4.buildL0Table
+         0     0%   100%    83.20MB 95.40%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/badger/v4/table.NewTableBuilder
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/ristretto/v2/z.(*AllocatorPool).Get
+         0     0%   100%        4MB  4.59%  github.com/dgraph-io/ristretto/v2/z.NewAllocator
+         0     0%   100%    83.20MB 95.40%  main.main
+         0     0%   100%    83.20MB 95.40%  next.orly.dev/pkg/database.New
+         0     0%   100%    83.20MB 95.40%  runtime.main
 
--- Allocation Frequency (Alloc Objects) --
+-- Allocation Frequency (Alloc Objects) Functions (full list) --
 Type: alloc_objects
-Time: Sep 13, 2025 at 11:46am (UTC)
-Showing nodes accounting for 7, 100% of 7 total
-Showing top 15 nodes out of 34
+Time: Sep 13, 2025 at 3:15pm (UTC)
+Showing nodes accounting for 6, 100% of 6 total
       flat  flat%   sum%        cum   cum%
-         2 28.57% 28.57%          2 28.57%  regexp/syntax.(*parser).newRegexp (inline)
-         1 14.29% 42.86%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).levelTargets
-         1 14.29% 57.14%          1 14.29%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
-         1 14.29% 71.43%          1 14.29%  github.com/pkg/profile.Start
-         1 14.29% 85.71%          1 14.29%  github.com/pkg/profile.Start.func11
-         1 14.29%   100%          1 14.29%  runtime.allocm
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).pickCompactLevels
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor.func3
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.Open
-         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
-         0     0%   100%          2 28.57%  github.com/google/pprof/profile.init
-         0     0%   100%          2 28.57%  main.main
+         1 16.67% 16.67%          1 16.67%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+         1 16.67% 33.33%          1 16.67%  github.com/dgraph-io/ristretto/v2/z.Calloc (inline)
+         1 16.67% 50.00%          1 16.67%  github.com/pkg/profile.Start
+         1 16.67% 66.67%          1 16.67%  github.com/pkg/profile.Start.func11
+         1 16.67% 83.33%          1 16.67%  runtime.allocm
+         1 16.67%   100%          1 16.67%  runtime.procresize
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.(*DB).flushMemtable
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.(*DB).handleMemTableFlush
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.Open
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.Open.func5
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4.buildL0Table
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0%   100%          1 16.67%  github.com/dgraph-io/badger/v4/table.NewTableBuilder
+         0     0%   100%          1 16.67%  github.com/dgraph-io/ristretto/v2/z.(*AllocatorPool).Get
+         0     0%   100%          1 16.67%  github.com/dgraph-io/ristretto/v2/z.NewAllocator
+         0     0%   100%          2 33.33%  main.main
+         0     0%   100%          1 16.67%  next.orly.dev/pkg/database.New
+         0     0%   100%          2 33.33%  runtime.main
+         0     0%   100%          1 16.67%  runtime.mstart
+         0     0%   100%          1 16.67%  runtime.mstart0
+         0     0%   100%          1 16.67%  runtime.mstart1
+         0     0%   100%          1 16.67%  runtime.newm
+         0     0%   100%          1 16.67%  runtime.resetspinning
+         0     0%   100%          1 16.67%  runtime.schedule
+         0     0%   100%          1 16.67%  runtime.startTheWorld.func1
+         0     0%   100%          1 16.67%  runtime.startTheWorldWithSema
+         0     0%   100%          1 16.67%  runtime.startm
+         0     0%   100%          1 16.67%  runtime.systemstack
+         0     0%   100%          1 16.67%  runtime.wakep
 
 Notes:
 - CPU section identifies functions using the most CPU time.
