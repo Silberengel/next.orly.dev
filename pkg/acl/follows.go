@@ -157,6 +157,7 @@ func (f *Follows) adminRelays() (urls []string) {
 	copy(admins, f.admins)
 	f.followsMx.RUnlock()
 	seen := make(map[string]struct{})
+	log.I.S(admins)
 	for _, adm := range admins {
 		fl := &filter.F{
 			Authors: tag.NewFromAny(adm),
