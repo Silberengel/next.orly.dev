@@ -79,7 +79,7 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 		} else {
 			adm = a
 		}
-		log.I.F("admin: %0x", adm)
+		// log.I.F("admin: %0x", adm)
 		f.admins = append(f.admins, adm)
 		fl := &filter.F{
 			Authors: tag.NewFromAny(adm),
@@ -229,6 +229,15 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				c, _, err := websocket.Dial(ctx, u, nil)
 				if err != nil {
 					log.W.F("follows syncer: dial %s failed: %v", u, err)
+					if strings.Contains(
+						err.Error(), "response status code 101 but got 403",
+					) {
+						// 403 means the relay is not accepting connections from
+						// us. Forbidden is the meaning, usually used to
+						// indicate either the IP or user is blocked. so stop
+						// trying this one.
+						return
+					}
 					timer := time.NewTimer(backoff)
 					select {
 					case <-ctx.Done():
@@ -300,10 +309,10 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 							if f.pubs != nil {
 								go f.pubs.Deliver(res.Event)
 							}
-							log.I.F(
-								"saved new event from follows syncer: %0x",
-								res.Event.ID,
-							)
+							// log.I.F(
+							// 	"saved new event from follows syncer: %0x",
+							// 	res.Event.ID,
+							// )
 						}
 					case eoseenvelope.L:
 						// ignore, continue subscription

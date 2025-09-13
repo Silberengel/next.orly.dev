@@ -15,7 +15,7 @@ import (
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/interfaces/publisher"
 	"next.orly.dev/pkg/interfaces/typer"
-	utils "next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils"
 )
 
 const Type = "socketapi"
@@ -229,7 +229,7 @@ func (p *P) Deliver(ev *event.E) {
 
 		if err = d.w.Write(
 			writeCtx, websocket.MessageText, res.Marshal(nil),
-		); chk.E(err) {
+		); err != nil {
 			// On error, remove the subscriber connection safely
 			p.removeSubscriber(d.w)
 			_ = d.w.CloseNow()
