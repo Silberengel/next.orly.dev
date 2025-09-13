@@ -8,7 +8,6 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
-	acl "next.orly.dev/pkg/acl"
 	database "next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/protocol/publish"
@@ -45,10 +44,6 @@ func Run(
 		D:          db,
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
-	}
-	// provide publisher to ACL so background sync can dispatch events
-	if err := acl.Registry.Configure(cfg, db, ctx, l.publishers); chk.E(err) {
-		// if configuration fails, proceed but log; ACL might be 'none'
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)
