@@ -47,6 +47,9 @@ func (s *S) Append(t ...*T) {
 // ContainsAny returns true if any of the values given in `values` matches any
 // of the tag elements.
 func (s *S) ContainsAny(tagName []byte, values [][]byte) bool {
+	if s == nil {
+		return false
+	}
 	if len(tagName) < 1 {
 		return false
 	}
