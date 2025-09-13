@@ -208,6 +208,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 		return
 	}
 	urls := f.adminRelays()
+	log.I.S(urls)
 	if len(urls) == 0 {
 		log.W.F("follows syncer: no admin relays found in DB (kind 10002)")
 		return
