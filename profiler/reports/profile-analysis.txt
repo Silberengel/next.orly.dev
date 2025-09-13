@@ -1,0 +1,84 @@
+==== next.orly.dev Profiling Analysis ====
+Sat Sep 13 11:46:40 UTC 2025
+
+-- CPU Hotspots (top by flat CPU) --
+Type: cpu
+Time: Sep 13, 2025 at 11:39am (UTC)
+Duration: 400.39s, Total samples = 2620ms ( 0.65%)
+Showing nodes accounting for 1950ms, 74.43% of 2620ms total
+Dropped 58 nodes (cum <= 13.10ms)
+Showing top 15 nodes out of 78
+      flat  flat%   sum%        cum   cum%
+     870ms 33.21% 33.21%      870ms 33.21%  internal/runtime/syscall.Syscall6
+     220ms  8.40% 41.60%      220ms  8.40%  runtime.futex
+     210ms  8.02% 49.62%      400ms 15.27%  runtime.stealWork
+     160ms  6.11% 55.73%      160ms  6.11%  runtime.write1
+      70ms  2.67% 58.40%       70ms  2.67%  runtime.nanotime1
+      60ms  2.29% 60.69%       60ms  2.29%  runtime.pMask.read (inline)
+      50ms  1.91% 62.60%      380ms 14.50%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor
+      50ms  1.91% 64.50%       50ms  1.91%  runtime.(*randomEnum).next (inline)
+      50ms  1.91% 66.41%     1980ms 75.57%  runtime.findRunnable
+      40ms  1.53% 67.94%       40ms  1.53%  runtime.memclrNoHeapPointers
+      40ms  1.53% 69.47%      930ms 35.50%  runtime.netpoll
+      40ms  1.53% 70.99%      150ms  5.73%  runtime.selectgo
+      30ms  1.15% 72.14%      860ms 32.82%  internal/runtime/syscall.EpollWait
+      30ms  1.15% 73.28%       40ms  1.53%  runtime.(*mcache).prepareForSweep
+      30ms  1.15% 74.43%       30ms  1.15%  runtime.cheaprand (inline)
+
+-- Memory (In-Use Space) Hotspots --
+Type: inuse_space
+Time: Sep 13, 2025 at 11:46am (UTC)
+Showing nodes accounting for 85209.25kB, 99.24% of 85865.58kB total
+Dropped 112 nodes (cum <= 429.33kB)
+      flat  flat%   sum%        cum   cum%
+   85200kB 99.22% 99.22%    85200kB 99.22%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+    9.25kB 0.011% 99.24% 85654.66kB 99.75%  github.com/dgraph-io/badger/v4.Open
+         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0% 99.24%    85200kB 99.22%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0% 99.24% 85654.66kB 99.75%  main.main
+         0     0% 99.24% 85654.66kB 99.75%  next.orly.dev/pkg/database.New
+         0     0% 99.24% 85654.66kB 99.75%  runtime.main
+
+-- Allocations (Total Alloc Space) Hotspots --
+Type: alloc_space
+Time: Sep 13, 2025 at 11:46am (UTC)
+Showing nodes accounting for 83.20MB, 100% of 83.21MB total
+Dropped 26 nodes (cum <= 0.42MB)
+      flat  flat%   sum%        cum   cum%
+   83.20MB   100%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4.Open
+         0     0%   100%    83.20MB   100%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0%   100%    83.20MB   100%  main.main
+         0     0%   100%    83.20MB   100%  next.orly.dev/pkg/database.New
+         0     0%   100%    83.20MB   100%  runtime.main
+
+-- Allocation Frequency (Alloc Objects) --
+Type: alloc_objects
+Time: Sep 13, 2025 at 11:46am (UTC)
+Showing nodes accounting for 7, 100% of 7 total
+Showing top 15 nodes out of 34
+      flat  flat%   sum%        cum   cum%
+         2 28.57% 28.57%          2 28.57%  regexp/syntax.(*parser).newRegexp (inline)
+         1 14.29% 42.86%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).levelTargets
+         1 14.29% 57.14%          1 14.29%  github.com/dgraph-io/badger/v4/skl.newArena (inline)
+         1 14.29% 71.43%          1 14.29%  github.com/pkg/profile.Start
+         1 14.29% 85.71%          1 14.29%  github.com/pkg/profile.Start.func11
+         1 14.29%   100%          1 14.29%  runtime.allocm
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*DB).newMemTable
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*DB).openMemTable
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).pickCompactLevels
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.(*levelsController).runCompactor.func3
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4.Open
+         0     0%   100%          1 14.29%  github.com/dgraph-io/badger/v4/skl.NewSkiplist
+         0     0%   100%          2 28.57%  github.com/google/pprof/profile.init
+         0     0%   100%          2 28.57%  main.main
+
+Notes:
+- CPU section identifies functions using the most CPU time.
+- Memory section identifies which functions retain the most memory (in-use).
+- Allocations sections identify functions responsible for the most allocation volume and count, which correlates with GC pressure.
+- Profiles are created by github.com/pkg/profile and may only be flushed when the relay process receives a shutdown; CPU profile often requires process exit.

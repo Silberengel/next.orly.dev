@@ -1,0 +1,190 @@
+Starting Nostr Relay Benchmark
+Data Directory: /tmp/benchmark_next-orly-cpu_8
+Events: 5000, Workers: 4, Duration: 30s
+20250913114010336003 INF /tmp/benchmark_next-orly-cpu_8: All 0 tables opened in 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/levels.go:161 /build/pkg/database/logger.go:57
+20250913114010336560 INF /tmp/benchmark_next-orly-cpu_8: Discard stats nextEmptySlot: 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/discard.go:55 /build/pkg/database/logger.go:57
+20250913114010336587 INF /tmp/benchmark_next-orly-cpu_8: Set nextTxnTs to 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:358 /build/pkg/database/logger.go:57
+20250913114010336810 INF (*types.Uint32)(0xc00001084c)({
+ value: (uint32) 1
+})
+ /build/pkg/database/migrations.go:65
+20250913114010336840 INF migrating to version 1... /build/pkg/database/migrations.go:79
+
+=== Starting test round 1/2 ===
+
+=== Peak Throughput Test ===
+Events saved: 5000/5000 (100.0%)
+Duration: 363.618589ms
+Events/sec: 13750.67
+Avg latency: 283.533µs
+P90 latency: 378.941µs
+P95 latency: 413.136µs
+P99 latency: 527.123µs
+Bottom 10% Avg latency: 455.08µs
+
+=== Burst Pattern Test ===
+Burst completed: 500 events in 383.290907ms
+Burst completed: 500 events in 379.055138ms
+Burst completed: 500 events in 344.482762ms
+Burst completed: 500 events in 304.126389ms
+Burst completed: 500 events in 274.619763ms
+Burst completed: 500 events in 322.887417ms
+Burst completed: 500 events in 277.199103ms
+Burst completed: 500 events in 425.906745ms
+Burst completed: 500 events in 471.907615ms
+Burst completed: 500 events in 444.002409ms
+Burst test completed: 5000 events in 8.641128603s
+Events/sec: 578.63
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 2500 writes, 2500 reads in 23.666052402s
+Combined ops/sec: 211.27
+
+Pausing 10s before next round...
+
+=== Starting test round 2/2 ===
+
+=== Peak Throughput Test ===
+Events saved: 5000/5000 (100.0%)
+Duration: 379.673375ms
+Events/sec: 13169.21
+Avg latency: 297.243µs
+P90 latency: 393.52µs
+P95 latency: 426.161µs
+P99 latency: 508.367µs
+Bottom 10% Avg latency: 445.997µs
+
+=== Burst Pattern Test ===
+Burst completed: 500 events in 375.562676ms
+Burst completed: 500 events in 379.688521ms
+Burst completed: 500 events in 339.807492ms
+Burst completed: 500 events in 407.502127ms
+Burst completed: 500 events in 347.61805ms
+Burst completed: 500 events in 338.215243ms
+Burst completed: 500 events in 420.579964ms
+Burst completed: 500 events in 339.263061ms
+Burst completed: 500 events in 318.379922ms
+Burst completed: 500 events in 300.546668ms
+Burst test completed: 5000 events in 8.580483954s
+Events/sec: 582.72
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 2500 writes, 2094 reads in 30.014099513s
+Combined ops/sec: 153.06
+
+================================================================================
+BENCHMARK REPORT
+================================================================================
+
+Test: Peak Throughput
+Duration: 363.618589ms
+Total Events: 5000
+Events/sec: 13750.67
+Success Rate: 100.0%
+Concurrent Workers: 4
+Memory Used: 143 MB
+Avg Latency: 283.533µs
+P90 Latency: 378.941µs
+P95 Latency: 413.136µs
+P99 Latency: 527.123µs
+Bottom 10% Avg Latency: 455.08µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 8.641128603s
+Total Events: 5000
+Events/sec: 578.63
+Success Rate: 100.0%
+Concurrent Workers: 4
+Memory Used: 193 MB
+Avg Latency: 214.446µs
+P90 Latency: 286.796µs
+P95 Latency: 335.028µs
+P99 Latency: 615.301µs
+Bottom 10% Avg Latency: 421.658µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 23.666052402s
+Total Events: 5000
+Events/sec: 211.27
+Success Rate: 100.0%
+Concurrent Workers: 4
+Memory Used: 102 MB
+Avg Latency: 4.328995ms
+P90 Latency: 8.541367ms
+P95 Latency: 10.080396ms
+P99 Latency: 12.597948ms
+Bottom 10% Avg Latency: 10.363345ms
+----------------------------------------
+
+Test: Peak Throughput
+Duration: 379.673375ms
+Total Events: 5000
+Events/sec: 13169.21
+Success Rate: 100.0%
+Concurrent Workers: 4
+Memory Used: 119 MB
+Avg Latency: 297.243µs
+P90 Latency: 393.52µs
+P95 Latency: 426.161µs
+P99 Latency: 508.367µs
+Bottom 10% Avg Latency: 445.997µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 8.580483954s
+Total Events: 5000
+Events/sec: 582.72
+Success Rate: 100.0%
+Concurrent Workers: 4
+Memory Used: 171 MB
+Avg Latency: 202.362µs
+P90 Latency: 263.111µs
+P95 Latency: 296.545µs
+P99 Latency: 359.544µs
+Bottom 10% Avg Latency: 307.91µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 30.014099513s
+Total Events: 4594
+Events/sec: 153.06
+Success Rate: 91.9%
+Concurrent Workers: 4
+Memory Used: 138 MB
+Avg Latency: 8.407338ms
+P90 Latency: 17.892951ms
+P95 Latency: 21.106647ms
+P99 Latency: 26.270739ms
+Bottom 10% Avg Latency: 21.626824ms
+----------------------------------------
+
+Report saved to: /tmp/benchmark_next-orly-cpu_8/benchmark_report.txt
+AsciiDoc report saved to: /tmp/benchmark_next-orly-cpu_8/benchmark_report.adoc
+20250913114211995528 INF /tmp/benchmark_next-orly-cpu_8: Lifetime L0 stalled for: 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:536 /build/pkg/database/logger.go:57
+20250913114212319238 INF /tmp/benchmark_next-orly-cpu_8: 
+Level 0 [ ]: NumTables: 00. Size: 0 B of 0 B. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 64 MiB
+Level 1 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 2 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 3 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 4 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 5 [B]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 6 [ ]: NumTables: 01. Size: 22 MiB of 22 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 4.0 MiB
+Level Done
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:615 /build/pkg/database/logger.go:57
+20250913114212321065 INF /tmp/benchmark_next-orly-cpu_8: database closed /build/pkg/database/database.go:134
+
+RELAY_NAME: next-orly-cpu
+RELAY_URL: ws://next-orly-cpu:8080
+TEST_TIMESTAMP: 2025-09-13T11:42:12+00:00
+BENCHMARK_CONFIG:
+  Events: 5000
+  Workers: 4
+  Duration: 30s

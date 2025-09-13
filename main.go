@@ -28,14 +28,29 @@ func main() {
 	log.I.F("starting %s %s", cfg.AppName, version.V)
 	switch cfg.Pprof {
 	case "cpu":
-		prof := profile.Start(profile.CPUProfile)
-		defer prof.Stop()
+		if cfg.PprofPath != "" {
+			prof := profile.Start(profile.CPUProfile, profile.ProfilePath(cfg.PprofPath))
+			defer prof.Stop()
+		} else {
+			prof := profile.Start(profile.CPUProfile)
+			defer prof.Stop()
+		}
 	case "memory":
-		prof := profile.Start(profile.MemProfile)
-		defer prof.Stop()
+		if cfg.PprofPath != "" {
+			prof := profile.Start(profile.MemProfile, profile.ProfilePath(cfg.PprofPath))
+			defer prof.Stop()
+		} else {
+			prof := profile.Start(profile.MemProfile)
+			defer prof.Stop()
+		}
 	case "allocation":
-		prof := profile.Start(profile.MemProfileAllocs)
-		defer prof.Stop()
+		if cfg.PprofPath != "" {
+			prof := profile.Start(profile.MemProfileAllocs, profile.ProfilePath(cfg.PprofPath))
+			defer prof.Stop()
+		} else {
+			prof := profile.Start(profile.MemProfileAllocs)
+			defer prof.Stop()
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var db *database.D
@@ -53,7 +68,7 @@ func main() {
 	// Start health check HTTP server if configured
 	var healthSrv *http.Server
 	if cfg.HealthPort > 0 {
-		mux := http.NewServeMux()
+ 	mux := http.NewServeMux()
 		mux.HandleFunc(
 			"/healthz", func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)
@@ -61,6 +76,18 @@ func main() {
 				log.I.F("health check ok")
 			},
 		)
+		// Optional shutdown endpoint to gracefully stop the process so profiling defers run
+		if cfg.EnableShutdown {
+			mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte("shutting down"))
+				log.I.F("shutdown requested via /shutdown; sending SIGINT to self")
+				go func() {
+					p, _ := os.FindProcess(os.Getpid())
+					_ = p.Signal(os.Interrupt)
+				}()
+			})
+		}
 		healthSrv = &http.Server{
 			Addr: fmt.Sprintf(
 				"%s:%d", cfg.Listen, cfg.HealthPort,

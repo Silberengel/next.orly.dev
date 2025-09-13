@@ -1,0 +1,158 @@
+services:
+  # Build image for next.orly.dev relay (same as benchmark build)
+  next-orly-image:
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    image: next-orly:profiler
+
+  # Run relay with CPU profiling
+  next-orly-cpu:
+    image: next-orly:profiler
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    container_name: profiler-next-orly-cpu
+    environment:
+      - ORLY_DATA_DIR=/data
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=8080
+      - ORLY_LOG_LEVEL=info
+      - ORLY_PPROF=cpu
+      - ORLY_PPROF_PATH=/profiles
+      - ORLY_HEALTH_PORT=18080
+      - ORLY_ENABLE_SHUTDOWN=true
+    volumes:
+      - ./data/cpu:/data
+      - ./profiles/cpu:/profiles
+    ports:
+      - "8101:8080"
+      - "18081:18080"
+    networks:
+      - profiler-net
+    healthcheck:
+      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 || echo 000); echo $$code | grep -E '^(101|200|400|404|426)$' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Run relay with in-use memory profiling
+  next-orly-mem:
+    image: next-orly:profiler
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    container_name: profiler-next-orly-mem
+    environment:
+      - ORLY_DATA_DIR=/data
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=8080
+      - ORLY_LOG_LEVEL=info
+      - ORLY_PPROF=memory
+      - ORLY_PPROF_PATH=/profiles
+      - ORLY_HEALTH_PORT=18080
+      - ORLY_ENABLE_SHUTDOWN=true
+    volumes:
+      - ./data/mem:/data
+      - ./profiles/mem:/profiles
+    ports:
+      - "8102:8080"
+      - "18082:18080"
+    networks:
+      - profiler-net
+    healthcheck:
+      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 || echo 000); echo $$code | grep -E '^(101|200|400|404|426)$' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Run relay with allocation profiling (alloc_space/alloc_objects)
+  next-orly-alloc:
+    image: next-orly:profiler
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    container_name: profiler-next-orly-alloc
+    environment:
+      - ORLY_DATA_DIR=/data
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=8080
+      - ORLY_LOG_LEVEL=info
+      - ORLY_PPROF=allocation
+      - ORLY_PPROF_PATH=/profiles
+      - ORLY_HEALTH_PORT=18080
+      - ORLY_ENABLE_SHUTDOWN=true
+    volumes:
+      - ./data/alloc:/data
+      - ./profiles/alloc:/profiles
+    ports:
+      - "8103:8080"
+      - "18083:18080"
+    networks:
+      - profiler-net
+    healthcheck:
+      test: ["CMD-SHELL", "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 || echo 000); echo $$code | grep -E '^(101|200|400|404|426)$' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Load generator using existing benchmark runner
+  loadgen:
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.benchmark
+    container_name: profiler-loadgen
+    depends_on:
+      next-orly-cpu:
+        condition: service_healthy
+      next-orly-mem:
+        condition: service_healthy
+      next-orly-alloc:
+        condition: service_healthy
+    environment:
+      - BENCHMARK_TARGETS=next-orly-cpu:8080,next-orly-mem:8080,next-orly-alloc:8080
+      - BENCHMARK_EVENTS=5000
+      - BENCHMARK_WORKERS=4
+      - BENCHMARK_DURATION=30s
+    volumes:
+      - ./reports:/reports
+    networks:
+      - profiler-net
+    command: >
+      sh -c "
+        echo 'Waiting a bit before starting load...' && \
+        sleep 10 && \
+        /app/benchmark-runner --output-dir=/reports && \
+        echo 'Triggering relay shutdowns to flush profiles...' && \
+        curl -sS -X POST http://next-orly-cpu:18080/shutdown || true && \
+        curl -sS -X POST http://next-orly-mem:18080/shutdown || true && \
+        curl -sS -X POST http://next-orly-alloc:18080/shutdown || true && \
+        echo 'Load generation complete. Waiting for relays to exit...' && \
+        sleep 5
+      "
+
+  # Analyzer service: use the builder stage so Go toolchain is available
+  analyzer:
+    build:
+      context: ..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+      target: builder
+    container_name: profiler-analyzer
+    depends_on:
+      loadgen:
+        condition: service_completed_successfully
+    working_dir: /work
+    volumes:
+      - ./profiles:/profiles:ro
+      - ./reports:/work/reports
+      - ./analyze.sh:/work/analyze.sh:ro
+    networks:
+      - profiler-net
+    command: ["bash", "-lc", "bash /work/analyze.sh"]
+
+networks:
+  profiler-net:
+    driver: bridge
