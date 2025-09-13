@@ -98,6 +98,9 @@ func (ev *E) Free() {
 // expansion of the escaped content and tags.
 func (ev *E) EstimateSize() (size int) {
 	size = len(ev.ID)*2 + len(ev.Pubkey)*2 + len(ev.Sig)*2 + len(ev.Content)*2
+	if ev.Tags == nil {
+		return
+	}
 	for _, v := range *ev.Tags {
 		for _, w := range (*v).T {
 			size += len(w) * 2

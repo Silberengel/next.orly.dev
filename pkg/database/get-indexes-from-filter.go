@@ -362,7 +362,6 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	if f.Authors != nil && f.Authors.Len() > 0 {
 		for _, author := range f.Authors.T {
 			var p *types2.PubHash
-			log.I.S(author)
 			if p, err = CreatePubHashFromData(author); chk.E(err) {
 				return
 			}
