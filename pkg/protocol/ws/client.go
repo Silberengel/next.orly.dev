@@ -140,6 +140,12 @@ func (r *Client) Context() context.Context { return r.connectionContext }
 // IsConnected returns true if the connection to this relay seems to be active.
 func (r *Client) IsConnected() bool { return r.connectionContext.Err() == nil }
 
+// ConnectionCause returns the cancel cause for the relay connection context.
+func (r *Client) ConnectionCause() error { return context.Cause(r.connectionContext) }
+
+// LastError returns the last connection error observed by the reader loop.
+func (r *Client) LastError() error { return r.ConnectionError }
+
 // Connect tries to establish a websocket connection to r.URL.
 // If the context expires before the connection is complete, an error is returned.
 // Once successfully connected, context expiration has no effect: call r.Close
@@ -218,6 +224,11 @@ func (r *Client) ConnectWithTLS(
 		for {
 			select {
 			case <-r.connectionContext.Done():
+				log.T.F(
+					"WS.Client: connection context done for %s: cause=%v lastErr=%v",
+					r.URL, context.Cause(r.connectionContext),
+					r.ConnectionError,
+				)
 				ticker.Stop()
 				r.Connection = nil
 
@@ -241,13 +252,17 @@ func (r *Client) ConnectWithTLS(
 						"{%s} error writing ping: %v; closing websocket", r.URL,
 						err,
 					)
-					r.Close() // this should trigger a context cancelation
+					r.CloseWithReason(
+						fmt.Errorf(
+							"ping failed: %w", err,
+						),
+					) // this should trigger a context cancelation
 					return
 				}
 
 			case wr := <-r.writeQueue:
 				// all write requests will go through this to prevent races
-				log.D.F("{%s} sending %v\n", r.URL, string(wr.msg))
+				// log.D.F("{%s} sending %v\n", r.URL, string(wr.msg))
 				if err = r.Connection.WriteMessage(
 					r.connectionContext, wr.msg,
 				); err != nil {
@@ -269,7 +284,11 @@ func (r *Client) ConnectWithTLS(
 					r.connectionContext, buf,
 				); err != nil {
 					r.ConnectionError = err
-					r.Close()
+					log.T.F(
+						"WS.Client: reader loop error on %s: %v; closing connection",
+						r.URL, err,
+					)
+					r.CloseWithReason(fmt.Errorf("reader loop error: %w", err))
 					return
 				}
 				message := buf.Bytes()
@@ -358,11 +377,11 @@ func (r *Client) ConnectWithTLS(
 					if okCallback, exist := r.okCallbacks.Load(string(env.EventID)); exist {
 						okCallback(env.OK, env.ReasonString())
 					} else {
-						log.I.F(
-							"{%s} got an unexpected OK message for event %0x",
-							r.URL,
-							env.EventID,
-						)
+						// log.I.F(
+						// 	"{%s} got an unexpected OK message for event %0x",
+						// 	r.URL,
+						// 	env.EventID,
+						// )
 					}
 				}
 			}
@@ -479,14 +498,27 @@ func (r *Client) Subscribe(
 	sub := r.PrepareSubscription(ctx, ff, opts...)
 
 	if r.Connection == nil {
+		log.T.F(
+			"WS.Subscribe: not connected to %s; aborting sub id=%s", r.URL,
+			sub.GetID(),
+		)
 		return nil, fmt.Errorf("not connected to %s", r.URL)
 	}
 
+	log.T.F(
+		"WS.Subscribe: firing subscription id=%s to %s with %d filters",
+		sub.GetID(), r.URL, len(*ff),
+	)
 	if err := sub.Fire(); err != nil {
+		log.T.F(
+			"WS.Subscribe: Fire failed id=%s to %s: %v", sub.GetID(), r.URL,
+			err,
+		)
 		return nil, fmt.Errorf(
 			"couldn't subscribe to %v at %s: %w", ff, r.URL, err,
 		)
 	}
+	log.T.F("WS.Subscribe: Fire succeeded id=%s to %s", sub.GetID(), r.URL)
 
 	return sub, nil
 }
@@ -598,9 +630,10 @@ func (r *Client) QuerySync(
 }
 
 // Close closes the relay connection.
-func (r *Client) Close() error {
-	return r.close(errors.New("Close() called"))
-}
+func (r *Client) Close() error { return r.CloseWithReason(errors.New("Close() called")) }
+
+// CloseWithReason closes the relay connection with a specific reason that will be stored as the context cancel cause.
+func (r *Client) CloseWithReason(reason error) error { return r.close(reason) }
 
 func (r *Client) close(reason error) error {
 	r.closeMutex.Lock()
@@ -609,6 +642,10 @@ func (r *Client) close(reason error) error {
 	if r.connectionContextCancel == nil {
 		return fmt.Errorf("relay already closed")
 	}
+	log.T.F(
+		"WS.Client: closing connection to %s: reason=%v lastErr=%v", r.URL,
+		reason, r.ConnectionError,
+	)
 	r.connectionContextCancel(reason)
 	r.connectionContextCancel = nil
 

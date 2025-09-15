@@ -8,6 +8,7 @@ import (
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
@@ -61,6 +62,99 @@ func (d *D) GetSerialById(id []byte) (ser *types.Uint40, err error) {
 		return
 	}
 
+	return
+}
+
+// GetSerialsByIds takes a tag.T containing multiple IDs and returns a map of IDs to their
+// corresponding serial numbers. It directly queries the IdPrefix index for matching IDs,
+// which is more efficient than using GetIndexesFromFilter.
+func (d *D) GetSerialsByIds(ids *tag.T) (
+	serials map[string]*types.Uint40, err error,
+) {
+	return d.GetSerialsByIdsWithFilter(ids, nil)
+}
+
+// GetSerialsByIdsWithFilter takes a tag.T containing multiple IDs and returns a
+// map of IDs to their corresponding serial numbers, applying a filter function
+// to each event. The function directly creates ID index prefixes for efficient querying.
+func (d *D) GetSerialsByIdsWithFilter(
+	ids *tag.T, fn func(ev *event.E, ser *types.Uint40) bool,
+) (serials map[string]*types.Uint40, err error) {
+	log.T.F("GetSerialsByIdsWithFilter: input ids count=%d", ids.Len())
+
+	// Initialize the result map
+	serials = make(map[string]*types.Uint40)
+
+	// Return early if no IDs are provided
+	if ids.Len() == 0 {
+		return
+	}
+
+	// Process all IDs in a single transaction
+	if err = d.View(
+		func(txn *badger.Txn) (err error) {
+			it := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer it.Close()
+
+			// Process each ID sequentially
+			for _, id := range ids.T {
+				// idHex := hex.Enc(id)
+
+				// Get the index prefix for this ID
+				var idxs []Range
+				if idxs, err = GetIndexesFromFilter(&filter.F{Ids: tag.NewFromBytesSlice(id)}); chk.E(err) {
+					// Skip this ID if we can't create its index
+					continue
+				}
+
+				// Skip if no index was created
+				if len(idxs) == 0 {
+					continue
+				}
+
+				// Seek to the start of this ID's range in the database
+				it.Seek(idxs[0].Start)
+				if it.ValidForPrefix(idxs[0].Start) {
+					// Found an entry for this ID
+					item := it.Item()
+					key := item.Key()
+
+					// Extract the serial number from the key
+					ser := new(types.Uint40)
+					buf := bytes.NewBuffer(key[len(key)-5:])
+					if err = ser.UnmarshalRead(buf); chk.E(err) {
+						continue
+					}
+
+					// If a filter function is provided, fetch the event and apply the filter
+					if fn != nil {
+						var ev *event.E
+						if ev, err = d.FetchEventBySerial(ser); err != nil {
+							// Skip this event if we can't fetch it
+							continue
+						}
+
+						// Apply the filter
+						if !fn(ev, ser) {
+							// Skip this event if it doesn't pass the filter
+							continue
+						}
+					}
+
+					// Store the serial in the result map using the hex-encoded ID as the key
+					serials[string(id)] = ser
+				}
+			}
+			return
+		},
+	); chk.E(err) {
+		return
+	}
+
+	log.T.F(
+		"GetSerialsByIdsWithFilter: found %d serials out of %d requested ids",
+		len(serials), ids.Len(),
+	)
 	return
 }
 

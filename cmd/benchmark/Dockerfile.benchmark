@@ -34,13 +34,18 @@ COPY cmd/benchmark/benchmark-runner.sh /app/benchmark-runner
 # Make scripts executable
 RUN chmod +x /app/benchmark-runner
 
-# Create reports directory
-RUN mkdir -p /reports
+# Create runtime user and reports directory owned by uid 1000
+RUN adduser -u 1000 -D appuser && \
+    mkdir -p /reports && \
+    chown -R 1000:1000 /app /reports
 
 # Environment variables
 ENV BENCHMARK_EVENTS=10000
 ENV BENCHMARK_WORKERS=8
 ENV BENCHMARK_DURATION=60s
+
+# Drop privileges: run as uid 1000
+USER 1000:1000
 
 # Run the benchmark runner
 CMD ["/app/benchmark-runner"]

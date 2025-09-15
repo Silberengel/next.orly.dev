@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes/closeenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/reqenvelope"
 	"next.orly.dev/pkg/encoders/event"
@@ -88,8 +89,14 @@ var (
 )
 
 func (sub *Subscription) start() {
+	// Wait for the context to be done instead of blocking immediately
+	// This allows the subscription to receive events before terminating
+	sub.live.Store(true)
+	// debug: log start of subscription goroutine
+	log.T.F("WS.Subscription.start: started id=%s", sub.GetID())
 	<-sub.Context.Done()
 	// the subscription ends once the context is canceled (if not already)
+	log.T.F("WS.Subscription.start: context done for id=%s", sub.GetID())
 	sub.unsub(errors.New("context done on start()")) // this will set sub.live to false
 	// do this so we don't have the possibility of closing the Events channel and then trying to send to it
 	sub.mu.Lock()
@@ -180,10 +187,18 @@ func (sub *Subscription) Fire() (err error) {
 	var reqb []byte
 	reqb = reqenvelope.NewFrom(sub.id, sub.Filters).Marshal(nil)
 	sub.live.Store(true)
+	log.T.F(
+		"WS.Subscription.Fire: sending REQ id=%s filters=%d bytes=%d",
+		sub.GetID(), len(*sub.Filters), len(reqb),
+	)
 	if err = <-sub.Client.Write(reqb); err != nil {
 		err = fmt.Errorf("failed to write: %w", err)
+		log.T.F(
+			"WS.Subscription.Fire: write failed id=%s: %v", sub.GetID(), err,
+		)
 		sub.cancel(err)
 		return
 	}
+	log.T.F("WS.Subscription.Fire: write ok id=%s", sub.GetID())
 	return
 }

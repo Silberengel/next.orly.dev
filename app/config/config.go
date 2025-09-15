@@ -32,8 +32,10 @@ type C struct {
 	LogLevel       string   `env:"ORLY_LOG_LEVEL" default:"info" usage:"relay log level: fatal error warn info debug trace"`
 	DBLogLevel     string   `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
 	LogToStdout    bool     `env:"ORLY_LOG_TO_STDOUT" default:"false" usage:"log to stdout instead of stderr"`
-	Pprof          string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation"`
+	Pprof          string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation,heap,block,goroutine,threadcreate,mutex"`
 	PprofPath      string   `env:"ORLY_PPROF_PATH" usage:"optional directory to write pprof profiles into (inside container); default is temporary dir"`
+	PprofHTTP      bool     `env:"ORLY_PPROF_HTTP" default:"false" usage:"if true, expose net/http/pprof on port 6060"`
+	OpenPprofWeb   bool     `env:"ORLY_OPEN_PPROF_WEB" default:"false" usage:"if true, automatically open the pprof web viewer when profiling is enabled"`
 	IPWhitelist    []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
 	Admins         []string `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
 	Owners         []string `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`

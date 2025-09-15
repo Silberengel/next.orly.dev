@@ -56,8 +56,10 @@ func setupTestDB(t *testing.T) (
 
 		// Unmarshal the event
 		if _, err = ev.Unmarshal(b); chk.E(err) {
+			ev.Free()
 			t.Fatal(err)
 		}
+		ev.Free()
 
 		events = append(events, ev)
 

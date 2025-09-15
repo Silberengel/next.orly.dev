@@ -51,3 +51,5 @@ require (
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace lol.mleku.dev => ../github.com/mleku/lol

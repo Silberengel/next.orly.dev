@@ -173,6 +173,7 @@ func (ev *E) Serialize() (b []byte) {
 //
 // Call ev.Free() to return the provided buffer to the bufpool afterwards.
 func (ev *E) Unmarshal(b []byte) (rem []byte, err error) {
+	log.I.F("Unmarshal\n%s\n", string(b))
 	key := make([]byte, 0, 9)
 	for ; len(b) > 0; b = b[1:] {
 		// Skip whitespace
@@ -344,8 +345,8 @@ BetweenKV:
 			goto InKey
 		}
 	}
-	log.I.F("between kv")
-	goto eof
+	// If we reach here, the buffer ended unexpectedly. Treat as end-of-object
+	goto AfterClose
 AfterClose:
 	rem = b
 	return
@@ -364,6 +365,7 @@ eof:
 //
 // Call ev.Free() to return the provided buffer to the bufpool afterwards.
 func (ev *E) UnmarshalJSON(b []byte) (err error) {
+	log.I.F("UnmarshalJSON: '%s'", b)
 	_, err = ev.Unmarshal(b)
 	return
 }

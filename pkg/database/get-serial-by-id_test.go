@@ -48,9 +48,11 @@ func TestGetSerialById(t *testing.T) {
 
 		// Unmarshal the event
 		if _, err = ev.Unmarshal(b); chk.E(err) {
+			ev.Free()
 			t.Fatal(err)
 		}
-
+		ev.Free()
+		
 		events = append(events, ev)
 
 		// Save the event to the database

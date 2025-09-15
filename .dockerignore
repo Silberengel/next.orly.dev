@@ -1,0 +1,18 @@
+# Exclude heavy or host-specific data from Docker build context
+# Fixes: failed to solve: error from sender: open cmd/benchmark/data/postgres: permission denied
+
+# Benchmark data and reports (mounted at runtime via volumes)
+cmd/benchmark/data/
+cmd/benchmark/reports/
+
+# VCS and OS cruft
+.git
+.gitignore
+**/.DS_Store
+**/Thumbs.db
+
+# Go build cache and binaries
+**/bin/
+**/dist/
+**/build/
+**/*.out

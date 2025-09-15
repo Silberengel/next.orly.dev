@@ -19,7 +19,7 @@ const (
 	DefaultWriteWait      = 10 * time.Second
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
-	DefaultReadTimeout    = 3 * time.Second // Read timeout to detect stalled connections
+	DefaultReadTimeout    = 7 * time.Second // Read timeout to detect stalled connections
 	DefaultWriteTimeout   = 3 * time.Second
 	DefaultMaxMessageSize = 1 * units.Mb
 

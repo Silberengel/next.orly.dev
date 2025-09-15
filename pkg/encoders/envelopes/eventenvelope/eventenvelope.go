@@ -7,6 +7,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/text"
@@ -161,6 +162,7 @@ func (en *Result) Unmarshal(b []byte) (r []byte, err error) {
 		return
 	}
 	en.Event = event.New()
+	log.I.F("unmarshal: '%s'", b)
 	if r, err = en.Event.Unmarshal(r); err != nil {
 		return
 	}

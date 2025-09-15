@@ -5,7 +5,6 @@ import (
 	"context"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"lol.mleku.dev/chk"
@@ -43,73 +42,49 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	var expDeletes types.Uint40s
 	var expEvs event.S
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		// for _, id := range f.Ids.T {
-		// 	log.T.F("QueryEvents: looking for ID=%s", hex.Enc(id))
-		// }
-		// log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
-		for _, idx := range f.Ids.T {
-			// log.T.F("QueryEvents: lookup id=%s", hex.Enc(idx))
-			// we know there is only Ids in this, so run the ID query and fetch.
-			var ser *types.Uint40
-			var idErr error
-			if ser, idErr = d.GetSerialById(idx); idErr != nil {
-				// Check if this is a "not found" error which is expected for IDs we don't have
-				if strings.Contains(idErr.Error(), "id not found in database") {
-					// log.T.F(
-					// 	"QueryEvents: ID not found in database: %s",
-					// 	hex.Enc(idx),
-					// )
-				} else {
-					// Log unexpected errors but continue processing other IDs
-					// log.E.F(
-					// 	"QueryEvents: error looking up id=%s err=%v",
-					// 	hex.Enc(idx), idErr,
-					// )
-				}
-				continue
-			}
-			// Check if the serial is nil, which indicates the ID wasn't found
-			if ser == nil {
-				// log.T.F("QueryEvents: Serial is nil for ID: %s", hex.Enc(idx))
-				continue
-			}
-			// fetch the events
+		// Get all serials for the requested IDs in a single batch operation
+		log.T.F("QueryEvents: ids path, count=%d", f.Ids.Len())
+
+		// Use GetSerialsByIds to batch process all IDs at once
+		serials, idErr := d.GetSerialsByIds(f.Ids)
+		if idErr != nil {
+			log.E.F("QueryEvents: error looking up ids: %v", idErr)
+			// Continue with whatever IDs we found
+		}
+
+		// Process each found serial, fetch the event, and apply filters
+		for idHex, ser := range serials {
+			// fetch the event
 			var ev *event.E
 			if ev, err = d.FetchEventBySerial(ser); err != nil {
-				// log.T.F(
-				// 	"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
-				// 	hex.Enc(idx), ser, err,
-				// )
+				log.T.F(
+					"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
+					idHex, ser, err,
+				)
 				continue
 			}
-			// log.T.F(
-			// 	"QueryEvents: found id=%s kind=%d created_at=%d",
-			// 	hex.Enc(ev.ID), ev.Kind, ev.CreatedAt,
-			// )
+
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
 				log.T.F(
-					"QueryEvents: id=%s filtered out due to expiration",
-					hex.Enc(ev.ID),
+					"QueryEvents: id=%s filtered out due to expiration", idHex,
 				)
 				expDeletes = append(expDeletes, ser)
 				expEvs = append(expEvs, ev)
 				continue
 			}
+
 			// skip events that have been deleted by a proper deletion event
 			if derr := d.CheckForDeleted(ev, nil); derr != nil {
-				// log.T.F(
-				// 	"QueryEvents: id=%s filtered out due to deletion: %v",
-				// 	hex.Enc(ev.ID), derr,
-				// )
+				// log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", idHex, derr)
 				continue
 			}
-			// log.T.F(
-			// 	"QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results",
-			// 	hex.Enc(ev.ID),
-			// )
+
+			// Add the event to the results
 			evs = append(evs, ev)
+			// log.T.F("QueryEvents: id=%s SUCCESSFULLY FOUND, adding to results", idHex)
 		}
+
 		// sort the events by timestamp
 		sort.Slice(
 			evs, func(i, j int) bool {

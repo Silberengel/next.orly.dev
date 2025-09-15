@@ -91,6 +91,7 @@ cmd/benchmark/data
 !Dockerfile*
 !strfry.conf
 !config.toml
+!.dockerignore
 # ...even if they are in subdirectories
 !*/
 /blocklist.json

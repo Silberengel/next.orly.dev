@@ -46,7 +46,13 @@ RUN go mod download
 COPY . .
 
 # Build the relay
-RUN CGO_ENABLED=1 GOOS=linux go build -o relay .
+RUN CGO_ENABLED=1 GOOS=linux go build -gcflags "all=-N -l" -o relay .
+
+# Create non-root user (uid 1000) for runtime in builder stage (used by analyzer)
+RUN useradd -u 1000 -m -s /bin/bash appuser && \
+    chown -R 1000:1000 /build
+# Switch to uid 1000 for any subsequent runtime use of this stage
+USER 1000:1000
 
 # Final stage
 FROM ubuntu:22.04
@@ -60,8 +66,10 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/relay /app/relay
 
-# Create data directory
-RUN mkdir -p /data
+# Create runtime user and writable directories
+RUN useradd -u 1000 -m -s /bin/bash appuser && \
+    mkdir -p /data /profiles /app && \
+    chown -R 1000:1000 /data /profiles /app
 
 # Expose port
 EXPOSE 8080
@@ -75,6 +83,9 @@ ENV ORLY_LOG_LEVEL=info
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD bash -lc "code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080 || echo 000); echo \$code | grep -E '^(101|200|400|404|426)$' >/dev/null || exit 1"
+
+# Drop privileges: run as uid 1000
+USER 1000:1000
 
 # Run the relay
 CMD ["/app/relay"]

@@ -17,11 +17,12 @@ func (d *D) QueryForSerials(c context.Context, f *filter.F) (
 	var founds []*types.Uint40
 	var idPkTs []*store.IdPkTs
 	if f.Ids != nil && f.Ids.Len() > 0 {
-		for _, id := range f.Ids.T {
-			var ser *types.Uint40
-			if ser, err = d.GetSerialById(id); chk.E(err) {
-				return
-			}
+		// Use batch lookup to minimize transactions when resolving IDs to serials
+		var serialMap map[string]*types.Uint40
+		if serialMap, err = d.GetSerialsByIds(f.Ids); chk.E(err) {
+			return
+		}
+		for _, ser := range serialMap {
 			founds = append(founds, ser)
 		}
 		var tmp []*store.IdPkTs
