@@ -9,7 +9,6 @@ import (
 	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/encoders/text"
 	utils "next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // The tag position meanings, so they are clear when reading.
@@ -21,18 +20,17 @@ const (
 
 type T struct {
 	T [][]byte
-	b bufpool.B
 }
 
-func New() *T { return &T{b: bufpool.Get()} }
+func New() *T { return &T{} }
 
 func NewFromBytesSlice(t ...[]byte) (tt *T) {
-	tt = &T{T: t, b: bufpool.Get()}
+	tt = &T{T: t}
 	return
 }
 
 func NewFromAny(t ...any) (tt *T) {
-	tt = &T{b: bufpool.Get()}
+	tt = &T{}
 	for _, v := range t {
 		switch vv := v.(type) {
 		case []byte:
@@ -47,11 +45,10 @@ func NewFromAny(t ...any) (tt *T) {
 }
 
 func NewWithCap(c int) *T {
-	return &T{T: make([][]byte, 0, c), b: bufpool.Get()}
+	return &T{T: make([][]byte, 0, c)}
 }
 
 func (t *T) Free() {
-	bufpool.Put(t.b)
 	t.T = nil
 }
 
@@ -99,18 +96,12 @@ func (t *T) Marshal(dst []byte) (b []byte) {
 // in an event as you will have a bad time. Use the json.Marshal function in the
 // pkg/encoders/json package instead, this has a fork of the json library that
 // disables html escaping for json.Marshal.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
 func (t *T) MarshalJSON() (b []byte, err error) {
-	b = bufpool.Get()
-	b = t.Marshal(b)
+	b = t.Marshal(nil)
 	return
 }
 
 // Unmarshal decodes a standard minified JSON array of strings to a tags.T.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use if it
-// was originally created using bufpool.Get().
 func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 	var inQuotes, openedBracket bool
 	var quoteStart int
@@ -127,7 +118,11 @@ func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 			i++
 		} else if b[i] == '"' {
 			inQuotes = false
-			t.T = append(t.T, text.NostrUnescape(b[quoteStart:i]))
+			// Copy the quoted substring before unescaping so we don't mutate the
+			// original JSON buffer in-place (which would corrupt subsequent parsing).
+			copyBuf := make([]byte, i-quoteStart)
+			copy(copyBuf, b[quoteStart:i])
+			t.T = append(t.T, text.NostrUnescape(copyBuf))
 		}
 	}
 	if !openedBracket || inQuotes {

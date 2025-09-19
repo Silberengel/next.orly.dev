@@ -5,7 +5,6 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // S is a list of tag.T - which are lists of string elements with ordering and
@@ -70,10 +69,7 @@ func (s *S) ContainsAny(tagName []byte, values [][]byte) bool {
 }
 
 // MarshalJSON encodes a tags.T appended to a provided byte slice in JSON form.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
 func (s *S) MarshalJSON() (b []byte, err error) {
-	b = bufpool.Get()
 	b = append(b, '[')
 	for i, ss := range *s {
 		b = ss.Marshal(b)
@@ -100,8 +96,6 @@ func (s *S) Marshal(dst []byte) (b []byte) {
 
 // UnmarshalJSON a tags.T from a provided byte slice and return what remains
 // after the end of the array.
-//
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
 func (s *S) UnmarshalJSON(b []byte) (err error) {
 	_, err = s.Unmarshal(b)
 	return

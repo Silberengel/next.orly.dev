@@ -94,7 +94,10 @@ func UnmarshalQuoted(b []byte) (content, rem []byte, err error) {
 			if !escaping {
 				rem = rem[1:]
 				content = content[:contentLen]
-				content = NostrUnescape(content)
+				// Create a copy of the content to avoid corrupting the original input buffer
+				contentCopy := make([]byte, len(content))
+				copy(contentCopy, content)
+				content = NostrUnescape(contentCopy)
 				return
 			}
 			contentLen++

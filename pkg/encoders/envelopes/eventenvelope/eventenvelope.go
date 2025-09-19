@@ -7,12 +7,10 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/text"
 	"next.orly.dev/pkg/interfaces/codec"
-	"next.orly.dev/pkg/utils/bufpool"
 	"next.orly.dev/pkg/utils/constraints"
 	"next.orly.dev/pkg/utils/units"
 )
@@ -76,8 +74,8 @@ func (en *Submission) Unmarshal(b []byte) (r []byte, err error) {
 	if r, err = en.E.Unmarshal(r); chk.T(err) {
 		return
 	}
-	buf := bufpool.Get()
-	r = en.E.Marshal(buf)
+	// after parsing the event object, r points just after the event JSON
+	// now skip to the end of the envelope (consume comma/closing bracket etc.)
 	if r, err = envelopes.SkipToTheEnd(r); chk.E(err) {
 		return
 	}
@@ -162,7 +160,6 @@ func (en *Result) Unmarshal(b []byte) (r []byte, err error) {
 		return
 	}
 	en.Event = event.New()
-	log.I.F("unmarshal: '%s'", b)
 	if r, err = en.Event.Unmarshal(r); err != nil {
 		return
 	}

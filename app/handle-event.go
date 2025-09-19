@@ -151,7 +151,9 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	// Deliver the event to subscribers immediately after sending OK response
-	go l.publishers.Deliver(env.E)
+	// Clone the event to prevent corruption when the original is freed
+	clonedEvent := env.E.Clone()
+	go l.publishers.Deliver(clonedEvent)
 	log.D.F("saved event %0x", env.E.ID)
 	var isNewFromAdmin bool
 	for _, admin := range l.Admins {

@@ -15,13 +15,10 @@ import (
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/text"
 	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/bufpool"
 )
 
 // E is the primary datatype of nostr. This is the form of the structure that
-// defines its JSON string-based format. Always use New() and Free() to create
-// and free event.E to take advantage of the bufpool which greatly improves
-// memory allocation behaviour when encoding and decoding nostr events.
+// defines its JSON string-based format.
 //
 // WARNING: DO NOT use json.Marshal with this type because it will not properly
 // encode <, >, and & characters due to legacy bullcrap in the encoding/json
@@ -57,10 +54,6 @@ type E struct {
 	// Sig is the signature on the ID hash that validates as coming from the
 	// Pubkey in binary format.
 	Sig []byte
-
-	// b is the decode buffer for the event.E. this is where the UnmarshalJSON
-	// will source the memory to store all of the fields except for the tags.
-	b bufpool.B
 }
 
 var (
@@ -73,25 +66,66 @@ var (
 	jSig       = []byte("sig")
 )
 
-// New returns a new event.E. The returned event.E should be freed with Free()
-// to return the unmarshalling buffer to the bufpool.
+// New returns a new event.E.
 func New() *E {
-	return &E{
-		b: bufpool.Get(),
-	}
+	return &E{}
 }
 
-// Free returns the event.E to the pool, as well as nilling all of the fields.
-// This should hint to the GC that the event.E can be freed, and the memory
-// reused. The decode buffer will be returned to the pool for reuse.
+// Free nils all of the fields to hint to the GC that the event.E can be freed.
 func (ev *E) Free() {
-	bufpool.Put(ev.b)
 	ev.ID = nil
 	ev.Pubkey = nil
 	ev.Tags = nil
 	ev.Content = nil
 	ev.Sig = nil
-	ev.b = nil
+}
+
+// Clone creates a deep copy of the event with independent memory allocations.
+// The clone does not use bufpool, ensuring it has a separate lifetime from
+// the original event. This prevents corruption when the original is freed
+// while the clone is still in use (e.g., in asynchronous delivery).
+func (ev *E) Clone() *E {
+	clone := &E{
+		CreatedAt: ev.CreatedAt,
+		Kind:      ev.Kind,
+	}
+	
+	// Deep copy all byte slices with independent memory
+	if ev.ID != nil {
+		clone.ID = make([]byte, len(ev.ID))
+		copy(clone.ID, ev.ID)
+	}
+	if ev.Pubkey != nil {
+		clone.Pubkey = make([]byte, len(ev.Pubkey))
+		copy(clone.Pubkey, ev.Pubkey)
+	}
+	if ev.Content != nil {
+		clone.Content = make([]byte, len(ev.Content))
+		copy(clone.Content, ev.Content)
+	}
+	if ev.Sig != nil {
+		clone.Sig = make([]byte, len(ev.Sig))
+		copy(clone.Sig, ev.Sig)
+	}
+	
+	// Deep copy tags
+	if ev.Tags != nil {
+		clone.Tags = tag.NewS()
+		for _, tg := range *ev.Tags {
+			if tg != nil {
+				// Create new tag with deep-copied elements
+				newTag := tag.NewWithCap(len(tg.T))
+				for _, element := range tg.T {
+					newElement := make([]byte, len(element))
+					copy(newElement, element)
+					newTag.T = append(newTag.T, newElement)
+				}
+				clone.Tags.Append(newTag)
+			}
+		}
+	}
+	
+	return clone
 }
 
 // EstimateSize returns a size for the event that allows for worst case scenario
@@ -135,6 +169,9 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = append(b, `":`...)
 	if ev.Tags != nil {
 		b = ev.Tags.Marshal(b)
+	} else {
+		// Emit empty array for nil tags to keep JSON valid
+		b = append(b, '[', ']')
 	}
 	b = append(b, `,"`...)
 	b = append(b, jContent...)
@@ -151,29 +188,22 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 
 // MarshalJSON marshals an event.E into a JSON byte string.
 //
-// Call bufpool.PutBytes(b) to return the buffer to the bufpool after use.
-//
 // WARNING: if json.Marshal is called in the hopes of invoking this function on
 // an event, if it has <, > or * in the content or tags they are escaped into
 // unicode escapes and break the event ID. Call this function directly in order
 // to bypass this issue.
 func (ev *E) MarshalJSON() (b []byte, err error) {
-	b = bufpool.Get()
-	b = ev.Marshal(b[:0])
+	b = ev.Marshal(nil)
 	return
 }
 
 func (ev *E) Serialize() (b []byte) {
-	b = bufpool.Get()
-	b = ev.Marshal(b[:0])
+	b = ev.Marshal(nil)
 	return
 }
 
 // Unmarshal unmarshalls a JSON string into an event.E.
-//
-// Call ev.Free() to return the provided buffer to the bufpool afterwards.
 func (ev *E) Unmarshal(b []byte) (rem []byte, err error) {
-	log.I.F("Unmarshal\n%s\n", string(b))
 	key := make([]byte, 0, 9)
 	for ; len(b) > 0; b = b[1:] {
 		// Skip whitespace
@@ -185,7 +215,6 @@ func (ev *E) Unmarshal(b []byte) (rem []byte, err error) {
 			goto BetweenKeys
 		}
 	}
-	log.I.F("start")
 	goto eof
 BetweenKeys:
 	for ; len(b) > 0; b = b[1:] {
@@ -198,7 +227,6 @@ BetweenKeys:
 			goto InKey
 		}
 	}
-	log.I.F("BetweenKeys")
 	goto eof
 InKey:
 	for ; len(b) > 0; b = b[1:] {
@@ -208,7 +236,6 @@ InKey:
 		}
 		key = append(key, b[0])
 	}
-	log.I.F("InKey")
 	goto eof
 InKV:
 	for ; len(b) > 0; b = b[1:] {
@@ -221,7 +248,6 @@ InKV:
 			goto InVal
 		}
 	}
-	log.I.F("InKV")
 	goto eof
 InVal:
 	// Skip whitespace before value
