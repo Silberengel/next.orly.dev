@@ -113,6 +113,7 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/auth/challenge", s.handleAuthChallenge)
 	s.mux.HandleFunc("/api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
+	s.mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("/api/permissions/", s.handlePermissions)
 }
 
@@ -206,7 +207,16 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	// Authentication successful
+	// Authentication successful: set a simple session cookie with the pubkey
+	cookie := &http.Cookie{
+		Name:     "orly_auth",
+		Value:    hex.Enc(evt.Pubkey),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   60 * 60 * 24 * 30, // 30 days
+	}
+	http.SetCookie(w, cookie)
 	w.Write([]byte(`{"success": true, "pubkey": "` + hex.Enc(evt.Pubkey) + `", "message": "Authentication successful"}`))
 }
 
@@ -216,9 +226,36 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
+	// Check for auth cookie
+	if c, err := r.Cookie("orly_auth"); err == nil && c.Value != "" {
+		// Validate pubkey format (hex)
+		if _, err := hex.Dec(c.Value); !chk.E(err) {
+			w.Write([]byte(`{"authenticated": true, "pubkey": "` + c.Value + `"}`))
+			return
+		}
+	}
 	w.Write([]byte(`{"authenticated": false}`))
+}
+
+// handleAuthLogout clears the auth cookie
+func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Expire the cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "orly_auth",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true}`))
 }
 
 // handlePermissions returns the permission level for a given pubkey

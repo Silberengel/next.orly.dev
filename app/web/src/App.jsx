@@ -6,9 +6,14 @@ function App() {
   const [statusType, setStatusType] = useState('info');
   const [profileData, setProfileData] = useState(null);
 
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
   useEffect(() => {
     // Check authentication status on page load
-    checkStatus();
+    (async () => {
+      await checkStatus();
+      setCheckingAuth(false);
+    })();
   }, []);
 
   // Effect to fetch profile when user changes
@@ -30,17 +35,20 @@ function App() {
     try {
       const response = await fetch('/api/auth/status');
       const data = await response.json();
-      if (data.authenticated) {
-        setUser(data.pubkey);
-        updateStatus(`Already authenticated as: ${data.pubkey.slice(0, 16)}...`, 'success');
-
-        // Check permissions if authenticated
-        if (data.pubkey) {
+      if (data.authenticated && data.pubkey) {
+        // Fetch permission first, then set user and profile
+        try {
           const permResponse = await fetch(`/api/permissions/${data.pubkey}`);
           const permData = await permResponse.json();
           if (permData && permData.permission) {
-            setUser({...data, permission: permData.permission});
+            const fullUser = { pubkey: data.pubkey, permission: permData.permission };
+            setUser(fullUser);
+            updateStatus(`Already authenticated as: ${data.pubkey.slice(0, 16)}...`, 'success');
+            // Fire and forget profile fetch
+            fetchUserProfile(data.pubkey);
           }
+        } catch (_) {
+          // ignore permission fetch errors
         }
       }
     } catch (error) {
@@ -306,9 +314,17 @@ function App() {
     }
   }
 
-  function logout() {
+  async function logout() {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (_) {}
     setUser(null);
     updateStatus('Logged out', 'info');
+  }
+
+  // Prevent UI flash: wait until we checked auth status
+  if (checkingAuth) {
+    return null;
   }
 
   return (
