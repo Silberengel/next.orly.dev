@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run --hot src/index.jsx",
-    "build": "bun build ./src/index.jsx --outdir ./dist --minify && cp public/index.html dist/",
+    "build": "bun build ./src/index.jsx --outdir ./dist --minify && mkdir -p dist && cp -r public/* dist/",
     "start": "bun run dist/index.js"
   },
   "dependencies": {

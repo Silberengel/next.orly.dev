@@ -317,9 +317,6 @@ function App() {
         // Logged in view with user profile
         <div className="sticky top-0 left-0 w-full bg-gray-100 z-50 h-16 flex items-center overflow-hidden">
           <div className="flex items-center h-full w-full box-border">
-            <div className="flex items-center justify-start h-full">
-              <img src="/docs/orly.png" alt="Logo" className="h-full aspect-square w-auto object-cover shrink-0" />
-            </div>
             <div className="relative overflow-hidden flex flex-grow items-center justify-start h-full">
               {profileData?.banner && (
                 <div className="absolute inset-0 opacity-70 bg-cover bg-center" style={{ backgroundImage: `url(${profileData.banner})` }}></div>
@@ -337,8 +334,8 @@ function App() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center justify-end h-full">
-              <button className="bg-transparent text-gray-500 border-0 text-2xl cursor-pointer p-0 flex items-center justify-center w-12 h-full ml-2 mr-0 shrink-0 hover:bg-transparent hover:text-gray-800" onClick={logout}>✕</button>
+            <div className="flex items-center justify-end shrink-0 h-full">
+              <button className="bg-transparent text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800" onClick={logout}>✕</button>
             </div>
           </div>
         </div>
