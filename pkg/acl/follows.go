@@ -360,6 +360,16 @@ func (f *Follows) Syncer() {
 	f.updated <- struct{}{}
 }
 
+// GetFollowedPubkeys returns a copy of the followed pubkeys list
+func (f *Follows) GetFollowedPubkeys() [][]byte {
+	f.followsMx.RLock()
+	defer f.followsMx.RUnlock()
+	
+	followedPubkeys := make([][]byte, len(f.follows))
+	copy(followedPubkeys, f.follows)
+	return followedPubkeys
+}
+
 func init() {
 	log.T.F("registering follows ACL")
 	Registry.Register(new(Follows))

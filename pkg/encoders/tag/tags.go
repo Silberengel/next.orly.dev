@@ -24,7 +24,8 @@ func NewSWithCap(c int) (s *S) {
 
 func (s *S) Len() int {
 	if s == nil {
-		panic("tags cannot be used without initialization")
+		return 0
+		// panic("tags cannot be used without initialization")
 	}
 	return len(*s)
 }

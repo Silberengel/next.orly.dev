@@ -103,6 +103,20 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		// user has write access or better, continue
 		// log.D.F("user has %s access", accessLevel)
 	}
+	// check for protected tag (NIP-70)
+	protectedTag := env.E.Tags.GetFirst([]byte("-"))
+	if protectedTag != nil && acl.Registry.Active.Load() != "none" {
+		// check that the pubkey of the event matches the authed pubkey
+		if !utils.FastEqual(l.authedPubkey.Load(), env.E.Pubkey) {
+			if err = Ok.Blocked(
+				l, env,
+				"protected tag may only be published by user authed to the same pubkey",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
 		if err = l.HandleDelete(env); err != nil {

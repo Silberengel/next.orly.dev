@@ -23,23 +23,25 @@ import (
 // and default values. It defines parameters for app behaviour, storage
 // locations, logging, and network settings used across the relay service.
 type C struct {
-	AppName        string   `env:"ORLY_APP_NAME" usage:"set a name to display on information about the relay" default:"ORLY"`
-	DataDir        string   `env:"ORLY_DATA_DIR" usage:"storage location for the event store" default:"~/.local/share/ORLY"`
-	Listen         string   `env:"ORLY_LISTEN" default:"0.0.0.0" usage:"network listen address"`
-	Port           int      `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
-	HealthPort     int      `env:"ORLY_HEALTH_PORT" default:"0" usage:"optional health check HTTP port; 0 disables"`
-	EnableShutdown bool     `env:"ORLY_ENABLE_SHUTDOWN" default:"false" usage:"if true, expose /shutdown on the health port to gracefully stop the process (for profiling)"`
-	LogLevel       string   `env:"ORLY_LOG_LEVEL" default:"info" usage:"relay log level: fatal error warn info debug trace"`
-	DBLogLevel     string   `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
-	LogToStdout    bool     `env:"ORLY_LOG_TO_STDOUT" default:"false" usage:"log to stdout instead of stderr"`
-	Pprof          string   `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation,heap,block,goroutine,threadcreate,mutex"`
-	PprofPath      string   `env:"ORLY_PPROF_PATH" usage:"optional directory to write pprof profiles into (inside container); default is temporary dir"`
-	PprofHTTP      bool     `env:"ORLY_PPROF_HTTP" default:"false" usage:"if true, expose net/http/pprof on port 6060"`
-	OpenPprofWeb   bool     `env:"ORLY_OPEN_PPROF_WEB" default:"false" usage:"if true, automatically open the pprof web viewer when profiling is enabled"`
-	IPWhitelist    []string `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
-	Admins         []string `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
-	Owners         []string `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`
-	ACLMode        string   `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
+	AppName         string        `env:"ORLY_APP_NAME" usage:"set a name to display on information about the relay" default:"ORLY"`
+	DataDir         string        `env:"ORLY_DATA_DIR" usage:"storage location for the event store" default:"~/.local/share/ORLY"`
+	Listen          string        `env:"ORLY_LISTEN" default:"0.0.0.0" usage:"network listen address"`
+	Port            int           `env:"ORLY_PORT" default:"3334" usage:"port to listen on"`
+	HealthPort      int           `env:"ORLY_HEALTH_PORT" default:"0" usage:"optional health check HTTP port; 0 disables"`
+	EnableShutdown  bool          `env:"ORLY_ENABLE_SHUTDOWN" default:"false" usage:"if true, expose /shutdown on the health port to gracefully stop the process (for profiling)"`
+	LogLevel        string        `env:"ORLY_LOG_LEVEL" default:"info" usage:"relay log level: fatal error warn info debug trace"`
+	DBLogLevel      string        `env:"ORLY_DB_LOG_LEVEL" default:"info" usage:"database log level: fatal error warn info debug trace"`
+	LogToStdout     bool          `env:"ORLY_LOG_TO_STDOUT" default:"false" usage:"log to stdout instead of stderr"`
+	Pprof           string        `env:"ORLY_PPROF" usage:"enable pprof in modes: cpu,memory,allocation,heap,block,goroutine,threadcreate,mutex"`
+	PprofPath       string        `env:"ORLY_PPROF_PATH" usage:"optional directory to write pprof profiles into (inside container); default is temporary dir"`
+	PprofHTTP       bool          `env:"ORLY_PPROF_HTTP" default:"false" usage:"if true, expose net/http/pprof on port 6060"`
+	OpenPprofWeb    bool          `env:"ORLY_OPEN_PPROF_WEB" default:"false" usage:"if true, automatically open the pprof web viewer when profiling is enabled"`
+	IPWhitelist     []string      `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
+	Admins          []string      `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
+	Owners          []string      `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`
+	ACLMode         string        `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
+	SpiderMode      string        `env:"ORLY_SPIDER_MODE" usage:"spider mode: none,follow" default:"none"`
+	SpiderFrequency time.Duration `env:"ORLY_SPIDER_FREQUENCY" usage:"spider frequency in seconds" default:"1h"`
 }
 
 // New creates and initializes a new configuration object for the relay

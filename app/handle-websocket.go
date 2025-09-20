@@ -97,7 +97,7 @@ whitelist:
 		}
 		var typ websocket.MessageType
 		var msg []byte
-		log.T.F("waiting for message from %s", remote)
+		// log.T.F("waiting for message from %s", remote)
 
 		// Create a read context with timeout to prevent indefinite blocking
 		readCtx, readCancel := context.WithTimeout(ctx, DefaultReadTimeout)
@@ -152,7 +152,7 @@ whitelist:
 			writeCancel()
 			continue
 		}
-		log.T.F("received message from %s: %s", remote, string(msg))
+		// log.T.F("received message from %s: %s", remote, string(msg))
 		go listener.HandleMessage(msg, remote)
 	}
 }

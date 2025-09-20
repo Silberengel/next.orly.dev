@@ -1,9 +1,9 @@
 package app
 
 import (
+	"fmt"
+
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/errorf"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/closeenvelope"
@@ -13,7 +13,7 @@ import (
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
-	log.D.F("%s received message:\n%s", remote, msg)
+	// log.D.F("%s received message:\n%s", remote, msg)
 	var err error
 	var t string
 	var rem []byte
@@ -32,7 +32,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 			// log.D.F("authenvelope: %s %s", remote, rem)
 			err = l.HandleAuth(rem)
 		default:
-			err = errorf.E("unknown envelope type %s\n%s", t, rem)
+			err = fmt.Errorf("unknown envelope type %s\n%s", t, rem)
 		}
 	}
 	if err != nil {
@@ -43,7 +43,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 		// 		)
 		// 	},
 		// )
-		if err = noticeenvelope.NewFrom(err.Error()).Write(l); chk.E(err) {
+		if err = noticeenvelope.NewFrom(err.Error()).Write(l); err != nil {
 			return
 		}
 	}
