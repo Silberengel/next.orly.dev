@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -140,56 +141,92 @@ func loadCacheAndIndex() (*CacheIndex, error) {
 	return idx, nil
 }
 
-// publishCacheEvents uploads all cache events to the relay without waiting for OKs
+// publishCacheEvents uploads all cache events to the relay using multiple concurrent connections
 func publishCacheEvents(
-	ctx context.Context, rc *RelayConn, idx *CacheIndex,
+	ctx context.Context, relayURL string, idx *CacheIndex,
 ) (sentCount int) {
-	// Use an index-based loop so we can truly retry the same event on transient errors
-	for i := 0; i < len(idx.events); i++ {
-		// allow cancellation
-		select {
-		case <-ctx.Done():
-			return sentCount
-		default:
-		}
-		ev := idx.events[i]
-		client := rc.Get()
-		if client == nil {
-			_ = rc.Reconnect(ctx)
-			// retry same index
-			i--
-			continue
-		}
-		
-		log.T.F("cache publish %d/%d", i+1, len(idx.events))
-		// Send event without waiting for OK response (fire-and-forget)
-		envelope := eventenvelope.NewSubmissionWith(ev)
-		envBytes := envelope.Marshal(nil)
-		if err := <-client.Write(envBytes); err != nil {
-			log.E.F("cache write error: %v", err)
-			errStr := err.Error()
-			if strings.Contains(errStr, "connection closed") {
-				_ = rc.Reconnect(ctx)
-				// retry this event by decrementing i so the for-loop will attempt it again
-				i--
-				continue
-			}
-			// small backoff and move on to next event on non-transient errors
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		log.I.F("event: %s", ev.Serialize())
-		sentCount++
-		
-		// Add a longer delay between successful publishes to prevent overwhelming the relay
-		// This helps maintain stable connections during sustained cache publishing
-		select {
-		case <-time.After(100 * time.Millisecond):
-		case <-ctx.Done():
-			return sentCount
-		}
+	numWorkers := runtime.NumCPU()
+	log.I.F("using %d concurrent connections for cache upload", numWorkers)
+	
+	// Channel to distribute events to workers
+	eventChan := make(chan *event.E, len(idx.events))
+	var totalSent atomic.Int64
+	
+	// Fill the event channel
+	for _, ev := range idx.events {
+		eventChan <- ev
 	}
-	return sentCount
+	close(eventChan)
+	
+	// Start worker goroutines
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			
+			// Create separate connection for this worker
+			client, err := ws.RelayConnect(ctx, relayURL)
+			if err != nil {
+				log.E.F("worker %d: failed to connect: %v", workerID, err)
+				return
+			}
+			defer client.Close()
+			
+			rc := &RelayConn{client: client, url: relayURL}
+			workerSent := 0
+			
+			// Process events from the channel
+			for ev := range eventChan {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+				
+				// Get client connection
+				wsClient := rc.Get()
+				if wsClient == nil {
+					if err := rc.Reconnect(ctx); err != nil {
+						log.E.F("worker %d: reconnect failed: %v", workerID, err)
+						continue
+					}
+					wsClient = rc.Get()
+				}
+				
+				// Send event without waiting for OK response (fire-and-forget)
+				envelope := eventenvelope.NewSubmissionWith(ev)
+				envBytes := envelope.Marshal(nil)
+				if err := <-wsClient.Write(envBytes); err != nil {
+					log.E.F("worker %d: write error: %v", workerID, err)
+					errStr := err.Error()
+					if strings.Contains(errStr, "connection closed") {
+						_ = rc.Reconnect(ctx)
+					}
+					time.Sleep(50 * time.Millisecond)
+					continue
+				}
+				
+				workerSent++
+				totalSent.Add(1)
+				log.T.F("worker %d: sent event %d (total: %d)", workerID, workerSent, totalSent.Load())
+				
+				// Small delay to prevent overwhelming the relay
+				select {
+				case <-time.After(10 * time.Millisecond):
+				case <-ctx.Done():
+					return
+				}
+			}
+			
+			log.I.F("worker %d: completed, sent %d events", workerID, workerSent)
+		}(i)
+	}
+	
+	// Wait for all workers to complete
+	wg.Wait()
+	
+	return int(totalSent.Load())
 }
 
 // buildRandomFilter builds a filter combining random subsets of id, author, timestamp, and a single-letter tag value.
@@ -518,7 +555,7 @@ func main() {
 	cacheSent := 0
 	if !skipCache && idx != nil && len(idx.events) > 0 {
 		log.I.F("sending %d events from examples.Cache...", len(idx.events))
-		cacheSent = publishCacheEvents(ctx, rc, idx)
+		cacheSent = publishCacheEvents(ctx, relayURL, idx)
 		log.I.F("sent %d/%d cache events", cacheSent, len(idx.events))
 	}
 
