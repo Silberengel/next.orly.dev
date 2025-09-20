@@ -52,15 +52,29 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			// Continue with whatever IDs we found
 		}
 
-		// Process each found serial, fetch the event, and apply filters
+		// Convert serials map to slice for batch fetch
+		var serialsSlice []*types.Uint40
+		idHexToSerial := make(map[uint64]string) // Map serial value back to original ID hex
 		for idHex, ser := range serials {
-			// fetch the event
-			var ev *event.E
-			if ev, err = d.FetchEventBySerial(ser); err != nil {
-				log.T.F(
-					"QueryEvents: fetch by serial failed for id=%s ser=%v err=%v",
-					idHex, ser, err,
-				)
+			serialsSlice = append(serialsSlice, ser)
+			idHexToSerial[ser.Get()] = idHex
+		}
+
+		// Fetch all events in a single batch operation
+		var fetchedEvents map[uint64]*event.E
+		if fetchedEvents, err = d.FetchEventsBySerials(serialsSlice); err != nil {
+			log.E.F("QueryEvents: batch fetch failed: %v", err)
+			return
+		}
+
+		// Process each successfully fetched event and apply filters
+		for serialValue, ev := range fetchedEvents {
+			idHex := idHexToSerial[serialValue]
+			
+			// Convert serial value back to Uint40 for expiration handling
+			ser := new(types.Uint40)
+			if err = ser.Set(serialValue); err != nil {
+				log.T.F("QueryEvents: error converting serial %d: %v", serialValue, err)
 				continue
 			}
 
@@ -134,16 +148,33 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			// Add deletion events to the list of events to process
 			idPkTs = append(idPkTs, deletionIdPkTs...)
 		}
-		// First pass: collect all deletion events
+		// Prepare serials for batch fetch
+		var allSerials []*types.Uint40
+		serialToIdPk := make(map[uint64]*store.IdPkTs)
 		for _, idpk := range idPkTs {
-			var ev *event.E
 			ser := new(types.Uint40)
-			if err = ser.Set(idpk.Ser); chk.E(err) {
+			if err = ser.Set(idpk.Ser); err != nil {
 				continue
 			}
-			if ev, err = d.FetchEventBySerial(ser); err != nil {
+			allSerials = append(allSerials, ser)
+			serialToIdPk[ser.Get()] = idpk
+		}
+
+		// Fetch all events in batch
+		var allEvents map[uint64]*event.E
+		if allEvents, err = d.FetchEventsBySerials(allSerials); err != nil {
+			log.E.F("QueryEvents: batch fetch failed in non-IDs path: %v", err)
+			return
+		}
+
+		// First pass: collect all deletion events
+		for serialValue, ev := range allEvents {
+			// Convert serial value back to Uint40 for expiration handling
+			ser := new(types.Uint40)
+			if err = ser.Set(serialValue); err != nil {
 				continue
 			}
+
 			// check for an expiration tag and delete after returning the result
 			if CheckExpiration(ev) {
 				expDeletes = append(expDeletes, ser)
@@ -267,15 +298,7 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			}
 		}
 		// Second pass: process all events, filtering out deleted ones
-		for _, idpk := range idPkTs {
-			var ev *event.E
-			ser := new(types.Uint40)
-			if err = ser.Set(idpk.Ser); chk.E(err) {
-				continue
-			}
-			if ev, err = d.FetchEventBySerial(ser); err != nil {
-				continue
-			}
+		for _, ev := range allEvents {
 			// Add logging for tag filter debugging
 			if f.Tags != nil && f.Tags.Len() > 0 {
 				// var eventTags []string

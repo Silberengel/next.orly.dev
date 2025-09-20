@@ -6,7 +6,7 @@ WORKDIR /build
 COPY . .
 
 # Build the basic-badger example
-RUN cd examples/basic-badger && \
+RUN echo ${pwd};cd examples/basic-badger && \
     go mod tidy && \
     CGO_ENABLED=0 go build -o khatru-badger .
 

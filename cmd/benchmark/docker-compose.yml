@@ -11,7 +11,7 @@ services:
       - ORLY_DATA_DIR=/data
       - ORLY_LISTEN=0.0.0.0
       - ORLY_PORT=8080
-      - ORLY_LOG_LEVEL=info
+      - ORLY_LOG_LEVEL=off
     volumes:
       - ./data/next-orly:/data
     ports:

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"flag"
 	"fmt"
 	"log"
@@ -14,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	lol "lol.mleku.dev"
 	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
@@ -64,7 +62,7 @@ type Benchmark struct {
 }
 
 func main() {
-	lol.SetLogLevel("trace")
+	// lol.SetLogLevel("trace")
 	config := parseFlags()
 
 	if config.RelayURL != "" {
@@ -136,13 +134,15 @@ func runNetworkLoad(cfg *BenchmarkConfig) {
 		cfg.RelayURL, cfg.NetWorkers, cfg.NetRate, cfg.TestDuration,
 	)
 	// Create a timeout context for benchmark control only, not for connections
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), cfg.TestDuration)
+	timeoutCtx, cancel := context.WithTimeout(
+		context.Background(), cfg.TestDuration,
+	)
 	defer cancel()
-	
-	// Use a separate background context for relay connections to avoid 
+
+	// Use a separate background context for relay connections to avoid
 	// cancelling the server when the benchmark timeout expires
 	connCtx := context.Background()
-	
+
 	var wg sync.WaitGroup
 	if cfg.NetWorkers <= 0 {
 		cfg.NetWorkers = 1
@@ -959,16 +959,14 @@ func (b *Benchmark) generateEvents(count int) []*event.E {
 	events := make([]*event.E, count)
 	now := timestamp.Now()
 
+	// Generate a keypair for signing all events
+	var keys p256k.Signer
+	if err := keys.Generate(); err != nil {
+		log.Fatalf("Failed to generate keys for benchmark events: %v", err)
+	}
+
 	for i := 0; i < count; i++ {
 		ev := event.New()
-
-		// Generate random 32-byte ID
-		ev.ID = make([]byte, 32)
-		rand.Read(ev.ID)
-
-		// Generate random 32-byte pubkey
-		ev.Pubkey = make([]byte, 32)
-		rand.Read(ev.Pubkey)
 
 		ev.CreatedAt = now.I64()
 		ev.Kind = kind.TextNote.K
@@ -983,6 +981,11 @@ func (b *Benchmark) generateEvents(count int) []*event.E {
 				[]byte("e"), []byte(fmt.Sprintf("ref_%d", i%50)),
 			),
 		)
+
+		// Properly sign the event instead of generating fake signatures
+		if err := ev.Sign(&keys); err != nil {
+			log.Fatalf("Failed to sign event %d: %v", i, err)
+		}
 
 		events[i] = ev
 	}

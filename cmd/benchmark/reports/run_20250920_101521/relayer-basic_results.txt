@@ -1,0 +1,298 @@
+Starting Nostr Relay Benchmark
+Data Directory: /tmp/benchmark_relayer-basic_8
+Events: 10000, Workers: 8, Duration: 1m0s
+1758364801895559ℹ️/tmp/benchmark_relayer-basic_8: All 0 tables opened in 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/levels.go:161 /build/pkg/database/logger.go:57
+1758364801896041ℹ️/tmp/benchmark_relayer-basic_8: Discard stats nextEmptySlot: 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/discard.go:55 /build/pkg/database/logger.go:57
+1758364801896078ℹ️/tmp/benchmark_relayer-basic_8: Set nextTxnTs to 0
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:358 /build/pkg/database/logger.go:57
+1758364801896347ℹ️(*types.Uint32)(0xc0001a801c)({
+ value: (uint32) 1
+})
+ /build/pkg/database/migrations.go:65
+1758364801896400ℹ️migrating to version 1... /build/pkg/database/migrations.go:79
+
+=== Starting test round 1/2 ===
+RunPeakThroughputTest..
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 9.050770003s
+Events/sec: 1104.88
+Avg latency: 433.89µs
+P90 latency: 567.261µs
+P95 latency: 617.868µs
+P99 latency: 783.593µs
+Bottom 10% Avg latency: 653.813µs
+RunBurstPatternTest..
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 183.738134ms
+Burst completed: 1000 events in 155.035832ms
+Burst completed: 1000 events in 160.066514ms
+Burst completed: 1000 events in 183.724238ms
+Burst completed: 1000 events in 178.910929ms
+Burst completed: 1000 events in 168.905441ms
+Burst completed: 1000 events in 172.584809ms
+Burst completed: 1000 events in 177.214508ms
+Burst completed: 1000 events in 169.921566ms
+Burst completed: 1000 events in 162.042488ms
+Burst test completed: 10000 events in 15.572250139s
+Events/sec: 642.17
+RunMixedReadWriteTest..
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 5000 reads in 44.509677166s
+Combined ops/sec: 224.67
+RunQueryTest..
+
+=== Query Test ===
+Pre-populating database with 10000 events for query tests...
+Query test completed: 3253 queries in 1m0.095238426s
+Queries/sec: 54.13
+Avg query latency: 122.100718ms
+P95 query latency: 140.360749ms
+P99 query latency: 148.353154ms
+RunConcurrentQueryStoreTest..
+
+=== Concurrent Query/Store Test ===
+Pre-populating database with 5000 events for concurrent query/store test...
+Concurrent test completed: 11408 operations (1408 queries, 10000 writes) in 1m0.117581615s
+Operations/sec: 189.76
+Avg latency: 16.525268ms
+Avg query latency: 130.972853ms
+Avg write latency: 411.048µs
+P95 latency: 132.130964ms
+P99 latency: 146.285305ms
+
+Pausing 10s before next round...
+
+=== Test round completed ===
+
+
+=== Starting test round 2/2 ===
+RunPeakThroughputTest..
+
+=== Peak Throughput Test ===
+Events saved: 10000/10000 (100.0%)
+Duration: 9.265496879s
+Events/sec: 1079.27
+Avg latency: 529.266µs
+P90 latency: 658.033µs
+P95 latency: 732.024µs
+P99 latency: 953.285µs
+Bottom 10% Avg latency: 1.168714ms
+RunBurstPatternTest..
+
+=== Burst Pattern Test ===
+Burst completed: 1000 events in 172.300479ms
+Burst completed: 1000 events in 149.247397ms
+Burst completed: 1000 events in 170.000198ms
+Burst completed: 1000 events in 133.786958ms
+Burst completed: 1000 events in 172.157036ms
+Burst completed: 1000 events in 153.284738ms
+Burst completed: 1000 events in 166.711903ms
+Burst completed: 1000 events in 170.635427ms
+Burst completed: 1000 events in 153.381031ms
+Burst completed: 1000 events in 162.125949ms
+Burst test completed: 10000 events in 16.674963543s
+Events/sec: 599.70
+RunMixedReadWriteTest..
+
+=== Mixed Read/Write Test ===
+Pre-populating database for read tests...
+Mixed test completed: 5000 writes, 4665 reads in 1m0.035358264s
+Combined ops/sec: 160.99
+RunQueryTest..
+
+=== Query Test ===
+Pre-populating database with 10000 events for query tests...
+Query test completed: 944 queries in 1m0.383519958s
+Queries/sec: 15.63
+Avg query latency: 421.75292ms
+P95 query latency: 491.340259ms
+P99 query latency: 664.614262ms
+RunConcurrentQueryStoreTest..
+
+=== Concurrent Query/Store Test ===
+Pre-populating database with 5000 events for concurrent query/store test...
+Concurrent test completed: 10479 operations (479 queries, 10000 writes) in 1m0.291926697s
+Operations/sec: 173.80
+Avg latency: 18.049265ms
+Avg query latency: 385.864458ms
+Avg write latency: 430.918µs
+P95 latency: 3.05038ms
+P99 latency: 404.540502ms
+
+=== Test round completed ===
+
+
+================================================================================
+BENCHMARK REPORT
+================================================================================
+
+Test: Peak Throughput
+Duration: 9.050770003s
+Total Events: 10000
+Events/sec: 1104.88
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 153 MB
+Avg Latency: 433.89µs
+P90 Latency: 567.261µs
+P95 Latency: 617.868µs
+P99 Latency: 783.593µs
+Bottom 10% Avg Latency: 653.813µs
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 15.572250139s
+Total Events: 10000
+Events/sec: 642.17
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 134 MB
+Avg Latency: 186.306µs
+P90 Latency: 243.995µs
+P95 Latency: 279.192µs
+P99 Latency: 392.859µs
+Bottom 10% Avg Latency: 303.766µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 44.509677166s
+Total Events: 10000
+Events/sec: 224.67
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 163 MB
+Avg Latency: 8.892738ms
+P90 Latency: 19.406836ms
+P95 Latency: 21.247322ms
+P99 Latency: 23.452072ms
+Bottom 10% Avg Latency: 21.397913ms
+----------------------------------------
+
+Test: Query Performance
+Duration: 1m0.095238426s
+Total Events: 3253
+Events/sec: 54.13
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 126 MB
+Avg Latency: 122.100718ms
+P90 Latency: 136.523661ms
+P95 Latency: 140.360749ms
+P99 Latency: 148.353154ms
+Bottom 10% Avg Latency: 142.067372ms
+----------------------------------------
+
+Test: Concurrent Query/Store
+Duration: 1m0.117581615s
+Total Events: 11408
+Events/sec: 189.76
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 149 MB
+Avg Latency: 16.525268ms
+P90 Latency: 121.696848ms
+P95 Latency: 132.130964ms
+P99 Latency: 146.285305ms
+Bottom 10% Avg Latency: 134.054744ms
+----------------------------------------
+
+Test: Peak Throughput
+Duration: 9.265496879s
+Total Events: 10000
+Events/sec: 1079.27
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 1441 MB
+Avg Latency: 529.266µs
+P90 Latency: 658.033µs
+P95 Latency: 732.024µs
+P99 Latency: 953.285µs
+Bottom 10% Avg Latency: 1.168714ms
+----------------------------------------
+
+Test: Burst Pattern
+Duration: 16.674963543s
+Total Events: 10000
+Events/sec: 599.70
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 142 MB
+Avg Latency: 264.288µs
+P90 Latency: 350.187µs
+P95 Latency: 519.139µs
+P99 Latency: 1.961326ms
+Bottom 10% Avg Latency: 877.366µs
+----------------------------------------
+
+Test: Mixed Read/Write
+Duration: 1m0.035358264s
+Total Events: 9665
+Events/sec: 160.99
+Success Rate: 96.7%
+Concurrent Workers: 8
+Memory Used: 151 MB
+Avg Latency: 16.019245ms
+P90 Latency: 36.340362ms
+P95 Latency: 39.113864ms
+P99 Latency: 44.271098ms
+Bottom 10% Avg Latency: 40.108462ms
+----------------------------------------
+
+Test: Query Performance
+Duration: 1m0.383519958s
+Total Events: 944
+Events/sec: 15.63
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 280 MB
+Avg Latency: 421.75292ms
+P90 Latency: 460.902551ms
+P95 Latency: 491.340259ms
+P99 Latency: 664.614262ms
+Bottom 10% Avg Latency: 538.014725ms
+----------------------------------------
+
+Test: Concurrent Query/Store
+Duration: 1m0.291926697s
+Total Events: 10479
+Events/sec: 173.80
+Success Rate: 100.0%
+Concurrent Workers: 8
+Memory Used: 122 MB
+Avg Latency: 18.049265ms
+P90 Latency: 843.867µs
+P95 Latency: 3.05038ms
+P99 Latency: 404.540502ms
+Bottom 10% Avg Latency: 177.245211ms
+----------------------------------------
+
+Report saved to: /tmp/benchmark_relayer-basic_8/benchmark_report.txt
+AsciiDoc report saved to: /tmp/benchmark_relayer-basic_8/benchmark_report.adoc
+1758365287933287ℹ️/tmp/benchmark_relayer-basic_8: Lifetime L0 stalled for: 0s
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:536 /build/pkg/database/logger.go:57
+1758365289807797ℹ️/tmp/benchmark_relayer-basic_8: 
+Level 0 [ ]: NumTables: 00. Size: 0 B of 0 B. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 64 MiB
+Level 1 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 2 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 3 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 4 [ ]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 5 [B]: NumTables: 00. Size: 0 B of 10 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 2.0 MiB
+Level 6 [ ]: NumTables: 04. Size: 87 MiB of 87 MiB. Score: 0.00->0.00 StaleData: 0 B Target FileSize: 4.0 MiB
+Level Done
+/go/pkg/mod/github.com/dgraph-io/badger/v4@v4.8.0/db.go:615 /build/pkg/database/logger.go:57
+1758365289812921ℹ️/tmp/benchmark_relayer-basic_8: database closed /build/pkg/database/database.go:134
+
+RELAY_NAME: relayer-basic
+RELAY_URL: ws://relayer-basic:7447
+TEST_TIMESTAMP: 2025-09-20T10:48:10+00:00
+BENCHMARK_CONFIG:
+  Events: 10000
+  Workers: 8
+  Duration: 60s

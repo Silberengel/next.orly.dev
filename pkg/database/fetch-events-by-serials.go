@@ -2,105 +2,67 @@ package database
 
 import (
 	"bytes"
-	"sort"
-	"strconv"
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
 )
 
-// FetchEventsBySerials processes multiple serials in ascending order and retrieves
-// the corresponding events from the database. It optimizes database access by
-// sorting the serials and seeking to each one sequentially.
-func (d *D) FetchEventsBySerials(serials []*types.Uint40) (
-	evMap map[string]*event.E, err error,
-) {
-	log.T.F("FetchEventsBySerials: processing %d serials", len(serials))
-
-	// Initialize the result map
-	evMap = make(map[string]*event.E)
-
-	// Return early if no serials are provided
+// FetchEventsBySerials fetches multiple events by their serials in a single database transaction.
+// Returns a map of serial uint64 value to event, only including successfully fetched events.
+func (d *D) FetchEventsBySerials(serials []*types.Uint40) (events map[uint64]*event.E, err error) {
+	events = make(map[uint64]*event.E)
+	
 	if len(serials) == 0 {
-		return
+		return events, nil
 	}
-
-	// Sort serials in ascending order for more efficient database access
-	sortedSerials := make([]*types.Uint40, len(serials))
-	copy(sortedSerials, serials)
-	sort.Slice(
-		sortedSerials, func(i, j int) bool {
-			return sortedSerials[i].Get() < sortedSerials[j].Get()
-		},
-	)
-
-	// Process all serials in a single transaction
+	
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
-			// Create an iterator with default options
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-
-			// Process each serial sequentially
-			for _, ser := range sortedSerials {
-				// Create the key for this serial
+			for _, ser := range serials {
 				buf := new(bytes.Buffer)
 				if err = indexes.EventEnc(ser).MarshalWrite(buf); chk.E(err) {
+					// Skip this serial on error but continue with others
 					continue
 				}
-				key := buf.Bytes()
-
-				// Seek to this key in the database
-				it.Seek(key)
-				if it.Valid() {
-					item := it.Item()
-
-					// Verify the key matches exactly (should always be true after a Seek)
-					if !bytes.Equal(item.Key(), key) {
-						continue
-					}
-
-					ev := new(event.E)
-					if err = item.Value(
-						func(val []byte) (err error) {
-							// Unmarshal the event
-							if err = ev.UnmarshalBinary(bytes.NewBuffer(val)); chk.E(err) {
-								return
-							}
-							// Store the event in the result map using the serial value as string key
-							return
-						},
-					); chk.E(err) {
-						continue
-					}
-					evMap[strconv.FormatUint(ser.Get(), 10)] = ev
-					// // Get the item value
-					// var v []byte
-					// if v, err = item.ValueCopy(nil); chk.E(err) {
-					// 	continue
-					// }
-					//
-					// // Unmarshal the event
-					// ev := new(event.E)
-					// if err = ev.UnmarshalBinary(bytes.NewBuffer(v)); chk.E(err) {
-					// 	continue
-					// }
-
+				
+				var item *badger.Item
+				if item, err = txn.Get(buf.Bytes()); err != nil {
+					// Skip this serial if not found but continue with others
+					err = nil
+					continue
 				}
+				
+				var v []byte
+				if v, err = item.ValueCopy(nil); chk.E(err) {
+					// Skip this serial on error but continue with others
+					err = nil
+					continue
+				}
+				
+				// Check if we have valid data before attempting to unmarshal
+				if len(v) < 32+32+1+2+1+1+64 { // ID + Pubkey + min varint fields + Sig
+					// Skip this serial - incomplete data
+					continue
+				}
+				
+				ev := new(event.E)
+				if err = ev.UnmarshalBinary(bytes.NewBuffer(v)); err != nil {
+					// Skip this serial on unmarshal error but continue with others
+					err = nil
+					continue
+				}
+				
+				// Successfully unmarshaled event, add to results
+				events[ser.Get()] = ev
 			}
-			return
+			return nil
 		},
-	); chk.E(err) {
+	); err != nil {
 		return
 	}
-
-	log.T.F(
-		"FetchEventsBySerials: found %d events out of %d requested serials",
-		len(evMap), len(serials),
-	)
-	return
+	
+	return events, nil
 }
