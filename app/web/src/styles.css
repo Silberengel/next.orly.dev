@@ -1,0 +1,122 @@
+body {
+  font-family: Arial, sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.container {
+  background: #f9f9f9;
+  padding: 30px;
+  border-radius: 8px;
+  margin-top: 80px; /* Space for the header panel */
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+input, textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+button {
+  background: #007cba;
+  color: white;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #005a87;
+}
+
+.danger-button {
+  background: #dc3545;
+}
+
+.danger-button:hover {
+  background: #c82333;
+}
+
+.status {
+  margin-top: 20px;
+  margin-bottom: 20px;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.success {
+  background: #d4edda;
+  color: #155724;
+}
+
+.error {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.info {
+  background: #d1ecf1;
+  color: #0c5460;
+}
+
+.header-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #f8f9fa;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  z-index: 1000;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+}
+
+.header-logo {
+  height: 40px;
+  width: 40px;
+  border-radius: 4px;
+}
+
+.user-info {
+  flex-grow: 1;
+  padding-left: 20px;
+  font-weight: bold;
+}
+
+.logout-button {
+  background: transparent;
+  color: #6c757d;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-right: 0;
+}
+
+.logout-button:hover {
+  background: rgba(108, 117, 125, 0.1);
+  color: #343a40;
+}

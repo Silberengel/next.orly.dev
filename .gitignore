@@ -92,6 +92,10 @@ cmd/benchmark/data
 !strfry.conf
 !config.toml
 !.dockerignore
+!*.jsx
+!*.tsx
+!/dist
+!bun.lock
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
