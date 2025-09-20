@@ -34,6 +34,17 @@ type Server struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers for all responses
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	
+	// Handle preflight OPTIONS requests
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	
 	// log.T.C(
 	// 	func() string {
 	// 		return fmt.Sprintf("path %v header %v", r.URL, r.Header)
