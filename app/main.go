@@ -45,6 +45,8 @@ func Run(
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
 	}
+	// Initialize the user interface
+	l.UserInterface()
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)
 	go func() {
