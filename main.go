@@ -261,9 +261,13 @@ func main() {
 			fmt.Printf("\r")
 			cancel()
 			chk.E(db.Close())
+			log.I.F("exiting")
+			return
 		case <-quit:
 			cancel()
 			chk.E(db.Close())
+			log.I.F("exiting")
+			return
 		}
 	}
 	log.I.F("exiting")
