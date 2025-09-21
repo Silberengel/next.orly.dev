@@ -94,7 +94,10 @@ cmd/benchmark/data
 !.dockerignore
 !*.jsx
 !*.tsx
-!/dist
+!app/web/dist
+!/app/web/dist
+!/app/web/dist/*
+!/app/web/dist/**
 !bun.lock
 # ...even if they are in subdirectories
 !*/
