@@ -917,7 +917,7 @@ function App() {
                 <div className="absolute inset-0 opacity-70 bg-cover bg-center" style={{ backgroundImage: `url(${profileData.banner})` }}></div>
               )}
               <div className="relative z-10 p-2 flex items-center h-full">
-                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className={`w-8 h-8 rounded-full object-cover border-2 ${getThemeClasses('border-white', 'border-gray-600')} mr-2 shadow box-border`} />}
+                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className={`w-16 h-16 rounded-full object-cover border-2 ${getThemeClasses('border-white', 'border-gray-600')} mr-2 shadow box-border`} />}
                 <div className={getTextClass()}>
                   <div className="font-bold text-base block">
                     {profileData?.display_name || profileData?.name || user.pubkey.slice(0, 8)}
