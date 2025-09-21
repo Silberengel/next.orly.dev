@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --hot src/index.jsx",
-    "build": "bun build ./src/index.jsx --outdir ./dist --minify && mkdir -p dist && cp -r public/* dist/",
-    "start": "bun run dist/index.js"
+    "dev": "bun --hot --port 5173 public/dev.html",
+    "build": "rm -rf dist && bun build ./public/index.html --outdir ./dist --minify --splitting && cp -r public/tailwind.min.css dist/",
+    "preview": "bun x serve dist"
   },
   "dependencies": {
     "react": "^18.2.0",

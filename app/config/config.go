@@ -42,6 +42,10 @@ type C struct {
 	ACLMode         string        `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
 	SpiderMode      string        `env:"ORLY_SPIDER_MODE" usage:"spider mode: none,follow" default:"none"`
 	SpiderFrequency time.Duration `env:"ORLY_SPIDER_FREQUENCY" usage:"spider frequency in seconds" default:"1h"`
+
+	// Web UI and dev mode settings
+	WebDisableEmbedded bool   `env:"ORLY_WEB_DISABLE" default:"false" usage:"disable serving the embedded web UI; useful for hot-reload during development"`
+	WebDevProxyURL     string `env:"ORLY_WEB_DEV_PROXY_URL" usage:"when ORLY_WEB_DISABLE is true, reverse-proxy non-API paths to this dev server URL (e.g. http://localhost:5173)"`
 }
 
 // New creates and initializes a new configuration object for the relay

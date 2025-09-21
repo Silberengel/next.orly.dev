@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -7,6 +7,23 @@ function App() {
   const [profileData, setProfileData] = useState(null);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
+
+  // Login view layout measurements
+  const titleRef = useRef(null);
+  const [loginPadding, setLoginPadding] = useState(16); // default fallback padding in px
+
+  useEffect(() => {
+    function updatePadding() {
+      if (titleRef.current) {
+        const h = titleRef.current.offsetHeight || 0;
+        // Pad area around the text by half the title text height
+        setLoginPadding(Math.max(0, Math.round(h / 2)));
+      }
+    }
+    updatePadding();
+    window.addEventListener('resize', updatePadding);
+    return () => window.removeEventListener('resize', updatePadding);
+  }, []);
 
   useEffect(() => {
     // Check authentication status on page load
@@ -357,22 +374,35 @@ function App() {
         </div>
       ) : (
         // Not logged in view - shows the login form
-        <div className="max-w-3xl mx-auto mt-5 p-6 bg-gray-100 rounded">
-          <h1 className="text-2xl font-bold mb-2">Nostr Relay Authentication</h1>
-          <p className="mb-4">Connect to this Nostr relay using your private key or browser extension.</p>
+        <div className="w-full min-h-screen bg-gray-100">
+          <div
+            className="max-w-full"
+            style={{ padding: `${loginPadding}px` }}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <img
+                src="/orly.png"
+                alt="Orly logo"
+                className="object-contain"
+                style={{ width: '4rem', height: '4rem' }}
+                onError={(e) => {
+                  // fallback to repo docs image if public asset missing
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = "/docs/orly.png";
+                }}
+              />
+              <h1 ref={titleRef} className="text-2xl font-bold p-2">ORLY🦉 Dashboard Login</h1>
+            </div>
 
-          <div className={statusClassName()}>
-            {status}
-          </div>
+            <p className="mb-4">Connect to this Nostr relay using your browser extension.</p>
 
-          <div className="mb-5">
-            <button className="bg-blue-600 text-white px-5 py-3 rounded hover:bg-blue-700" onClick={loginWithExtension}>Login with Browser Extension (NIP-07)</button>
-          </div>
+            <div className={statusClassName()}>
+              {status}
+            </div>
 
-          <div className="mb-5">
-            <label className="block mb-1 font-bold" htmlFor="nsec">Or login with private key (nsec):</label>
-            <input className="w-full p-2 border border-gray-300 rounded" type="password" id="nsec" placeholder="nsec1..." />
-            <button className="mt-2 bg-red-600 text-white px-5 py-2 rounded hover:bg-red-700" onClick={() => updateStatus('Private key login not implemented in this basic interface. Please use a proper Nostr client or extension.', 'error')}>Login with Private Key</button>
+            <div className="mb-5">
+              <button className="bg-blue-600 text-white px-5 py-3 rounded hover:bg-blue-700" onClick={loginWithExtension}>Login with Browser Extension (NIP-07)</button>
+            </div>
           </div>
         </div>
       )}

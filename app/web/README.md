@@ -9,12 +9,41 @@ This is a React web application that uses Bun for building and bundling, and is 
 
 ## Development
 
-To run the development server:
+There are two ways to develop the web app:
+
+1) Standalone (recommended for hot reload)
+- Start the Go relay with the embedded web UI disabled so the React app can run on its own dev server with HMR.
+- Configure the relay via environment variables:
+
+```bash
+# In another shell at repo root
+export ORLY_WEB_DISABLE=true
+# Optional: if you want same-origin URLs, you can set a proxy target and access the relay on the same port
+# export ORLY_WEB_DEV_PROXY_URL=http://localhost:5173
+
+# Start the relay as usual
+go run .
+```
+
+- Then start the React dev server:
 
 ```bash
 cd app/web
 bun install
-bun run dev
+bun dev
+```
+
+When ORLY_WEB_DISABLE=true is set, the Go server still serves the API and websocket endpoints and sends permissive CORS headers, so the dev server can access them cross-origin. If ORLY_WEB_DEV_PROXY_URL is set, the Go server will reverse-proxy non-/api paths to the dev server so you can use the same origin.
+
+2) Embedded (no hot reload)
+- Build the web app and run the Go server with defaults:
+
+```bash
+cd app/web
+bun install
+bun run build
+cd ../../
+go run .
 ```
 
 ## Building
