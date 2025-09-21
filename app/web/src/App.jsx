@@ -374,10 +374,10 @@ function App() {
         </div>
       ) : (
         // Not logged in view - shows the login form
-        <div className="w-full min-h-screen bg-gray-100">
+        <div className="w-full h-full flex items-center justify-center">
           <div
-            className="max-w-full"
-            style={{ padding: `${loginPadding}px` }}
+            className="bg-gray-100"
+            style={{ width: '800px', maxWidth: '100%', boxSizing: 'border-box', padding: `${loginPadding}px` }}
           >
             <div className="flex items-center gap-3 mb-3">
               <img
@@ -394,7 +394,7 @@ function App() {
               <h1 ref={titleRef} className="text-2xl font-bold p-2">ORLY🦉 Dashboard Login</h1>
             </div>
 
-            <p className="mb-4">Connect to this Nostr relay using your browser extension.</p>
+            <p className="mb-4">Authenticate to this Nostr relay using your browser extension.</p>
 
             <div className={statusClassName()}>
               {status}
