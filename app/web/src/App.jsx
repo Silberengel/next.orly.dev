@@ -11,6 +11,24 @@ function App() {
 
   const [checkingAuth, setCheckingAuth] = useState(true);
 
+  // Events log state
+  const [events, setEvents] = useState([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsOffset, setEventsOffset] = useState(0);
+  const [eventsHasMore, setEventsHasMore] = useState(true);
+  const [expandedEventId, setExpandedEventId] = useState(null);
+
+  // Section revealer states
+  const [expandedSections, setExpandedSections] = useState({
+    welcome: true,
+    exportMine: false,
+    exportAll: false,
+    exportSpecific: false,
+    importEvents: false,
+    eventsLog: false
+  });
+
+
   // Login view layout measurements
   const titleRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -63,6 +81,13 @@ function App() {
   useEffect(() => {
     if (user?.pubkey) {
       fetchUserProfile(user.pubkey);
+    }
+  }, [user?.pubkey]);
+
+  // Effect to fetch initial events when user is authenticated
+  useEffect(() => {
+    if (user?.pubkey) {
+      fetchEvents(true); // true = reset
     }
   }, [user?.pubkey]);
 
@@ -364,8 +389,198 @@ function App() {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (_) {}
     setUser(null);
+    setProfileData(null);
+    // Clear events state
+    setEvents([]);
+    setEventsOffset(0);
+    setEventsHasMore(true);
+    setExpandedEventId(null);
     updateStatus('Logged out', 'info');
   }
+
+  // WebSocket-based function to fetch events from relay
+  async function fetchEventsFromRelay(reset = false, limit = 50, timeoutMs = 10000) {
+    if (!user?.pubkey) return;
+    if (eventsLoading) return;
+    if (!reset && !eventsHasMore) return;
+
+    console.log('DEBUG: fetchEventsFromRelay called, reset:', reset, 'offset:', eventsOffset);
+    setEventsLoading(true);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      let receivedEvents = [];
+      let ws;
+      
+      try {
+        ws = new WebSocket(relayURL());
+      } catch (e) {
+        console.error('Failed to create WebSocket:', e);
+        setEventsLoading(false);
+        resolve();
+        return;
+      }
+
+      const subId = 'events-' + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        if (ws && ws.readyState === 1) {
+          try { ws.close(); } catch (_) {}
+        }
+        if (!resolved) {
+          resolved = true;
+          console.log('DEBUG: WebSocket timeout, received events:', receivedEvents.length);
+          processEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      }, timeoutMs);
+
+      ws.onopen = () => {
+        try {
+          // Request events from the authenticated user
+          const req = [
+            'REQ',
+            subId,
+            { authors: [user.pubkey] }
+          ];
+          console.log('DEBUG: Sending WebSocket request:', req);
+          ws.send(JSON.stringify(req));
+        } catch (e) {
+          console.error('Failed to send WebSocket request:', e);
+        }
+      };
+
+      ws.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          const type = data[0];
+          console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
+          
+          if (type === 'EVENT' && data[1] === subId) {
+            const event = data[2];
+            if (event) {
+              // Convert to the expected format
+              const formattedEvent = {
+                id: event.id,
+                kind: event.kind,
+                created_at: event.created_at,
+                content: event.content || '',
+                raw_json: JSON.stringify(event)
+              };
+              receivedEvents.push(formattedEvent);
+            }
+          } else if (type === 'EOSE' && data[1] === subId) {
+            try {
+              ws.send(JSON.stringify(['CLOSE', subId]));
+            } catch (_) {}
+            try { ws.close(); } catch (_) {}
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              console.log('DEBUG: EOSE received, processing events:', receivedEvents.length);
+              processEventsResponse(receivedEvents, reset);
+              resolve();
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        try { ws.close(); } catch (_) {}
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          processEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          console.log('DEBUG: WebSocket closed, processing events:', receivedEvents.length);
+          processEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+    });
+  }
+
+  function processEventsResponse(receivedEvents, reset) {
+    try {
+      // Sort events by created_at in descending order (newest first)
+      const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
+      
+      // Apply pagination manually since we get all events from WebSocket
+      const currentOffset = reset ? 0 : eventsOffset;
+      const limit = 50;
+      const paginatedEvents = sortedEvents.slice(currentOffset, currentOffset + limit);
+      
+      console.log('DEBUG: Processing events - total:', sortedEvents.length, 'paginated:', paginatedEvents.length, 'offset:', currentOffset);
+      
+      if (reset) {
+        setEvents(paginatedEvents);
+        setEventsOffset(paginatedEvents.length);
+      } else {
+        setEvents(prev => [...prev, ...paginatedEvents]);
+        setEventsOffset(prev => prev + paginatedEvents.length);
+      }
+      
+      // Check if there are more events available
+      setEventsHasMore(currentOffset + paginatedEvents.length < sortedEvents.length);
+      
+      console.log('DEBUG: Events updated, displayed count:', paginatedEvents.length, 'has more:', currentOffset + paginatedEvents.length < sortedEvents.length);
+    } catch (error) {
+      console.error('Error processing events response:', error);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
+  // Events log functions
+  async function fetchEvents(reset = false) {
+    await fetchEventsFromRelay(reset);
+  }
+
+  function toggleEventExpansion(eventId) {
+    setExpandedEventId(current => current === eventId ? null : eventId);
+  }
+
+  function copyEventJSON(eventJSON) {
+    try {
+      navigator.clipboard.writeText(eventJSON);
+    } catch (error) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = eventJSON;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+  }
+
+  function truncateContent(content, maxLength = 100) {
+    if (!content || content.length <= maxLength) return content;
+    return content.substring(0, maxLength) + '...';
+  }
+
+  function formatTimestamp(timestamp) {
+    const date = new Date(timestamp * 1000);
+    return date.toLocaleString();
+  }
+
+  // Section revealer functions
+  function toggleSection(sectionKey) {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey]
+    }));
+  }
+
 
   function handleImportButton() {
     try {
@@ -523,134 +738,286 @@ function App() {
               style={{ display: 'none' }}
             />
             <div className={`m-2 p-2 w-full ${getPanelBgClass()} rounded-lg`}>
-              <div className={`text-lg font-bold flex items-center ${getTextClass()}`}>Welcome</div>
-              <p className={getTextClass()}>here you can configure all the things</p>
+              <div 
+                className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                onClick={() => toggleSection('welcome')}
+              >
+                <span>Welcome</span>
+                <span className="text-xl">
+                  {expandedSections.welcome ? '▼' : '▶'}
+                </span>
+              </div>
+              {expandedSections.welcome && (
+                <div className="p-2">
+                  <p className={getTextClass()}>here you can configure all the things</p>
+                </div>
+              )}
             </div>
 
             {/* Export only my events */}
             <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-              <div className="w-full flex items-center justify-end p-2 bg-gray-900 rounded-lg">
-                <div className="pr-2 m-2 w-full">
-                  <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export My Events</div>
-                  <p className={`text-sm w-full ${getTextClass()}`}>Download your own events as line-delimited JSON (JSONL/NDJSON). Only events you authored will be included.</p>
-                </div>
-                <button
-                  className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
-                  onClick={() => { window.location.href = '/api/export/mine'; }}
-                  aria-label="Download my events as JSONL"
-                  title="Download my events"
-                >
-                  ⤓
-                </button>
+              <div 
+                className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                onClick={() => toggleSection('exportMine')}
+              >
+                <span>Export My Events</span>
+                <span className="text-xl">
+                  {expandedSections.exportMine ? '▼' : '▶'}
+                </span>
               </div>
+              {expandedSections.exportMine && (
+                <div className="w-full flex items-center justify-end p-2 bg-gray-900 rounded-lg mt-2">
+                  <div className="pr-2 m-2 w-full">
+                    <p className={`text-sm w-full ${getTextClass()}`}>Download your own events as line-delimited JSON (JSONL/NDJSON). Only events you authored will be included.</p>
+                  </div>
+                  <button
+                    className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
+                    onClick={() => { window.location.href = '/api/export/mine'; }}
+                    aria-label="Download my events as JSONL"
+                    title="Download my events"
+                  >
+                    ⤓
+                  </button>
+                </div>
+              )}
             </div>
 
             {user.permission === "admin" && (
               <>
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div className="flex items-center justify-between p-2 m-4 bg-gray-900 round">
-                    <div className="pr-2 w-full">
-                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export All Events (admin)</div>
-                      <p className={`text-sm ${getTextClass()}`}>Download all stored events as line-delimited JSON (JSONL/NDJSON). This may take a while on large databases.</p>
-                    </div>
-                    <button
-                      className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex m-2 items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
-                      onClick={() => { window.location.href = '/api/export'; }}
-                      aria-label="Download all events as JSONL"
-                      title="Download all events"
-                    >
-                      ⤓
-                    </button>
+                  <div 
+                    className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                    onClick={() => toggleSection('exportAll')}
+                  >
+                    <span>Export All Events (admin)</span>
+                    <span className="text-xl">
+                      {expandedSections.exportAll ? '▼' : '▶'}
+                    </span>
                   </div>
+                  {expandedSections.exportAll && (
+                    <div className="flex items-center justify-between p-2 m-4 bg-gray-900 round mt-2">
+                      <div className="pr-2 w-full">
+                        <p className={`text-sm ${getTextClass()}`}>Download all stored events as line-delimited JSON (JSONL/NDJSON). This may take a while on large databases.</p>
+                      </div>
+                      <button
+                        className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex m-2 items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
+                        onClick={() => { window.location.href = '/api/export'; }}
+                        aria-label="Download all events as JSONL"
+                        title="Download all events"
+                      >
+                        ⤓
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Export specific pubkeys (admin) */}
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div className="w-full flex items-start justify-between gap-4 m-2 p-2 bg-gray-900 rounded-lg">
-                    {/* Left: title and help text */}
-                    <div className="flex-1 pr-2 w-full">
-                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export Specific Pubkeys (admin)</div>
-                      <p className={`text-sm ${getTextClass()}`}>Enter one or more author pubkeys (64-character hex). Only valid entries will be exported.</p>
-                      {/* Right: controls (buttons stacked vertically + list below) */}
-                      <div className="flex flex-col items-end gap-2 self-end justify-end p-2">
-                        <button
-                          className={`${getButtonBgClass()} ${getTextClass()} text-base p-4 rounded m-2 ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
-                          onClick={addExportPubkeyField}
-                          title="Add another pubkey"
-                          type="button"
-                        >
-                          + Add
-                        </button>
-                      </div>
-                      <div className="flex flex-col items-end gap-2 min-w-[320px] justify-end p-2">
-
-                        <div className="gap-2 justify-end">
-                          {exportPubkeys.map((item, idx) => {
-                            const v = (item?.value || '').trim();
-                            const valid = v.length === 0 ? true : isHex64(v);
-                            return (
-                              <div key={idx} className="flex items-center gap-2 ">
-                                <input
-                                  type="text"
-                                  inputMode="text"
-                                  autoComplete="off"
-                                  spellCheck="false"
-                                  className={`flex-1 text-sm px-2 py-1 border rounded outline-none ${valid 
-                                    ? getThemeClasses('border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-blue-200', 'border-gray-600 bg-gray-700 text-gray-100 focus:ring-2 focus:ring-blue-500') 
-                                    : getThemeClasses('border-red-500 bg-red-50 text-red-800', 'border-red-700 bg-red-900 text-red-200')}`}
-                                  placeholder="e.g., 64-hex pubkey"
-                                  value={v}
-                                  onChange={(e) => changeExportPubkey(idx, e.target.value)}
-                                />
-                                <button
-                                  className={`${getButtonBgClass()} ${getTextClass()} px-2 py-1 rounded ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
-                                  onClick={() => removeExportPubkeyField(idx)}
-                                  title="Remove this pubkey"
-                                  type="button"
-                                >
-                                  ✕
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                      </div>
-                      <div className="flex justify-end items-end gap-2 self-end">
-                        <button
-                          className={`${getThemeClasses('bg-blue-600', 'bg-blue-500')} text-white px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed ${canExportSpecific() ? getThemeClasses('hover:bg-blue-700', 'hover:bg-blue-600') : ''}`}
-                          onClick={handleExportSpecific}
-                          disabled={!canExportSpecific()}
-                          title={canExportSpecific() ? 'Download events for specified pubkeys' : 'Enter a valid 64-character hex pubkey in every field'}
-                          type="button"
-                        >
-                          Export
-                        </button>
-
-                      </div>
-                    </div>
-
-
+                  <div 
+                    className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                    onClick={() => toggleSection('exportSpecific')}
+                  >
+                    <span>Export Specific Pubkeys (admin)</span>
+                    <span className="text-xl">
+                      {expandedSections.exportSpecific ? '▼' : '▶'}
+                    </span>
                   </div>
+                  {expandedSections.exportSpecific && (
+                    <div className="w-full flex items-start justify-between gap-4 m-2 p-2 bg-gray-900 rounded-lg mt-2">
+                      {/* Left: title and help text */}
+                      <div className="flex-1 pr-2 w-full">
+                        <p className={`text-sm ${getTextClass()}`}>Enter one or more author pubkeys (64-character hex). Only valid entries will be exported.</p>
+                        {/* Right: controls (buttons stacked vertically + list below) */}
+                        <div className="flex flex-col items-end gap-2 self-end justify-end p-2">
+                          <button
+                            className={`${getButtonBgClass()} ${getTextClass()} text-base p-4 rounded m-2 ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
+                            onClick={addExportPubkeyField}
+                            title="Add another pubkey"
+                            type="button"
+                          >
+                            + Add
+                          </button>
+                        </div>
+                        <div className="flex flex-col items-end gap-2 min-w-[320px] justify-end p-2">
+
+                          <div className="gap-2 justify-end">
+                            {exportPubkeys.map((item, idx) => {
+                              const v = (item?.value || '').trim();
+                              const valid = v.length === 0 ? true : isHex64(v);
+                              return (
+                                <div key={idx} className="flex items-center gap-2 ">
+                                  <input
+                                    type="text"
+                                    inputMode="text"
+                                    autoComplete="off"
+                                    spellCheck="false"
+                                    className={`flex-1 text-sm px-2 py-1 border rounded outline-none ${valid 
+                                      ? getThemeClasses('border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-blue-200', 'border-gray-600 bg-gray-700 text-gray-100 focus:ring-2 focus:ring-blue-500') 
+                                      : getThemeClasses('border-red-500 bg-red-50 text-red-800', 'border-red-700 bg-red-900 text-red-200')}`}
+                                    placeholder="e.g., 64-hex pubkey"
+                                    value={v}
+                                    onChange={(e) => changeExportPubkey(idx, e.target.value)}
+                                  />
+                                  <button
+                                    className={`${getButtonBgClass()} ${getTextClass()} px-2 py-1 rounded ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
+                                    onClick={() => removeExportPubkeyField(idx)}
+                                    title="Remove this pubkey"
+                                    type="button"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                        </div>
+                        <div className="flex justify-end items-end gap-2 self-end">
+                          <button
+                            className={`${getThemeClasses('bg-blue-600', 'bg-blue-500')} text-white px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed ${canExportSpecific() ? getThemeClasses('hover:bg-blue-700', 'hover:bg-blue-600') : ''}`}
+                            onClick={handleExportSpecific}
+                            disabled={!canExportSpecific()}
+                            title={canExportSpecific() ? 'Download events for specified pubkeys' : 'Enter a valid 64-character hex pubkey in every field'}
+                            type="button"
+                          >
+                            Export
+                          </button>
+
+                        </div>
+                      </div>
+
+
+                    </div>
+                  )}
                 </div>
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div className="flex items-center justify-between p-2 bg-gray-900 rounded-lg">
-                    <div className="pr-2 w-full">
-                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Import Events (admin)</div>
-                      <p className={`text-sm ${getTextClass()}`}>Upload events in line-delimited JSON (JSONL/NDJSON) to import into the database.</p>
-                    </div>
-                    <button
-                      className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
-                      onClick={handleImportButton}
-                      aria-label="Import events from JSONL"
-                      title="Import events"
-                    >
-                      ↥
-                    </button>
+                  <div 
+                    className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                    onClick={() => toggleSection('importEvents')}
+                  >
+                    <span>Import Events (admin)</span>
+                    <span className="text-xl">
+                      {expandedSections.importEvents ? '▼' : '▶'}
+                    </span>
                   </div>
+                  {expandedSections.importEvents && (
+                    <div className="flex items-center justify-between p-2 bg-gray-900 rounded-lg mt-2">
+                      <div className="pr-2 w-full">
+                        <p className={`text-sm ${getTextClass()}`}>Upload events in line-delimited JSON (JSONL/NDJSON) to import into the database.</p>
+                      </div>
+                      <button
+                        className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
+                        onClick={handleImportButton}
+                        aria-label="Import events from JSONL"
+                        title="Import events"
+                      >
+                        ↥
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}
+            {/* My Events Log */}
+            <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+              <div 
+                className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                onClick={() => toggleSection('eventsLog')}
+              >
+                <span>My Events Log</span>
+                <span className="text-xl">
+                  {expandedSections.eventsLog ? '▼' : '▶'}
+                </span>
+              </div>
+              {expandedSections.eventsLog && (
+                <div className="p-2 bg-gray-900 rounded-lg mt-2">
+                  <div className="mb-4">
+                    <p className={`text-sm ${getTextClass()}`}>View all your events in reverse chronological order. Click on any event to view its raw JSON.</p>
+                  </div>
+
+                  <div
+                      className="block"
+                      style={{
+                        position: 'relative'
+                      }}
+                  >
+                    {events.length === 0 && !eventsLoading ? (
+                        <div className={`text-center py-4 ${getTextClass()}`}>No events found</div>
+                    ) : (
+                        <div className="space-y-2">
+                          {events.map((event) => (
+                              <div key={event.id} className={`border rounded p-3 ${getThemeClasses('border-gray-300 bg-white', 'border-gray-600 bg-gray-800')}`}>
+                                <div
+                                    className="cursor-pointer"
+                                    onClick={() => toggleEventExpansion(event.id)}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <span className={`font-mono text-sm px-2 py-1 rounded ${getThemeClasses('bg-blue-100 text-blue-800', 'bg-blue-900 text-blue-200')}`}>
+                                          Kind {event.kind}
+                                        </span>
+                                      <span className={`text-sm ${getTextClass()}`}>
+                                          {formatTimestamp(event.created_at)}
+                                        </span>
+                                    </div>
+                                    <span className={`text-lg ${getTextClass()}`}>
+                                        {expandedEventId === event.id ? '▼' : '▶'}
+                                      </span>
+                                  </div>
+
+                                  {event.content && (
+                                      <div className={`mt-2 text-sm ${getTextClass()}`}>
+                                        {truncateContent(event.content)}
+                                      </div>
+                                  )}
+                                </div>
+
+                                {expandedEventId === event.id && (
+                                    <div className="mt-3 border-t pt-3">
+                                      <div className="flex items-center justify-between mb-2">
+                                        <span className={`text-sm font-medium ${getTextClass()}`}>Raw JSON:</span>
+                                        <button
+                                            className={`${getThemeClasses('bg-green-600 hover:bg-green-700', 'bg-green-500 hover:bg-green-600')} text-white text-xs px-2 py-1 rounded`}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              copyEventJSON(event.raw_json);
+                                            }}
+                                            title="Copy minified JSON"
+                                        >
+                                          Copy
+                                        </button>
+                                      </div>
+                                      <pre className={`text-xs p-2 rounded overflow-auto max-h-40 break-all whitespace-pre-wrap ${getPanelBgClass()} ${getTextClass()}`}>
+                                        {JSON.stringify(JSON.parse(event.raw_json), null, 2)}
+                                      </pre>
+                                    </div>
+                                )}
+                              </div>
+                          ))}
+
+                          {eventsLoading && (
+                              <div className={`text-center py-4 ${getTextClass()}`}>
+                                <div className="text-sm">Loading more events...</div>
+                              </div>
+                          )}
+
+                          {!eventsLoading && eventsHasMore && (
+                              <div className="text-center py-4">
+                                <button
+                                    className={`${getThemeClasses('bg-blue-600 hover:bg-blue-700', 'bg-blue-500 hover:bg-blue-600')} text-white px-4 py-2 rounded`}
+                                    onClick={() => fetchEvents(false)}
+                                >
+                                  Load More
+                                </button>
+                              </div>
+                          )}
+                        </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+            
             {/* Empty flex grow box to ensure background fills entire viewport */}
             <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>
           </div>
@@ -689,7 +1056,6 @@ function App() {
           </div>
         </div>
       )}
-      <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>
     </div>
   );
 }

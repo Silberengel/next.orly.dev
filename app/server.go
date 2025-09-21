@@ -18,7 +18,9 @@ import (
 	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/protocol/publish"
 )
@@ -160,6 +162,8 @@ func (s *Server) UserInterface() {
 	// Export endpoints
 	s.mux.HandleFunc("/api/export", s.handleExport)
 	s.mux.HandleFunc("/api/export/mine", s.handleExportMine)
+	// Events endpoints
+	s.mux.HandleFunc("/api/events/mine", s.handleEventsMine)
 	// Import endpoint (admin only)
 	s.mux.HandleFunc("/api/import", s.handleImport)
 }
@@ -478,10 +482,121 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Empty request body", http.StatusBadRequest)
 			return
 		}
-		s.D.Import(r.Body)
+ 	s.D.Import(r.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte(`{"success": true, "message": "Import started"}`))
+}
+
+// handleEventsMine returns the authenticated user's events in JSON format with pagination
+func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require auth cookie
+	c, err := r.Cookie("orly_auth")
+	if err != nil || c.Value == "" {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	pubkey, err := hex.Dec(c.Value)
+	if chk.E(err) {
+		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+		return
+	}
+
+	// Parse pagination parameters
+	query := r.URL.Query()
+	limit := 50 // default limit
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
+			limit = parsed
+		}
+	}
+
+	offset := 0
+	if o := query.Get("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	// Use QueryEvents with filter for this user's events
+	f := &filter.F{
+		Authors: tag.NewFromBytesSlice(pubkey),
+	}
+
+	log.Printf("DEBUG: Querying events for pubkey: %s", hex.Enc(pubkey))
+	events, err := s.D.QueryEvents(s.Ctx, f)
+	if chk.E(err) {
+		log.Printf("DEBUG: QueryEvents failed: %v", err)
+		http.Error(w, "Failed to query events", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("DEBUG: QueryEvents returned %d events", len(events))
+
+	// If no events found, let's also check if there are any events at all in the database
+	if len(events) == 0 {
+		// Create a filter to get any events (no authors filter)
+		allEventsFilter := &filter.F{}
+		allEvents, err := s.D.QueryEvents(s.Ctx, allEventsFilter)
+		if err == nil {
+			log.Printf("DEBUG: Total events in database: %d", len(allEvents))
+		} else {
+			log.Printf("DEBUG: Failed to query all events: %v", err)
+		}
+	}
+
+	// Events are already sorted by QueryEvents in reverse chronological order
+	
+	// Apply offset and limit manually since QueryEvents doesn't support offset
+	totalEvents := len(events)
+	start := offset
+	if start > totalEvents {
+		start = totalEvents
+	}
+	end := start + limit
+	if end > totalEvents {
+		end = totalEvents
+	}
+
+	paginatedEvents := events[start:end]
+
+	// Convert events to JSON response format
+	type EventResponse struct {
+		ID        string    `json:"id"`
+		Kind      int       `json:"kind"`
+		CreatedAt int64     `json:"created_at"`
+		Content   string    `json:"content"`
+		RawJSON   string    `json:"raw_json"`
+	}
+
+	response := struct {
+		Events []EventResponse `json:"events"`
+		Total  int             `json:"total"`
+		Offset int             `json:"offset"`
+		Limit  int             `json:"limit"`
+	}{
+		Events: make([]EventResponse, len(paginatedEvents)),
+		Total:  totalEvents,
+		Offset: offset,
+		Limit:  limit,
+	}
+
+	for i, ev := range paginatedEvents {
+		response.Events[i] = EventResponse{
+			ID:        hex.Enc(ev.ID),
+			Kind:      int(ev.Kind),
+			CreatedAt: int64(ev.CreatedAt),
+			Content:   string(ev.Content),
+			RawJSON:   string(ev.Serialize()),
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
