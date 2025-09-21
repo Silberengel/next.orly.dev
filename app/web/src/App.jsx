@@ -5,7 +5,7 @@ function App() {
   const [status, setStatus] = useState('Ready to authenticate');
   const [statusType, setStatusType] = useState('info');
   const [profileData, setProfileData] = useState(null);
-  
+
   // Theme state for dark/light mode
   const [isDarkMode, setIsDarkMode] = useState(false);
 
@@ -95,18 +95,18 @@ function App() {
   useEffect(() => {
     // Check if the browser supports prefers-color-scheme
     const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    
+
     // Set the initial theme based on system preference
     setIsDarkMode(darkModeMediaQuery.matches);
-    
+
     // Add listener to respond to system theme changes
     const handleThemeChange = (e) => {
       setIsDarkMode(e.matches);
     };
-    
+
     // Modern browsers
     darkModeMediaQuery.addEventListener('change', handleThemeChange);
-    
+
     // Cleanup listener on component unmount
     return () => {
       darkModeMediaQuery.removeEventListener('change', handleThemeChange);
@@ -179,7 +179,7 @@ function App() {
 
   function statusClassName() {
     const base = 'mt-5 mb-5 p-3 rounded';
-    
+
     // Return theme-appropriate status classes
     switch (statusType) {
       case 'success':
@@ -464,7 +464,7 @@ function App() {
       let resolved = false;
       let receivedEvents = [];
       let ws;
-      
+
       try {
         ws = new WebSocket(relayURL());
       } catch (e) {
@@ -507,7 +507,7 @@ function App() {
           const data = JSON.parse(msg.data);
           const type = data[0];
           console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
-          
+
           if (type === 'EVENT' && data[1] === subId) {
             const event = data[2];
             if (event) {
@@ -566,14 +566,14 @@ function App() {
     try {
       // Sort events by created_at in descending order (newest first)
       const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
-      
+
       // Apply pagination manually since we get all events from WebSocket
       const currentOffset = reset ? 0 : eventsOffset;
       const limit = 50;
       const paginatedEvents = sortedEvents.slice(currentOffset, currentOffset + limit);
-      
+
       console.log('DEBUG: Processing events - total:', sortedEvents.length, 'paginated:', paginatedEvents.length, 'offset:', currentOffset);
-      
+
       if (reset) {
         setEvents(paginatedEvents);
         setEventsOffset(paginatedEvents.length);
@@ -581,10 +581,10 @@ function App() {
         setEvents(prev => [...prev, ...paginatedEvents]);
         setEventsOffset(prev => prev + paginatedEvents.length);
       }
-      
+
       // Check if there are more events available
       setEventsHasMore(currentOffset + paginatedEvents.length < sortedEvents.length);
-      
+
       console.log('DEBUG: Events updated, displayed count:', paginatedEvents.length, 'has more:', currentOffset + paginatedEvents.length < sortedEvents.length);
     } catch (error) {
       console.error('Error processing events response:', error);
@@ -606,7 +606,7 @@ function App() {
       let resolved = false;
       let receivedEvents = [];
       let ws;
-      
+
       try {
         ws = new WebSocket(relayURL());
       } catch (e) {
@@ -649,7 +649,7 @@ function App() {
           const data = JSON.parse(msg.data);
           const type = data[0];
           console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
-          
+
           if (type === 'EVENT' && data[1] === subId) {
             const event = data[2];
             if (event) {
@@ -709,14 +709,14 @@ function App() {
     try {
       // Sort events by created_at in descending order (newest first)
       const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
-      
+
       // Apply pagination manually since we get all events from WebSocket
       const currentOffset = reset ? 0 : allEventsOffset;
       const limit = 50;
       const paginatedEvents = sortedEvents.slice(currentOffset, currentOffset + limit);
-      
+
       console.log('DEBUG: Processing all events - total:', sortedEvents.length, 'paginated:', paginatedEvents.length, 'offset:', currentOffset);
-      
+
       if (reset) {
         setAllEvents(paginatedEvents);
         setAllEventsOffset(paginatedEvents.length);
@@ -724,13 +724,13 @@ function App() {
         setAllEvents(prev => [...prev, ...paginatedEvents]);
         setAllEventsOffset(prev => prev + paginatedEvents.length);
       }
-      
+
       // Check if there are more events available
       setAllEventsHasMore(currentOffset + paginatedEvents.length < sortedEvents.length);
-      
+
       // Fetch profiles for the new events
       fetchProfilesForEvents(paginatedEvents);
-      
+
       console.log('DEBUG: All events updated, displayed count:', paginatedEvents.length, 'has more:', currentOffset + paginatedEvents.length < sortedEvents.length);
     } catch (error) {
       console.error('Error processing all events response:', error);
@@ -742,6 +742,10 @@ function App() {
   // Events log functions
   async function fetchEvents(reset = false) {
     await fetchEventsFromRelay(reset);
+    // Also fetch user's own profile for My Events Log
+    if (user?.pubkey) {
+      await fetchAndCacheProfile(user.pubkey);
+    }
   }
 
   async function fetchAllEvents(reset = false) {
@@ -778,6 +782,147 @@ function App() {
   function formatTimestamp(timestamp) {
     const date = new Date(timestamp * 1000);
     return date.toLocaleString();
+  }
+
+  // Function to delete an event by publishing a kind 5 delete event
+  async function deleteEvent(eventId, eventRawJson, eventAuthor = null) {
+    if (!user?.pubkey) {
+      updateStatus('Must be logged in to delete events', 'error');
+      return;
+    }
+
+    if (!window.nostr) {
+      updateStatus('Nostr extension not found', 'error');
+      return;
+    }
+
+    try {
+      // Parse the original event to get its details
+      const originalEvent = JSON.parse(eventRawJson);
+
+      // Permission check: users can only delete their own events, admins can delete any event
+      const isOwnEvent = originalEvent.pubkey === user.pubkey;
+      const isAdmin = user.permission === 'admin';
+
+      if (!isOwnEvent && !isAdmin) {
+        updateStatus('You can only delete your own events', 'error');
+        return;
+      }
+
+      // Construct the delete event (kind 5) according to NIP-09
+      const deleteEventTemplate = {
+        kind: 5,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ['e', originalEvent.id],
+          ['k', originalEvent.kind.toString()]
+        ],
+        content: isOwnEvent ? 'Deleted by author' : 'Deleted by admin'
+      };
+
+      // Sign the delete event with extension
+      const signedDeleteEvent = await window.nostr.signEvent(deleteEventTemplate);
+
+      // Publish the delete event to the relay via WebSocket
+      await publishEventToRelay(signedDeleteEvent);
+
+      updateStatus('Delete event published successfully', 'success');
+
+      // Refresh the event lists to reflect the deletion
+      if (isOwnEvent) {
+        fetchEvents(true); // Refresh My Events
+      }
+      if (isAdmin) {
+        fetchAllEvents(true); // Refresh All Events
+      }
+
+    } catch (error) {
+      updateStatus('Failed to delete event: ' + error.message, 'error');
+    }
+  }
+
+  // Function to publish an event to the relay via WebSocket
+  async function publishEventToRelay(event, timeoutMs = 5000) {
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+      let ws;
+
+      try {
+        ws = new WebSocket(relayURL());
+      } catch (e) {
+        reject(new Error('Failed to create WebSocket connection'));
+        return;
+      }
+
+      const timer = setTimeout(() => {
+        if (ws && ws.readyState === 1) {
+          try { ws.close(); } catch (_) {}
+        }
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('Timeout publishing event'));
+        }
+      }, timeoutMs);
+
+      ws.onopen = () => {
+        try {
+          // Send the event as per Nostr protocol
+          const eventMessage = ['EVENT', event];
+          ws.send(JSON.stringify(eventMessage));
+        } catch (e) {
+          clearTimeout(timer);
+          if (!resolved) {
+            resolved = true;
+            reject(new Error('Failed to send event: ' + e.message));
+          }
+        }
+      };
+
+      ws.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          const type = data[0];
+
+          if (type === 'OK') {
+            const eventId = data[1];
+            const accepted = data[2];
+            const message = data[3] || '';
+
+            if (eventId === event.id) {
+              clearTimeout(timer);
+              try { ws.close(); } catch (_) {}
+              if (!resolved) {
+                resolved = true;
+                if (accepted) {
+                  resolve();
+                } else {
+                  reject(new Error('Event rejected: ' + message));
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore malformed messages
+        }
+      };
+
+      ws.onerror = (error) => {
+        clearTimeout(timer);
+        try { ws.close(); } catch (_) {}
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('WebSocket error'));
+        }
+      };
+
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          reject(new Error('WebSocket connection closed'));
+        }
+      };
+    });
   }
 
   // Section revealer functions
@@ -869,32 +1014,32 @@ function App() {
       window.location.href = `/api/export?${qs}`;
     } catch (_) {}
   }
-  
+
   // Theme utility functions for conditional styling
   function getThemeClasses(lightClass, darkClass) {
     return isDarkMode ? darkClass : lightClass;
   }
-  
+
   // Get background color class for container panels
   function getPanelBgClass() {
     return getThemeClasses('bg-gray-200', 'bg-gray-800');
   }
-  
+
   // Get text color class for standard text
   function getTextClass() {
     return getThemeClasses('text-gray-700', 'text-gray-300');
   }
-  
+
   // Get background color for buttons
   function getButtonBgClass() {
     return getThemeClasses('bg-gray-100', 'bg-gray-700');
   }
-  
+
   // Get text color for buttons
   function getButtonTextClass() {
     return getThemeClasses('text-gray-500', 'text-gray-300');
   }
-  
+
   // Get hover classes for buttons
   function getButtonHoverClass() {
     return getThemeClasses('hover:text-gray-800', 'hover:text-gray-100');
@@ -945,7 +1090,7 @@ function App() {
               style={{ display: 'none' }}
             />
             <div className={`m-2 p-2 w-full ${getPanelBgClass()} rounded-lg`}>
-              <div 
+              <div
                 className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                 onClick={() => toggleSection('welcome')}
               >
@@ -963,7 +1108,7 @@ function App() {
 
             {/* Export only my events */}
             <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-              <div 
+              <div
                 className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                 onClick={() => toggleSection('exportMine')}
               >
@@ -992,7 +1137,7 @@ function App() {
             {user.permission === "admin" && (
               <>
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div 
+                  <div
                     className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                     onClick={() => toggleSection('exportAll')}
                   >
@@ -1020,7 +1165,7 @@ function App() {
 
                 {/* Export specific pubkeys (admin) */}
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div 
+                  <div
                     className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                     onClick={() => toggleSection('exportSpecific')}
                   >
@@ -1098,7 +1243,7 @@ function App() {
                   )}
                 </div>
                 <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                  <div 
+                  <div
                     className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                     onClick={() => toggleSection('importEvents')}
                   >
@@ -1127,7 +1272,7 @@ function App() {
             )}
             {/* My Events Log */}
             <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-              <div 
+              <div
                 className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                 onClick={() => toggleSection('eventsLog')}
               >
@@ -1158,18 +1303,66 @@ function App() {
                                     className="cursor-pointer"
                                     onClick={() => toggleEventExpansion(event.id)}
                                 >
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
+                                  <div className="flex items-center justify-between w-full">
+                                    <div className="flex items-center gap-6 w-full">
+                                      {/* User avatar and info - separated with more space */}
+                                      <div className="flex items-center gap-3 min-w-0">
+                                        {user?.pubkey && profileCache[user.pubkey] && (
+                                          <>
+                                            {profileCache[user.pubkey].picture && (
+                                              <img
+                                                src={profileCache[user.pubkey].picture}
+                                                alt={profileCache[user.pubkey].display_name || profileCache[user.pubkey].name || 'User avatar'}
+                                                className={`w-8 h-8 rounded-full object-cover border h-16 ${getThemeClasses('border-gray-300', 'border-gray-600')}`}
+                                                onError={(e) => {
+                                                  e.currentTarget.style.display = 'none';
+                                                }}
+                                              />
+                                            )}
+                                            <div className="flex flex-col flex-grow w-full">
+                                              <span className={`text-sm font-medium ${getTextClass()}`}>
+                                                {profileCache[user.pubkey].display_name || profileCache[user.pubkey].name || `${user.pubkey.slice(0, 8)}...`}
+                                              </span>
+                                              {profileCache[user.pubkey].display_name && profileCache[user.pubkey].name && (
+                                                <span className={`text-xs ${getTextClass()} opacity-70`}>
+                                                  {profileCache[user.pubkey].name}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </>
+                                        )}
+                                        {user?.pubkey && !profileCache[user.pubkey] && (
+                                          <span className={`text-sm font-medium ${getTextClass()}`}>
+                                            {`${user.pubkey.slice(0, 8)}...`}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Event metadata - separated to the right */}
+                                      <div className="flex items-center gap-3">
                                         <span className={`font-mono text-sm px-2 py-1 rounded ${getThemeClasses('bg-blue-100 text-blue-800', 'bg-blue-900 text-blue-200')}`}>
                                           Kind {event.kind}
                                         </span>
-                                      <span className={`text-sm ${getTextClass()}`}>
+                                        <span className={`text-sm ${getTextClass()}`}>
                                           {formatTimestamp(event.created_at)}
                                         </span>
+                                      </div>
                                     </div>
-                                    <span className={`text-lg ${getTextClass()}`}>
-                                        {expandedEventId === event.id ? '▼' : '▶'}
-                                      </span>
+                                    <div className="flex items-center gap-2 ml-auto">
+                                       <div className={`text-lg rounded p-16 m-16 ${getThemeClasses('text-gray-700', 'text-gray-300')}`}>
+                                          {expandedEventId === event.id ? '▼' : ' '}
+                                        </div>
+                                        <button
+                                        className="bg-red-600 hover:bg-red-700 text-white text-xs px-1 py-1 rounded flex items-center"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteEvent(event.id, event.raw_json);
+                                        }}
+                                        title="Delete this event"
+                                      >
+                                        🗑️
+                                      </button>
+                                    </div>
                                   </div>
 
                                   {event.content && (
@@ -1228,7 +1421,7 @@ function App() {
             {/* All Events Log (admin only) */}
             {user.permission === "admin" && (
               <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
-                <div 
+                <div
                   className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
                   onClick={() => toggleSection('allEventsLog')}
                 >
@@ -1238,7 +1431,7 @@ function App() {
                   </span>
                 </div>
                 {expandedSections.allEventsLog && (
-                  <div className="p-2 bg-gray-900 rounded-lg mt-2">
+                  <div className="p-2 bg-gray-900 rounded-lg mt-2 w-full">
                     <div className="mb-4">
                       <p className={`text-sm ${getTextClass()}`}>View all events from all users in reverse chronological order. Click on any event to view its raw JSON.</p>
                     </div>
@@ -1259,8 +1452,8 @@ function App() {
                                       className="cursor-pointer"
                                       onClick={() => toggleAllEventExpansion(event.id)}
                                   >
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center gap-6">
+                                    <div className="flex items-center justify-between w-full">
+                                      <div className="flex items-center gap-6 w-full">
                                         {/* User avatar and info - separated with more space */}
                                         <div className="flex items-center gap-3 min-w-0">
                                           {event.author && profileCache[event.author] && (
@@ -1275,7 +1468,7 @@ function App() {
                                                   }}
                                                 />
                                               )}
-                                              <div className="flex flex-col min-w-0">
+                                              <div className="flex flex-col flex-grow w-full">
                                                 <span className={`text-sm font-medium ${getTextClass()}`}>
                                                   {profileCache[event.author].display_name || profileCache[event.author].name || `${event.author.slice(0, 8)}...`}
                                                 </span>
@@ -1293,7 +1486,7 @@ function App() {
                                             </span>
                                           )}
                                         </div>
-                                        
+
                                         {/* Event metadata - separated to the right */}
                                         <div className="flex items-center gap-3">
                                           <span className={`font-mono text-sm px-2 py-1 rounded ${getThemeClasses('bg-blue-100 text-blue-800', 'bg-blue-900 text-blue-200')}`}>
@@ -1304,9 +1497,21 @@ function App() {
                                           </span>
                                         </div>
                                       </div>
-                                      <span className={`text-lg ${getTextClass()}`}>
-                                          {expandedAllEventId === event.id ? '▼' : '▶'}
-                                        </span>
+                                      <div className="justify-end ml-auto rounded-full h-16 w-16 flex items-center justify-center">
+                                         <div className={`text-white text-xs px-4 py-4 rounded flex flex-grow items-center ${getThemeClasses('text-gray-700', 'text-gray-300')}`}>
+                                            {expandedAllEventId === event.id ? '▼' : ' '}
+                                          </div>
+                                          <button
+                                          className="bg-red-600 hover:bg-red-700 text-white text-xs px-1 py-1 rounded flex items-center"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            deleteEvent(event.id, event.raw_json, event.author);
+                                          }}
+                                          title="Delete this event"
+                                        >
+                                          🗑️
+                                        </button>
+                                      </div>
                                     </div>
 
                                     {event.content && (
@@ -1362,7 +1567,7 @@ function App() {
                 )}
               </div>
             )}
-            
+
             {/* Empty flex grow box to ensure background fills entire viewport */}
             <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>
           </div>
