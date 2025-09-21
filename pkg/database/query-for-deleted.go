@@ -173,10 +173,10 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 				}
 			}
 			if ev.CreatedAt < maxTs {
-				// err = fmt.Errorf(
-				// 	"blocked: was deleted by address %s: event is older than the delete: event: %d delete: %d",
-				// 	at, ev.CreatedAt, maxTs,
-				// )
+				err = errorf.E(
+					"blocked: %0x was deleted by address %s because it is older than the delete: event: %d delete: %d",
+					ev.ID, at, ev.CreatedAt, maxTs,
+				)
 				return
 			}
 			return
@@ -203,22 +203,14 @@ func (d *D) CheckForDeleted(ev *event.E, admins [][]byte) (err error) {
 			return
 		}
 		if len(s) > 0 {
-			// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
-			// regardless of timestamp, since it's a specific deletion of this exact event
-			// err = errorf.E(
-			// 	"blocked: was deleted by ID and cannot be resubmitted",
-			// 	// ev.ID,
-			// )
+			// Any e-tag deletion found means the exact event was deleted and cannot be resubmitted
+			err = errorf.E("blocked: %0x has been deleted", ev.ID)
 			return
 		}
 	}
 	if len(sers) > 0 {
-		// For e-tag deletions (delete by ID), any deletion event means the event cannot be resubmitted
-		// regardless of timestamp, since it's a specific deletion of this exact event
-		// err = errorf.E(
-		// 	"blocked: was deleted by ID and cannot be resubmitted",
-		// 	// ev.ID,
-		// )
+		// Any e-tag deletion found means the exact event was deleted and cannot be resubmitted
+		err = errorf.E("blocked: %0x has been deleted", ev.ID)
 		return
 	}
 

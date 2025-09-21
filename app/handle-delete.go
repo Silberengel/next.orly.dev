@@ -145,12 +145,10 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					if ev, err = l.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					// check that the author is the same as the signer of the
-					// delete, for the e tag case the author is the signer of
-					// the event.
-					if !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
+					// allow deletion if the signer is the author OR an admin/owner
+					if !(ownerDelete || utils.FastEqual(env.E.Pubkey, ev.Pubkey)) {
 						log.W.F(
-							"HandleDelete: attempted deletion of event %s by different user - delete pubkey=%s, event pubkey=%s",
+							"HandleDelete: attempted deletion of event %s by unauthorized user - delete pubkey=%s, event pubkey=%s",
 							hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
 							hex.Enc(ev.Pubkey),
 						)
