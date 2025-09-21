@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/app/config"
@@ -156,6 +157,11 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
 	s.mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("/api/permissions/", s.handlePermissions)
+	// Export endpoints
+	s.mux.HandleFunc("/api/export", s.handleExport)
+	s.mux.HandleFunc("/api/export/mine", s.handleExportMine)
+	// Import endpoint (admin only)
+	s.mux.HandleFunc("/api/import", s.handleImport)
 }
 
 // handleLoginInterface serves the main user interface for login
@@ -355,4 +361,127 @@ func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(jsonData)
+}
+
+// handleExport streams all events as JSONL (NDJSON). Admins only.
+func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require auth cookie
+	c, err := r.Cookie("orly_auth")
+	if err != nil || c.Value == "" {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	requesterPubHex := c.Value
+	requesterPub, err := hex.Dec(requesterPubHex)
+	if chk.E(err) {
+		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+		return
+	}
+	// Check permissions
+	if acl.Registry.GetAccessLevel(requesterPub, r.RemoteAddr) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	// Optional filtering by pubkey(s)
+	var pks [][]byte
+	q := r.URL.Query()
+	for _, pkHex := range q["pubkey"] {
+		if pkHex == "" {
+			continue
+		}
+		if pk, err := hex.Dec(pkHex); !chk.E(err) {
+			pks = append(pks, pk)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	filename := "events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
+	// Stream export
+	s.D.Export(s.Ctx, w, pks...)
+}
+
+
+// handleExportMine streams only the authenticated user's events as JSONL (NDJSON).
+func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require auth cookie
+	c, err := r.Cookie("orly_auth")
+	if err != nil || c.Value == "" {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	pubkey, err := hex.Dec(c.Value)
+	if chk.E(err) {
+		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	filename := "my-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
+	// Stream export for this user's pubkey only
+	s.D.Export(s.Ctx, w, pubkey)
+}
+
+// handleImport receives a JSONL/NDJSON file or body and enqueues an async import. Admins only.
+func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Require auth cookie
+	c, err := r.Cookie("orly_auth")
+	if err != nil || c.Value == "" {
+		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	requesterPub, err := hex.Dec(c.Value)
+	if chk.E(err) {
+		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+		return
+	}
+	// Admins only
+	if acl.Registry.GetAccessLevel(requesterPub, r.RemoteAddr) != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); chk.E(err) { // 32MB memory, rest to temp files
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if chk.E(err) {
+			http.Error(w, "Missing file", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		s.D.Import(file)
+	} else {
+		if r.Body == nil {
+			http.Error(w, "Empty request body", http.StatusBadRequest)
+			return
+		}
+		s.D.Import(r.Body)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	w.Write([]byte(`{"success": true, "message": "Import started"}`))
 }

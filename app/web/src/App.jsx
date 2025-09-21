@@ -10,6 +10,7 @@ function App() {
 
   // Login view layout measurements
   const titleRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [loginPadding, setLoginPadding] = useState(16); // default fallback padding in px
 
   useEffect(() => {
@@ -339,6 +340,34 @@ function App() {
     updateStatus('Logged out', 'info');
   }
 
+  function handleImportButton() {
+    try {
+      fileInputRef?.current?.click();
+    } catch (_) {}
+  }
+
+  async function handleImportChange(e) {
+    const file = e?.target?.files && e.target.files[0];
+    if (!file) return;
+    try {
+      updateStatus('Uploading import file...', 'info');
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/import', { method: 'POST', body: fd });
+      if (res.ok) {
+        updateStatus('Import started. Processing will continue in the background.', 'success');
+      } else {
+        const txt = await res.text();
+        updateStatus('Import failed: ' + txt, 'error');
+      }
+    } catch (err) {
+      updateStatus('Import failed: ' + (err?.message || String(err)), 'error');
+    } finally {
+      // reset input so selecting the same file again works
+      if (e && e.target) e.target.value = '';
+    }
+  }
+
   // Prevent UI flash: wait until we checked auth status
   if (checkingAuth) {
     return null;
@@ -347,8 +376,9 @@ function App() {
   return (
     <>
       {user?.permission ? (
-        // Logged in view with user profile
-        <div className="sticky top-0 left-0 w-full bg-gray-100 z-50 h-16 flex items-center overflow-hidden">
+        <>
+          {/* Logged in view with user profile */}
+          <div className="sticky top-0 left-0 w-full bg-gray-100 z-50 h-16 flex items-center overflow-hidden">
           <div className="flex items-center h-full w-full box-border">
             <div className="relative overflow-hidden flex flex-grow items-center justify-start h-full">
               {profileData?.banner && (
@@ -372,6 +402,74 @@ function App() {
             </div>
           </div>
         </div>
+          {/* Hidden file input for import (admin) */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportChange}
+            accept=".json,.jsonl,text/plain,application/x-ndjson,application/json"
+            style={{ display: 'none' }}
+          />
+          <div className="p-2 w-full bg-white border-b border-gray-200">
+            <div className="text-lg font-bold flex items-center">Welcome</div>
+            <p>here you can configure all the things</p>
+          </div>
+
+          {/* Export only my events */}
+            <div className="p-2 bg-white rounded w-full">
+              <div className="w-full flex items-center justify-between">
+                <div className="pr-2 w-full">
+                  <div className="text-base font-bold mb-1">Export My Events</div>
+                  <p className="text-sm w-full text-gray-700">Download your own events as line-delimited JSON (JSONL/NDJSON). Only events you authored will be included.</p>
+                </div>
+                <button
+                  className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
+                  onClick={() => { window.location.href = '/api/export/mine'; }}
+                  aria-label="Download my events as JSONL"
+                  title="Download my events"
+                >
+                  ⤓
+                </button>
+              </div>
+            </div>
+
+          {user.permission === "admin" && (
+              <>
+              <div className="p-2 w-full rounded">
+                <div className="flex items-center justify-between">
+                  <div className="pr-2 w-full">
+                    <div className="text-base font-bold mb-1">Export All Events (admin)</div>
+                    <p className="text-sm text-gray-700">Download all stored events as line-delimited JSON (JSONL/NDJSON). This may take a while on large databases.</p>
+                  </div>
+                  <button
+                    className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
+                    onClick={() => { window.location.href = '/api/export'; }}
+                    aria-label="Download all events as JSONL"
+                    title="Download all events"
+                  >
+                    ⤓
+                  </button>
+                </div>
+              </div>
+              <div className="p-2 w-full rounded">
+                <div className="flex items-center justify-between">
+                  <div className="pr-2 w-full">
+                    <div className="text-base font-bold mb-1">Import Events (admin)</div>
+                    <p className="text-sm text-gray-700">Upload events in line-delimited JSON (JSONL/NDJSON) to import into the database.</p>
+                  </div>
+                  <button
+                    className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
+                    onClick={handleImportButton}
+                    aria-label="Import events from JSONL"
+                    title="Import events"
+                  >
+                    ↥
+                  </button>
+                </div>
+              </div>
+              </>
+          )}
+        </>
       ) : (
         // Not logged in view - shows the login form
         <div className="w-full h-full flex items-center justify-center">
