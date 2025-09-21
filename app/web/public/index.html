@@ -6,7 +6,24 @@
     <title>Nostr Relay</title>
     <link rel="stylesheet" href="tailwind.min.css" />
   </head>
-  <body class="bg-white">
+  <body>
+    <script>
+      // Apply system theme preference immediately to avoid flash of wrong theme
+      function applyTheme(isDark) {
+        document.body.classList.remove('bg-white', 'bg-gray-900');
+        document.body.classList.add(isDark ? 'bg-gray-900' : 'bg-white');
+      }
+      
+      // Set initial theme
+      applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      // Listen for theme changes
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+          applyTheme(e.matches);
+        });
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/index.jsx"></script>
   </body>

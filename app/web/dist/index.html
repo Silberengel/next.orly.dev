@@ -5,8 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nostr Relay</title>
     
-  <link rel="stylesheet" crossorigin href="./index-zhtd763e.css"><script type="module" crossorigin src="./index-zqddcpy5.js"></script></head>
-  <body class="bg-white">
+  <link rel="stylesheet" crossorigin href="./index-cepjm5g7.css"><script type="module" crossorigin src="./index-bnzmmj1a.js"></script></head>
+  <body>
+    <script>
+      // Apply system theme preference immediately to avoid flash of wrong theme
+      function applyTheme(isDark) {
+        document.body.classList.remove('bg-white', 'bg-gray-900');
+        document.body.classList.add(isDark ? 'bg-gray-900' : 'bg-white');
+      }
+      
+      // Set initial theme
+      applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      
+      // Listen for theme changes
+      if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+          applyTheme(e.matches);
+        });
+      }
+    </script>
     <div id="root"></div>
     
   </body>

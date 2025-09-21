@@ -5,6 +5,9 @@ function App() {
   const [status, setStatus] = useState('Ready to authenticate');
   const [statusType, setStatusType] = useState('info');
   const [profileData, setProfileData] = useState(null);
+  
+  // Theme state for dark/light mode
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
 
@@ -24,6 +27,28 @@ function App() {
     updatePadding();
     window.addEventListener('resize', updatePadding);
     return () => window.removeEventListener('resize', updatePadding);
+  }, []);
+
+  // Effect to detect and track system theme preference
+  useEffect(() => {
+    // Check if the browser supports prefers-color-scheme
+    const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    
+    // Set the initial theme based on system preference
+    setIsDarkMode(darkModeMediaQuery.matches);
+    
+    // Add listener to respond to system theme changes
+    const handleThemeChange = (e) => {
+      setIsDarkMode(e.matches);
+    };
+    
+    // Modern browsers
+    darkModeMediaQuery.addEventListener('change', handleThemeChange);
+    
+    // Cleanup listener on component unmount
+    return () => {
+      darkModeMediaQuery.removeEventListener('change', handleThemeChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -81,14 +106,16 @@ function App() {
 
   function statusClassName() {
     const base = 'mt-5 mb-5 p-3 rounded';
+    
+    // Return theme-appropriate status classes
     switch (statusType) {
       case 'success':
-        return base + ' bg-green-100 text-green-800';
+        return base + ' ' + getThemeClasses('bg-green-100 text-green-800', 'bg-green-900 text-green-100');
       case 'error':
-        return base + ' bg-red-100 text-red-800';
+        return base + ' ' + getThemeClasses('bg-red-100 text-red-800', 'bg-red-900 text-red-100');
       case 'info':
       default:
-        return base + ' bg-cyan-100 text-cyan-800';
+        return base + ' ' + getThemeClasses('bg-cyan-100 text-cyan-800', 'bg-cyan-900 text-cyan-100');
     }
   }
 
@@ -368,25 +395,108 @@ function App() {
     }
   }
 
+  // =========================
+  // Export Specific Pubkeys UI state and handlers (admin)
+  // =========================
+  const [exportPubkeys, setExportPubkeys] = useState([{ value: '' }]);
+
+  function isHex64(str) {
+    if (!str) return false;
+    const s = String(str).trim();
+    return /^[0-9a-fA-F]{64}$/.test(s);
+  }
+
+  function normalizeHex(str) {
+    return String(str || '').trim();
+  }
+
+  function addExportPubkeyField() {
+    // Add new field at the end of the list so it appears downwards
+    setExportPubkeys((arr) => [...arr, { value: '' }]);
+  }
+
+  function removeExportPubkeyField(idx) {
+    setExportPubkeys((arr) => arr.filter((_, i) => i !== idx));
+  }
+
+  function changeExportPubkey(idx, val) {
+    const v = normalizeHex(val);
+    setExportPubkeys((arr) => arr.map((item, i) => (i === idx ? { value: v } : item)));
+  }
+
+  function validExportPubkeys() {
+    return exportPubkeys
+      .map((p) => normalizeHex(p.value))
+      .filter((v) => v.length > 0 && isHex64(v));
+  }
+
+  function canExportSpecific() {
+    // Enable only if every opened field is non-empty and a valid 64-char hex
+    if (!exportPubkeys || exportPubkeys.length === 0) return false;
+    return exportPubkeys.every((p) => {
+      const v = normalizeHex(p.value);
+      return v.length === 64 && isHex64(v);
+    });
+  }
+
+  function handleExportSpecific() {
+    const vals = validExportPubkeys();
+    if (!vals.length) return;
+    const qs = vals.map((v) => `pubkey=${encodeURIComponent(v)}`).join('&');
+    try {
+      window.location.href = `/api/export?${qs}`;
+    } catch (_) {}
+  }
+  
+  // Theme utility functions for conditional styling
+  function getThemeClasses(lightClass, darkClass) {
+    return isDarkMode ? darkClass : lightClass;
+  }
+  
+  // Get background color class for container panels
+  function getPanelBgClass() {
+    return getThemeClasses('bg-gray-200', 'bg-gray-800');
+  }
+  
+  // Get text color class for standard text
+  function getTextClass() {
+    return getThemeClasses('text-gray-700', 'text-gray-300');
+  }
+  
+  // Get background color for buttons
+  function getButtonBgClass() {
+    return getThemeClasses('bg-gray-100', 'bg-gray-700');
+  }
+  
+  // Get text color for buttons
+  function getButtonTextClass() {
+    return getThemeClasses('text-gray-500', 'text-gray-300');
+  }
+  
+  // Get hover classes for buttons
+  function getButtonHoverClass() {
+    return getThemeClasses('hover:text-gray-800', 'hover:text-gray-100');
+  }
+
   // Prevent UI flash: wait until we checked auth status
   if (checkingAuth) {
     return null;
   }
 
   return (
-    <>
+    <div className={`min-h-screen ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}>
       {user?.permission ? (
         <>
           {/* Logged in view with user profile */}
-          <div className="sticky top-0 left-0 w-full bg-gray-100 z-50 h-16 flex items-center overflow-hidden">
+          <div className={`sticky top-0 left-0 w-full ${getThemeClasses('bg-gray-100', 'bg-gray-900')} z-50 h-16 flex items-center overflow-hidden`}>
           <div className="flex items-center h-full w-full box-border">
             <div className="relative overflow-hidden flex flex-grow items-center justify-start h-full">
               {profileData?.banner && (
                 <div className="absolute inset-0 opacity-70 bg-cover bg-center" style={{ backgroundImage: `url(${profileData.banner})` }}></div>
               )}
               <div className="relative z-10 p-2 flex items-center h-full">
-                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className="h-full aspect-square w-auto rounded-full object-cover border-2 border-white mr-2 shadow box-border" />}
-                <div>
+                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className={`h-full aspect-square w-auto rounded-full object-cover border-2 ${getThemeClasses('border-white', 'border-gray-600')} mr-2 shadow box-border`} />}
+                <div className={getTextClass()}>
                   <div className="font-bold text-base block">
                     {profileData?.display_name || profileData?.name || user.pubkey.slice(0, 8)}
                     {profileData?.name && profileData?.display_name && ` (${profileData.name})`}
@@ -398,32 +508,34 @@ function App() {
               </div>
             </div>
             <div className="flex items-center justify-end shrink-0 h-full">
-              <button className="bg-transparent text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800" onClick={logout}>✕</button>
+              <button className={`bg-transparent ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`} onClick={logout}>✕</button>
             </div>
           </div>
         </div>
-          {/* Hidden file input for import (admin) */}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImportChange}
-            accept=".json,.jsonl,text/plain,application/x-ndjson,application/json"
-            style={{ display: 'none' }}
-          />
-          <div className="p-2 w-full bg-white border-b border-gray-200">
-            <div className="text-lg font-bold flex items-center">Welcome</div>
-            <p>here you can configure all the things</p>
-          </div>
+          {/* Dashboard content container - stacks vertically and fills remaining space */}
+          <div className="flex-grow overflow-y-auto p-4">
+            {/* Hidden file input for import (admin) */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportChange}
+              accept=".json,.jsonl,text/plain,application/x-ndjson,application/json"
+              style={{ display: 'none' }}
+            />
+            <div className={`m-2 p-2 w-full ${getPanelBgClass()} rounded-lg`}>
+              <div className={`text-lg font-bold flex items-center ${getTextClass()}`}>Welcome</div>
+              <p className={getTextClass()}>here you can configure all the things</p>
+            </div>
 
-          {/* Export only my events */}
-            <div className="p-2 bg-white rounded w-full">
-              <div className="w-full flex items-center justify-between">
-                <div className="pr-2 w-full">
-                  <div className="text-base font-bold mb-1">Export My Events</div>
-                  <p className="text-sm w-full text-gray-700">Download your own events as line-delimited JSON (JSONL/NDJSON). Only events you authored will be included.</p>
+            {/* Export only my events */}
+            <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+              <div className="w-full flex items-center justify-end p-2 bg-gray-900 rounded-lg">
+                <div className="pr-2 m-2 w-full">
+                  <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export My Events</div>
+                  <p className={`text-sm w-full ${getTextClass()}`}>Download your own events as line-delimited JSON (JSONL/NDJSON). Only events you authored will be included.</p>
                 </div>
                 <button
-                  className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
+                  className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
                   onClick={() => { window.location.href = '/api/export/mine'; }}
                   aria-label="Download my events as JSONL"
                   title="Download my events"
@@ -433,48 +545,121 @@ function App() {
               </div>
             </div>
 
-          {user.permission === "admin" && (
+            {user.permission === "admin" && (
               <>
-              <div className="p-2 w-full rounded">
-                <div className="flex items-center justify-between">
-                  <div className="pr-2 w-full">
-                    <div className="text-base font-bold mb-1">Export All Events (admin)</div>
-                    <p className="text-sm text-gray-700">Download all stored events as line-delimited JSON (JSONL/NDJSON). This may take a while on large databases.</p>
+                <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+                  <div className="flex items-center justify-between p-2 m-4 bg-gray-900 round">
+                    <div className="pr-2 w-full">
+                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export All Events (admin)</div>
+                      <p className={`text-sm ${getTextClass()}`}>Download all stored events as line-delimited JSON (JSONL/NDJSON). This may take a while on large databases.</p>
+                    </div>
+                    <button
+                      className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex m-2 items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
+                      onClick={() => { window.location.href = '/api/export'; }}
+                      aria-label="Download all events as JSONL"
+                      title="Download all events"
+                    >
+                      ⤓
+                    </button>
                   </div>
-                  <button
-                    className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
-                    onClick={() => { window.location.href = '/api/export'; }}
-                    aria-label="Download all events as JSONL"
-                    title="Download all events"
-                  >
-                    ⤓
-                  </button>
                 </div>
-              </div>
-              <div className="p-2 w-full rounded">
-                <div className="flex items-center justify-between">
-                  <div className="pr-2 w-full">
-                    <div className="text-base font-bold mb-1">Import Events (admin)</div>
-                    <p className="text-sm text-gray-700">Upload events in line-delimited JSON (JSONL/NDJSON) to import into the database.</p>
+
+                {/* Export specific pubkeys (admin) */}
+                <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+                  <div className="w-full flex items-start justify-between gap-4 m-2 p-2 bg-gray-900 rounded-lg">
+                    {/* Left: title and help text */}
+                    <div className="flex-1 pr-2 w-full">
+                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Export Specific Pubkeys (admin)</div>
+                      <p className={`text-sm ${getTextClass()}`}>Enter one or more author pubkeys (64-character hex). Only valid entries will be exported.</p>
+                      {/* Right: controls (buttons stacked vertically + list below) */}
+                      <div className="flex flex-col items-end gap-2 self-end justify-end p-2">
+                        <button
+                          className={`${getButtonBgClass()} ${getTextClass()} text-base p-4 rounded m-2 ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
+                          onClick={addExportPubkeyField}
+                          title="Add another pubkey"
+                          type="button"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 min-w-[320px] justify-end p-2">
+
+                        <div className="gap-2 justify-end">
+                          {exportPubkeys.map((item, idx) => {
+                            const v = (item?.value || '').trim();
+                            const valid = v.length === 0 ? true : isHex64(v);
+                            return (
+                              <div key={idx} className="flex items-center gap-2 ">
+                                <input
+                                  type="text"
+                                  inputMode="text"
+                                  autoComplete="off"
+                                  spellCheck="false"
+                                  className={`flex-1 text-sm px-2 py-1 border rounded outline-none ${valid 
+                                    ? getThemeClasses('border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-blue-200', 'border-gray-600 bg-gray-700 text-gray-100 focus:ring-2 focus:ring-blue-500') 
+                                    : getThemeClasses('border-red-500 bg-red-50 text-red-800', 'border-red-700 bg-red-900 text-red-200')}`}
+                                  placeholder="e.g., 64-hex pubkey"
+                                  value={v}
+                                  onChange={(e) => changeExportPubkey(idx, e.target.value)}
+                                />
+                                <button
+                                  className={`${getButtonBgClass()} ${getTextClass()} px-2 py-1 rounded ${getThemeClasses('hover:bg-gray-200', 'hover:bg-gray-600')}`}
+                                  onClick={() => removeExportPubkeyField(idx)}
+                                  title="Remove this pubkey"
+                                  type="button"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                      </div>
+                      <div className="flex justify-end items-end gap-2 self-end">
+                        <button
+                          className={`${getThemeClasses('bg-blue-600', 'bg-blue-500')} text-white px-3 py-1 rounded disabled:opacity-50 disabled:cursor-not-allowed ${canExportSpecific() ? getThemeClasses('hover:bg-blue-700', 'hover:bg-blue-600') : ''}`}
+                          onClick={handleExportSpecific}
+                          disabled={!canExportSpecific()}
+                          title={canExportSpecific() ? 'Download events for specified pubkeys' : 'Enter a valid 64-character hex pubkey in every field'}
+                          type="button"
+                        >
+                          Export
+                        </button>
+
+                      </div>
+                    </div>
+
+
                   </div>
-                  <button
-                    className="bg-gray-100 text-gray-500 border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent hover:text-gray-800"
-                    onClick={handleImportButton}
-                    aria-label="Import events from JSONL"
-                    title="Import events"
-                  >
-                    ↥
-                  </button>
                 </div>
-              </div>
+                <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+                  <div className="flex items-center justify-between p-2 bg-gray-900 rounded-lg">
+                    <div className="pr-2 w-full">
+                      <div className={`text-base font-bold mb-1 ${getTextClass()}`}>Import Events (admin)</div>
+                      <p className={`text-sm ${getTextClass()}`}>Upload events in line-delimited JSON (JSONL/NDJSON) to import into the database.</p>
+                    </div>
+                    <button
+                      className={`${getButtonBgClass()} ${getButtonTextClass()} border-0 text-2xl cursor-pointer flex items-center justify-center h-full aspect-square shrink-0 hover:bg-transparent ${getButtonHoverClass()}`}
+                      onClick={handleImportButton}
+                      aria-label="Import events from JSONL"
+                      title="Import events"
+                    >
+                      ↥
+                    </button>
+                  </div>
+                </div>
               </>
-          )}
+            )}
+            {/* Empty flex grow box to ensure background fills entire viewport */}
+            <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>
+          </div>
         </>
       ) : (
         // Not logged in view - shows the login form
         <div className="w-full h-full flex items-center justify-center">
           <div
-            className="bg-gray-100"
+            className={getThemeClasses('bg-gray-100', 'bg-gray-900')}
             style={{ width: '800px', maxWidth: '100%', boxSizing: 'border-box', padding: `${loginPadding}px` }}
           >
             <div className="flex items-center gap-3 mb-3">
@@ -489,22 +674,23 @@ function App() {
                   e.currentTarget.src = "/docs/orly.png";
                 }}
               />
-              <h1 ref={titleRef} className="text-2xl font-bold p-2">ORLY🦉 Dashboard Login</h1>
+              <h1 ref={titleRef} className={`text-2xl font-bold p-2 ${getTextClass()}`}>ORLY🦉 Dashboard Login</h1>
             </div>
 
-            <p className="mb-4">Authenticate to this Nostr relay using your browser extension.</p>
+            <p className={`mb-4 ${getTextClass()}`}>Authenticate to this Nostr relay using your browser extension.</p>
 
             <div className={statusClassName()}>
               {status}
             </div>
 
             <div className="mb-5">
-              <button className="bg-blue-600 text-white px-5 py-3 rounded hover:bg-blue-700" onClick={loginWithExtension}>Login with Browser Extension (NIP-07)</button>
+              <button className={`${getThemeClasses('bg-blue-600', 'bg-blue-500')} text-white px-5 py-3 rounded ${getThemeClasses('hover:bg-blue-700', 'hover:bg-blue-600')}`} onClick={loginWithExtension}>Login with Browser Extension (NIP-07)</button>
             </div>
           </div>
         </div>
       )}
-    </>
+      <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>
+    </div>
   );
 }
 

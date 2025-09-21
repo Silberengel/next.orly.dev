@@ -70,11 +70,14 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 		// Process each successfully fetched event and apply filters
 		for serialValue, ev := range fetchedEvents {
 			idHex := idHexToSerial[serialValue]
-			
+
 			// Convert serial value back to Uint40 for expiration handling
 			ser := new(types.Uint40)
 			if err = ser.Set(serialValue); err != nil {
-				log.T.F("QueryEvents: error converting serial %d: %v", serialValue, err)
+				log.T.F(
+					"QueryEvents: error converting serial %d: %v", serialValue,
+					err,
+				)
 				continue
 			}
 
@@ -241,7 +244,7 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 				// For replaceable events, we need to check if there are any
 				// e-tags that reference events with the same kind and pubkey
 				for _, eTag := range eTags {
-					if eTag.Len() < 2 {
+					if eTag.Len() != 64 {
 						continue
 					}
 					// Get the event ID from the e-tag
