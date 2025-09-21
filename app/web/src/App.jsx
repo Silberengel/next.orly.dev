@@ -245,6 +245,8 @@ function App() {
       let resolved = false;
       let events = [];
       let ws;
+      let reqSent = false;
+      
       try {
         ws = new WebSocket(relayURL());
       } catch (e) {
@@ -263,22 +265,68 @@ function App() {
         }
       }, timeoutMs);
 
-      ws.onopen = () => {
-        try {
-          const req = [
-            'REQ',
-            subId,
-            { kinds: [0], authors: [pubkeyHex] }
-          ];
-          ws.send(JSON.stringify(req));
-        } catch (_) {}
+      const sendRequest = () => {
+        if (!reqSent && ws && ws.readyState === 1) {
+          try {
+            const req = [
+              'REQ',
+              subId,
+              { kinds: [0], authors: [pubkeyHex] }
+            ];
+            ws.send(JSON.stringify(req));
+            reqSent = true;
+          } catch (_) {}
+        }
       };
 
-      ws.onmessage = (msg) => {
+      ws.onopen = () => {
+        sendRequest();
+      };
+
+      ws.onmessage = async (msg) => {
         try {
           const data = JSON.parse(msg.data);
           const type = data[0];
-          if (type === 'EVENT' && data[1] === subId) {
+          
+          if (type === 'AUTH') {
+            // Handle authentication challenge
+            const challenge = data[1];
+            if (!window.nostr) {
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                resolve(null);
+              }
+              return;
+            }
+
+            try {
+              // Create authentication event
+              const authEvent = {
+                kind: 22242,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                  ['relay', relayURL()],
+                  ['challenge', challenge]
+                ],
+                content: ''
+              };
+
+              // Sign the auth event with extension
+              const signedAuthEvent = await window.nostr.signEvent(authEvent);
+
+              // Send AUTH response
+              const authMessage = ['AUTH', signedAuthEvent];
+              console.log('DEBUG: Sending AUTH response for profile fetch challenge:', challenge.slice(0, 16) + '...');
+              ws.send(JSON.stringify(authMessage));
+            } catch (authError) {
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                resolve(null);
+              }
+            }
+          } else if (type === 'EVENT' && data[1] === subId) {
             const event = data[2];
             if (event && event.kind === 0 && event.content) {
               events.push(event);
@@ -303,6 +351,32 @@ function App() {
                 resolve(null);
               }
             }
+          } else if (type === 'CLOSED' && data[1] === subId) {
+            const message = data[2] || '';
+            if (message.includes('auth-required') && !reqSent) {
+              // Wait for AUTH challenge, request will be sent after authentication
+              return;
+            }
+            // Subscription was closed, finish processing
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              if (events.length) {
+                const latest = events.reduce((a, b) => (a.created_at > b.created_at ? a : b));
+                try {
+                  const meta = JSON.parse(latest.content);
+                  resolve(meta || null);
+                } catch (_) {
+                  resolve(null);
+                }
+              } else {
+                resolve(null);
+              }
+            }
+          } else if (type === 'OK' && data[1] && data[1].length === 64 && !reqSent) {
+            // This might be an OK response to our AUTH event
+            // Send the original request now that we're authenticated
+            sendRequest();
           }
         } catch (_) {
           // ignore malformed messages
@@ -464,6 +538,7 @@ function App() {
       let resolved = false;
       let receivedEvents = [];
       let ws;
+      let reqSent = false;
 
       try {
         ws = new WebSocket(relayURL());
@@ -487,28 +562,77 @@ function App() {
         }
       }, timeoutMs);
 
-      ws.onopen = () => {
-        try {
-          // Request events from the authenticated user
-          const req = [
-            'REQ',
-            subId,
-            { authors: [user.pubkey] }
-          ];
-          console.log('DEBUG: Sending WebSocket request:', req);
-          ws.send(JSON.stringify(req));
-        } catch (e) {
-          console.error('Failed to send WebSocket request:', e);
+      const sendRequest = () => {
+        if (!reqSent && ws && ws.readyState === 1) {
+          try {
+            // Request events from the authenticated user
+            const req = [
+              'REQ',
+              subId,
+              { authors: [user.pubkey] }
+            ];
+            console.log('DEBUG: Sending WebSocket request:', req);
+            ws.send(JSON.stringify(req));
+            reqSent = true;
+          } catch (e) {
+            console.error('Failed to send WebSocket request:', e);
+          }
         }
       };
 
-      ws.onmessage = (msg) => {
+      ws.onopen = () => {
+        sendRequest();
+      };
+
+      ws.onmessage = async (msg) => {
         try {
           const data = JSON.parse(msg.data);
           const type = data[0];
           console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
 
-          if (type === 'EVENT' && data[1] === subId) {
+          if (type === 'AUTH') {
+            // Handle authentication challenge
+            const challenge = data[1];
+            if (!window.nostr) {
+              console.error('Authentication required but no Nostr extension found');
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processEventsResponse(receivedEvents, reset);
+                resolve();
+              }
+              return;
+            }
+
+            try {
+              // Create authentication event
+              const authEvent = {
+                kind: 22242,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                  ['relay', relayURL()],
+                  ['challenge', challenge]
+                ],
+                content: ''
+              };
+
+              // Sign the auth event with extension
+              const signedAuthEvent = await window.nostr.signEvent(authEvent);
+
+              // Send AUTH response
+              const authMessage = ['AUTH', signedAuthEvent];
+              console.log('DEBUG: Sending AUTH response for events fetch challenge:', challenge.slice(0, 16) + '...');
+              ws.send(JSON.stringify(authMessage));
+            } catch (authError) {
+              console.error('Failed to authenticate:', authError);
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processEventsResponse(receivedEvents, reset);
+                resolve();
+              }
+            }
+          } else if (type === 'EVENT' && data[1] === subId) {
             const event = data[2];
             if (event) {
               // Convert to the expected format
@@ -533,6 +657,24 @@ function App() {
               processEventsResponse(receivedEvents, reset);
               resolve();
             }
+          } else if (type === 'CLOSED' && data[1] === subId) {
+            const message = data[2] || '';
+            console.log('DEBUG: Subscription closed:', message);
+            if (message.includes('auth-required') && !reqSent) {
+              // Wait for AUTH challenge, request will be sent after authentication
+              return;
+            }
+            // Subscription was closed, finish processing
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              processEventsResponse(receivedEvents, reset);
+              resolve();
+            }
+          } else if (type === 'OK' && data[1] && data[1].length === 64 && !reqSent) {
+            // This might be an OK response to our AUTH event
+            // Send the original request now that we're authenticated
+            sendRequest();
           }
         } catch (e) {
           console.error('Error parsing WebSocket message:', e);
@@ -562,10 +704,50 @@ function App() {
     });
   }
 
+  // Helper function to filter out deleted events and process delete events
+  function filterDeletedEvents(events) {
+    // Find all delete events (kind 5)
+    const deleteEvents = events.filter(event => event.kind === 5);
+    
+    // Extract the event IDs that have been deleted
+    const deletedEventIds = new Set();
+    deleteEvents.forEach(deleteEvent => {
+      try {
+        const originalEvent = JSON.parse(deleteEvent.raw_json);
+        // Look for 'e' tags in the delete event that reference deleted events
+        if (originalEvent.tags) {
+          originalEvent.tags.forEach(tag => {
+            if (tag[0] === 'e' && tag[1]) {
+              deletedEventIds.add(tag[1]);
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing delete event:', error);
+      }
+    });
+
+    // Filter out events that have been deleted, but keep delete events themselves
+    const filteredEvents = events.filter(event => {
+      // Always show delete events (kind 5)
+      if (event.kind === 5) {
+        return true;
+      }
+      // Hide events that have been deleted
+      return !deletedEventIds.has(event.id);
+    });
+
+    console.log('DEBUG: Filtered events - original:', events.length, 'filtered:', filteredEvents.length, 'deleted IDs:', deletedEventIds.size);
+    return filteredEvents;
+  }
+
   function processEventsResponse(receivedEvents, reset) {
     try {
+      // Filter out deleted events and ensure delete events are included
+      const filteredEvents = filterDeletedEvents(receivedEvents);
+      
       // Sort events by created_at in descending order (newest first)
-      const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
+      const sortedEvents = filteredEvents.sort((a, b) => b.created_at - a.created_at);
 
       // Apply pagination manually since we get all events from WebSocket
       const currentOffset = reset ? 0 : eventsOffset;
@@ -606,6 +788,7 @@ function App() {
       let resolved = false;
       let receivedEvents = [];
       let ws;
+      let reqSent = false;
 
       try {
         ws = new WebSocket(relayURL());
@@ -629,28 +812,77 @@ function App() {
         }
       }, timeoutMs);
 
-      ws.onopen = () => {
-        try {
-          // Request all events (no authors filter for admin)
-          const req = [
-            'REQ',
-            subId,
-            {}
-          ];
-          console.log('DEBUG: Sending WebSocket request for all events:', req);
-          ws.send(JSON.stringify(req));
-        } catch (e) {
-          console.error('Failed to send WebSocket request:', e);
+      const sendRequest = () => {
+        if (!reqSent && ws && ws.readyState === 1) {
+          try {
+            // Request all events (no authors filter for admin)
+            const req = [
+              'REQ',
+              subId,
+              {}
+            ];
+            console.log('DEBUG: Sending WebSocket request for all events:', req);
+            ws.send(JSON.stringify(req));
+            reqSent = true;
+          } catch (e) {
+            console.error('Failed to send WebSocket request:', e);
+          }
         }
       };
 
-      ws.onmessage = (msg) => {
+      ws.onopen = () => {
+        sendRequest();
+      };
+
+      ws.onmessage = async (msg) => {
         try {
           const data = JSON.parse(msg.data);
           const type = data[0];
           console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
 
-          if (type === 'EVENT' && data[1] === subId) {
+          if (type === 'AUTH') {
+            // Handle authentication challenge
+            const challenge = data[1];
+            if (!window.nostr) {
+              console.error('Authentication required but no Nostr extension found');
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processAllEventsResponse(receivedEvents, reset);
+                resolve();
+              }
+              return;
+            }
+
+            try {
+              // Create authentication event
+              const authEvent = {
+                kind: 22242,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                  ['relay', relayURL()],
+                  ['challenge', challenge]
+                ],
+                content: ''
+              };
+
+              // Sign the auth event with extension
+              const signedAuthEvent = await window.nostr.signEvent(authEvent);
+
+              // Send AUTH response
+              const authMessage = ['AUTH', signedAuthEvent];
+              console.log('DEBUG: Sending AUTH response for all events fetch challenge:', challenge.slice(0, 16) + '...');
+              ws.send(JSON.stringify(authMessage));
+            } catch (authError) {
+              console.error('Failed to authenticate:', authError);
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processAllEventsResponse(receivedEvents, reset);
+                resolve();
+              }
+            }
+          } else if (type === 'EVENT' && data[1] === subId) {
             const event = data[2];
             if (event) {
               // Convert to the expected format
@@ -676,6 +908,24 @@ function App() {
               processAllEventsResponse(receivedEvents, reset);
               resolve();
             }
+          } else if (type === 'CLOSED' && data[1] === subId) {
+            const message = data[2] || '';
+            console.log('DEBUG: All events subscription closed:', message);
+            if (message.includes('auth-required') && !reqSent) {
+              // Wait for AUTH challenge, request will be sent after authentication
+              return;
+            }
+            // Subscription was closed, finish processing
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              processAllEventsResponse(receivedEvents, reset);
+              resolve();
+            }
+          } else if (type === 'OK' && data[1] && data[1].length === 64 && !reqSent) {
+            // This might be an OK response to our AUTH event
+            // Send the original request now that we're authenticated
+            sendRequest();
           }
         } catch (e) {
           console.error('Error parsing WebSocket message:', e);
@@ -707,8 +957,11 @@ function App() {
 
   function processAllEventsResponse(receivedEvents, reset) {
     try {
+      // Filter out deleted events and ensure delete events are included
+      const filteredEvents = filterDeletedEvents(receivedEvents);
+      
       // Sort events by created_at in descending order (newest first)
-      const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
+      const sortedEvents = filteredEvents.sort((a, b) => b.created_at - a.created_at);
 
       // Apply pagination manually since we get all events from WebSocket
       const currentOffset = reset ? 0 : allEventsOffset;
@@ -846,6 +1099,11 @@ function App() {
     return new Promise((resolve, reject) => {
       let resolved = false;
       let ws;
+      let eventSent = false;
+      // Track auth flow so we can respond and then retry the original event
+      let awaitingAuth = false;
+      let authSent = false;
+      let resentAfterAuth = false;
 
       try {
         ws = new WebSocket(relayURL());
@@ -855,49 +1113,138 @@ function App() {
       }
 
       const timer = setTimeout(() => {
+        console.log('DEBUG: Timeout occurred - eventSent:', eventSent, 'resolved:', resolved, 'ws.readyState:', ws?.readyState);
         if (ws && ws.readyState === 1) {
           try { ws.close(); } catch (_) {}
         }
         if (!resolved) {
           resolved = true;
-          reject(new Error('Timeout publishing event'));
+          reject(new Error('Timeout publishing event - no status received'));
         }
       }, timeoutMs);
 
-      ws.onopen = () => {
-        try {
-          // Send the event as per Nostr protocol
-          const eventMessage = ['EVENT', event];
-          ws.send(JSON.stringify(eventMessage));
-        } catch (e) {
-          clearTimeout(timer);
-          if (!resolved) {
-            resolved = true;
-            reject(new Error('Failed to send event: ' + e.message));
+      const sendEvent = () => {
+        if (!eventSent && ws && ws.readyState === 1) {
+          try {
+            const eventMessage = ['EVENT', event];
+            console.log('DEBUG: Sending event to relay:', event.id, 'kind:', event.kind);
+            ws.send(JSON.stringify(eventMessage));
+            eventSent = true;
+          } catch (e) {
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              reject(new Error('Failed to send event: ' + e.message));
+            }
           }
         }
       };
 
-      ws.onmessage = (msg) => {
+      ws.onopen = () => {
+        sendEvent();
+      };
+
+      ws.onmessage = async (msg) => {
         try {
           const data = JSON.parse(msg.data);
           const type = data[0];
+          
+          // Debug logging to understand what the relay is sending
+          console.log('DEBUG: publishEventToRelay received message:', data);
 
-          if (type === 'OK') {
+          if (type === 'NOTICE') {
+            const message = data[1] || '';
+            // Some relays announce auth requirement via NOTICE
+            if (/auth/i.test(message)) {
+              console.log('DEBUG: Relay NOTICE indicates auth required');
+              awaitingAuth = true;
+            }
+            return;
+          }
+
+          if (type === 'AUTH') {
+            // Handle authentication challenge
+            const challenge = data[1];
+            if (!window.nostr) {
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                reject(new Error('Authentication required but no Nostr extension found'));
+              }
+              return;
+            }
+
+            try {
+              // Create authentication event
+              const authEvent = {
+                kind: 22242,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [
+                  ['relay', relayURL()],
+                  ['challenge', challenge]
+                ],
+                content: ''
+              };
+
+              // Sign the auth event with extension
+              const signedAuthEvent = await window.nostr.signEvent(authEvent);
+
+              // Send AUTH response
+              const authMessage = ['AUTH', signedAuthEvent];
+              ws.send(JSON.stringify(authMessage));
+              authSent = true;
+
+              // After sending AUTH, resend the original event if it was previously rejected/blocked by auth
+              if (awaitingAuth && !resentAfterAuth) {
+                console.log('DEBUG: AUTH sent, resending original event');
+                // allow sendEvent to send again
+                eventSent = false;
+                resentAfterAuth = true;
+                sendEvent();
+              }
+            } catch (authError) {
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                reject(new Error('Failed to authenticate: ' + authError.message));
+              }
+            }
+          } else if (type === 'OK') {
             const eventId = data[1];
             const accepted = data[2];
             const message = data[3] || '';
 
+            console.log('DEBUG: OK message - eventId:', eventId, 'expected:', event.id, 'match:', eventId === event.id);
+
             if (eventId === event.id) {
-              clearTimeout(timer);
-              try { ws.close(); } catch (_) {}
-              if (!resolved) {
-                resolved = true;
-                if (accepted) {
+              if (accepted) {
+                clearTimeout(timer);
+                try { ws.close(); } catch (_) {}
+                if (!resolved) {
+                  resolved = true;
                   resolve();
-                } else {
+                }
+              } else {
+                // If auth is required, wait for AUTH flow then resend
+                if (/auth/i.test(message)) {
+                  console.log('DEBUG: OK rejection indicates auth required, waiting for AUTH challenge');
+                  awaitingAuth = true;
+                  return; // don't resolve/reject yet, wait for AUTH
+                }
+                clearTimeout(timer);
+                try { ws.close(); } catch (_) {}
+                if (!resolved) {
+                  resolved = true;
                   reject(new Error('Event rejected: ' + message));
                 }
+              }
+            } else {
+              // Some relays may send an OK related to AUTH or other events
+              if (authSent && awaitingAuth && !resentAfterAuth && accepted) {
+                console.log('DEBUG: OK after AUTH, resending original event');
+                eventSent = false;
+                resentAfterAuth = true;
+                sendEvent();
               }
             }
           }
