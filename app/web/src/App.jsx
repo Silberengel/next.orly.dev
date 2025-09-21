@@ -18,6 +18,49 @@ function App() {
   const [eventsHasMore, setEventsHasMore] = useState(true);
   const [expandedEventId, setExpandedEventId] = useState(null);
 
+  // All Events log state (admin)
+  const [allEvents, setAllEvents] = useState([]);
+  const [allEventsLoading, setAllEventsLoading] = useState(false);
+  const [allEventsOffset, setAllEventsOffset] = useState(0);
+  const [allEventsHasMore, setAllEventsHasMore] = useState(true);
+  const [expandedAllEventId, setExpandedAllEventId] = useState(null);
+
+  // Profile cache for All Events Log
+  const [profileCache, setProfileCache] = useState({});
+
+  // Function to fetch and cache profile metadata for an author
+  async function fetchAndCacheProfile(pubkeyHex) {
+    if (!pubkeyHex || profileCache[pubkeyHex]) {
+      return profileCache[pubkeyHex] || null;
+    }
+
+    try {
+      const profile = await fetchKind0FromRelay(pubkeyHex);
+      if (profile) {
+        setProfileCache(prev => ({
+          ...prev,
+          [pubkeyHex]: {
+            name: profile.name || `user:${pubkeyHex.slice(0, 8)}`,
+            display_name: profile.display_name,
+            picture: profile.picture,
+            about: profile.about
+          }
+        }));
+        return profile;
+      }
+    } catch (error) {
+      console.log('Error fetching profile for', pubkeyHex.slice(0, 8), ':', error);
+    }
+    return null;
+  }
+
+  // Function to fetch profiles for all events in a batch
+  async function fetchProfilesForEvents(events) {
+    const uniqueAuthors = [...new Set(events.map(event => event.author).filter(Boolean))];
+    const fetchPromises = uniqueAuthors.map(author => fetchAndCacheProfile(author));
+    await Promise.allSettled(fetchPromises);
+  }
+
   // Section revealer states
   const [expandedSections, setExpandedSections] = useState({
     welcome: true,
@@ -25,7 +68,8 @@ function App() {
     exportAll: false,
     exportSpecific: false,
     importEvents: false,
-    eventsLog: false
+    eventsLog: false,
+    allEventsLog: false
   });
 
 
@@ -88,8 +132,12 @@ function App() {
   useEffect(() => {
     if (user?.pubkey) {
       fetchEvents(true); // true = reset
+      // Also fetch all events if user is admin
+      if (user.permission === 'admin') {
+        fetchAllEvents(true); // true = reset
+      }
     }
-  }, [user?.pubkey]);
+  }, [user?.pubkey, user?.permission]);
 
   function relayURL() {
     try {
@@ -395,6 +443,11 @@ function App() {
     setEventsOffset(0);
     setEventsHasMore(true);
     setExpandedEventId(null);
+    // Clear all events state
+    setAllEvents([]);
+    setAllEventsOffset(0);
+    setAllEventsHasMore(true);
+    setExpandedAllEventId(null);
     updateStatus('Logged out', 'info');
   }
 
@@ -540,13 +593,167 @@ function App() {
     }
   }
 
+  // WebSocket-based function to fetch all events from relay (admin)
+  async function fetchAllEventsFromRelay(reset = false, limit = 50, timeoutMs = 10000) {
+    if (!user?.pubkey || user.permission !== 'admin') return;
+    if (allEventsLoading) return;
+    if (!reset && !allEventsHasMore) return;
+
+    console.log('DEBUG: fetchAllEventsFromRelay called, reset:', reset, 'offset:', allEventsOffset);
+    setAllEventsLoading(true);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      let receivedEvents = [];
+      let ws;
+      
+      try {
+        ws = new WebSocket(relayURL());
+      } catch (e) {
+        console.error('Failed to create WebSocket:', e);
+        setAllEventsLoading(false);
+        resolve();
+        return;
+      }
+
+      const subId = 'allevents-' + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        if (ws && ws.readyState === 1) {
+          try { ws.close(); } catch (_) {}
+        }
+        if (!resolved) {
+          resolved = true;
+          console.log('DEBUG: WebSocket timeout, received all events:', receivedEvents.length);
+          processAllEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      }, timeoutMs);
+
+      ws.onopen = () => {
+        try {
+          // Request all events (no authors filter for admin)
+          const req = [
+            'REQ',
+            subId,
+            {}
+          ];
+          console.log('DEBUG: Sending WebSocket request for all events:', req);
+          ws.send(JSON.stringify(req));
+        } catch (e) {
+          console.error('Failed to send WebSocket request:', e);
+        }
+      };
+
+      ws.onmessage = (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          const type = data[0];
+          console.log('DEBUG: WebSocket message:', type, data.length > 2 ? 'with event' : '');
+          
+          if (type === 'EVENT' && data[1] === subId) {
+            const event = data[2];
+            if (event) {
+              // Convert to the expected format
+              const formattedEvent = {
+                id: event.id,
+                kind: event.kind,
+                created_at: event.created_at,
+                content: event.content || '',
+                author: event.pubkey || '',
+                raw_json: JSON.stringify(event)
+              };
+              receivedEvents.push(formattedEvent);
+            }
+          } else if (type === 'EOSE' && data[1] === subId) {
+            try {
+              ws.send(JSON.stringify(['CLOSE', subId]));
+            } catch (_) {}
+            try { ws.close(); } catch (_) {}
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              console.log('DEBUG: EOSE received, processing all events:', receivedEvents.length);
+              processAllEventsResponse(receivedEvents, reset);
+              resolve();
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        try { ws.close(); } catch (_) {}
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          processAllEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          console.log('DEBUG: WebSocket closed, processing all events:', receivedEvents.length);
+          processAllEventsResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+    });
+  }
+
+  function processAllEventsResponse(receivedEvents, reset) {
+    try {
+      // Sort events by created_at in descending order (newest first)
+      const sortedEvents = receivedEvents.sort((a, b) => b.created_at - a.created_at);
+      
+      // Apply pagination manually since we get all events from WebSocket
+      const currentOffset = reset ? 0 : allEventsOffset;
+      const limit = 50;
+      const paginatedEvents = sortedEvents.slice(currentOffset, currentOffset + limit);
+      
+      console.log('DEBUG: Processing all events - total:', sortedEvents.length, 'paginated:', paginatedEvents.length, 'offset:', currentOffset);
+      
+      if (reset) {
+        setAllEvents(paginatedEvents);
+        setAllEventsOffset(paginatedEvents.length);
+      } else {
+        setAllEvents(prev => [...prev, ...paginatedEvents]);
+        setAllEventsOffset(prev => prev + paginatedEvents.length);
+      }
+      
+      // Check if there are more events available
+      setAllEventsHasMore(currentOffset + paginatedEvents.length < sortedEvents.length);
+      
+      // Fetch profiles for the new events
+      fetchProfilesForEvents(paginatedEvents);
+      
+      console.log('DEBUG: All events updated, displayed count:', paginatedEvents.length, 'has more:', currentOffset + paginatedEvents.length < sortedEvents.length);
+    } catch (error) {
+      console.error('Error processing all events response:', error);
+    } finally {
+      setAllEventsLoading(false);
+    }
+  }
+
   // Events log functions
   async function fetchEvents(reset = false) {
     await fetchEventsFromRelay(reset);
   }
 
+  async function fetchAllEvents(reset = false) {
+    await fetchAllEventsFromRelay(reset);
+  }
+
   function toggleEventExpansion(eventId) {
     setExpandedEventId(current => current === eventId ? null : eventId);
+  }
+
+  function toggleAllEventExpansion(eventId) {
+    setExpandedAllEventId(current => current === eventId ? null : eventId);
   }
 
   function copyEventJSON(eventJSON) {
@@ -710,7 +917,7 @@ function App() {
                 <div className="absolute inset-0 opacity-70 bg-cover bg-center" style={{ backgroundImage: `url(${profileData.banner})` }}></div>
               )}
               <div className="relative z-10 p-2 flex items-center h-full">
-                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className={`h-full aspect-square w-auto rounded-full object-cover border-2 ${getThemeClasses('border-white', 'border-gray-600')} mr-2 shadow box-border`} />}
+                {profileData?.picture && <img src={profileData.picture} alt="User Avatar" className={`w-8 h-8 rounded-full object-cover border-2 ${getThemeClasses('border-white', 'border-gray-600')} mr-2 shadow box-border`} />}
                 <div className={getTextClass()}>
                   <div className="font-bold text-base block">
                     {profileData?.display_name || profileData?.name || user.pubkey.slice(0, 8)}
@@ -1017,6 +1224,144 @@ function App() {
                 </div>
               )}
             </div>
+
+            {/* All Events Log (admin only) */}
+            {user.permission === "admin" && (
+              <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+                <div 
+                  className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                  onClick={() => toggleSection('allEventsLog')}
+                >
+                  <span>All Events Log (admin)</span>
+                  <span className="text-xl">
+                    {expandedSections.allEventsLog ? '▼' : '▶'}
+                  </span>
+                </div>
+                {expandedSections.allEventsLog && (
+                  <div className="p-2 bg-gray-900 rounded-lg mt-2">
+                    <div className="mb-4">
+                      <p className={`text-sm ${getTextClass()}`}>View all events from all users in reverse chronological order. Click on any event to view its raw JSON.</p>
+                    </div>
+
+                    <div
+                        className="block"
+                        style={{
+                          position: 'relative'
+                        }}
+                    >
+                      {allEvents.length === 0 && !allEventsLoading ? (
+                          <div className={`text-center py-4 ${getTextClass()}`}>No events found</div>
+                      ) : (
+                          <div className="space-y-2">
+                            {allEvents.map((event) => (
+                                <div key={event.id} className={`border rounded p-3 ${getThemeClasses('border-gray-300 bg-white', 'border-gray-600 bg-gray-800')}`}>
+                                  <div
+                                      className="cursor-pointer"
+                                      onClick={() => toggleAllEventExpansion(event.id)}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-6">
+                                        {/* User avatar and info - separated with more space */}
+                                        <div className="flex items-center gap-3 min-w-0">
+                                          {event.author && profileCache[event.author] && (
+                                            <>
+                                              {profileCache[event.author].picture && (
+                                                <img
+                                                  src={profileCache[event.author].picture}
+                                                  alt={profileCache[event.author].display_name || profileCache[event.author].name || 'User avatar'}
+                                                  className={`w-8 h-8 rounded-full object-cover border h-16 ${getThemeClasses('border-gray-300', 'border-gray-600')}`}
+                                                  onError={(e) => {
+                                                    e.currentTarget.style.display = 'none';
+                                                  }}
+                                                />
+                                              )}
+                                              <div className="flex flex-col min-w-0">
+                                                <span className={`text-sm font-medium ${getTextClass()}`}>
+                                                  {profileCache[event.author].display_name || profileCache[event.author].name || `${event.author.slice(0, 8)}...`}
+                                                </span>
+                                                {profileCache[event.author].display_name && profileCache[event.author].name && (
+                                                  <span className={`text-xs ${getTextClass()} opacity-70`}>
+                                                    {profileCache[event.author].name}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </>
+                                          )}
+                                          {event.author && !profileCache[event.author] && (
+                                            <span className={`text-sm font-medium ${getTextClass()}`}>
+                                              {`${event.author.slice(0, 8)}...`}
+                                            </span>
+                                          )}
+                                        </div>
+                                        
+                                        {/* Event metadata - separated to the right */}
+                                        <div className="flex items-center gap-3">
+                                          <span className={`font-mono text-sm px-2 py-1 rounded ${getThemeClasses('bg-blue-100 text-blue-800', 'bg-blue-900 text-blue-200')}`}>
+                                            Kind {event.kind}
+                                          </span>
+                                          <span className={`text-sm ${getTextClass()}`}>
+                                            {formatTimestamp(event.created_at)}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <span className={`text-lg ${getTextClass()}`}>
+                                          {expandedAllEventId === event.id ? '▼' : '▶'}
+                                        </span>
+                                    </div>
+
+                                    {event.content && (
+                                        <div className={`mt-2 text-sm ${getTextClass()}`}>
+                                          {truncateContent(event.content)}
+                                        </div>
+                                    )}
+                                  </div>
+
+                                  {expandedAllEventId === event.id && (
+                                      <div className="mt-3 border-t pt-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                          <span className={`text-sm font-medium ${getTextClass()}`}>Raw JSON:</span>
+                                          <button
+                                              className={`${getThemeClasses('bg-green-600 hover:bg-green-700', 'bg-green-500 hover:bg-green-600')} text-white text-xs px-2 py-1 rounded`}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                copyEventJSON(event.raw_json);
+                                              }}
+                                              title="Copy minified JSON"
+                                          >
+                                            Copy
+                                          </button>
+                                        </div>
+                                        <pre className={`text-xs p-2 rounded overflow-auto max-h-40 break-all whitespace-pre-wrap ${getPanelBgClass()} ${getTextClass()}`}>
+                                          {JSON.stringify(JSON.parse(event.raw_json), null, 2)}
+                                        </pre>
+                                      </div>
+                                  )}
+                                </div>
+                            ))}
+
+                            {allEventsLoading && (
+                                <div className={`text-center py-4 ${getTextClass()}`}>
+                                  <div className="text-sm">Loading more events...</div>
+                                </div>
+                            )}
+
+                            {!allEventsLoading && allEventsHasMore && (
+                                <div className="text-center py-4">
+                                  <button
+                                      className={`${getThemeClasses('bg-blue-600 hover:bg-blue-700', 'bg-blue-500 hover:bg-blue-600')} text-white px-4 py-2 rounded`}
+                                      onClick={() => fetchAllEvents(false)}
+                                  >
+                                    Load More
+                                  </button>
+                                </div>
+                            )}
+                          </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             
             {/* Empty flex grow box to ensure background fills entire viewport */}
             <div className={`flex-grow ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`}></div>

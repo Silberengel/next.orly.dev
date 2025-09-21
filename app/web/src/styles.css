@@ -130,8 +130,8 @@ button:hover {
 }
 
 .user-avatar {
-  width: 40px;
-  height: 40px;
+  width: 2em;
+  height: 2em;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid white;
