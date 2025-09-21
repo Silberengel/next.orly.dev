@@ -1,0 +1,82 @@
+/*
+  Local Tailwind CSS (minimal subset for this UI)
+  Note: This file includes just the utilities used by the app to keep size small.
+  You can replace this with a full Tailwind build if desired.
+*/
+
+/* Preflight-like resets (very minimal) */
+*,::before,::after{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}
+html,body,#root{height:100%}
+html{line-height:1.5;-webkit-text-size-adjust:100%;tab-size:4;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,Noto Sans,\"Apple Color Emoji\",\"Segoe UI Emoji\"}
+body{margin:0}
+button,input{font:inherit;color:inherit}
+img{display:block;max-width:100%;height:auto}
+
+/* Layout */
+.sticky{position:sticky}.relative{position:relative}.absolute{position:absolute}
+.top-0{top:0}.left-0{left:0}.inset-0{top:0;right:0;bottom:0;left:0}
+.z-50{z-index:50}.z-10{z-index:10}
+.block{display:block}.flex{display:flex}
+.items-center{align-items:center}.justify-start{justify-content:flex-start}.justify-center{justify-content:center}.justify-end{justify-content:flex-end}
+.flex-grow{flex-grow:1}.shrink-0{flex-shrink:0}
+.overflow-hidden{overflow:hidden}
+
+/* Sizing */
+.w-full{width:100%}.w-auto{width:auto}.w-16{width:4rem}
+.h-full{height:100%}.h-16{height:4rem}
+.aspect-square{aspect-ratio:1/1}
+.max-w-3xl{max-width:48rem}
+
+/* Spacing */
+.p-0{padding:0}.p-2{padding:.5rem}.p-3{padding:.75rem}.p-6{padding:1.5rem}
+.px-2{padding-left:.5rem;padding-right:.5rem}
+.mr-0{margin-right:0}.mr-2{margin-right:.5rem}
+.mt-2{margin-top:.5rem}.mt-5{margin-top:1.25rem}
+.mb-1{margin-bottom:.25rem}.mb-2{margin-bottom:.5rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}
+.mx-auto{margin-left:auto;margin-right:auto}
+
+/* Borders & Radius */
+.rounded{border-radius:.25rem}.rounded-full{border-radius:9999px}
+.border-0{border-width:0}.border-2{border-width:2px}
+.border-white{border-color:#fff}
+.border{border-width:1px}.border-gray-300{border-color:#d1d5db}
+
+/* Colors / Backgrounds */
+.bg-white{background-color:#fff}
+.bg-gray-100{background-color:#f3f4f6}
+.bg-blue-600{background-color:#2563eb}.hover\:bg-blue-700:hover{background-color:#1d4ed8}
+.bg-red-600{background-color:#dc2626}.hover\:bg-red-700:hover{background-color:#b91c1c}
+.bg-cyan-100{background-color:#cffafe}
+.bg-green-100{background-color:#d1fae5}
+.bg-red-100{background-color:#fee2e2}
+.bg-cover{background-size:cover}.bg-center{background-position:center}
+.bg-transparent{background-color:transparent}
+
+/* Text */
+.text-left{text-align:left}
+.text-white{color:#fff}
+.text-gray-500{color:#6b7280}.hover\:text-gray-800:hover{color:#1f2937}
+.text-green-800{color:#065f46}
+.text-red-800{color:#991b1b}
+.text-cyan-800{color:#155e75}
+.text-base{font-size:1rem;line-height:1.5rem}
+.text-lg{font-size:1.125rem;line-height:1.75rem}
+.text-2xl{font-size:1.5rem;line-height:2rem}
+.font-bold{font-weight:700}
+
+/* Opacity */
+.opacity-70{opacity:.7}
+
+/* Effects */
+.shadow{--tw-shadow:0 1px 3px 0 rgba(0,0,0,0.1),0 1px 2px -1px rgba(0,0,0,0.1);box-shadow:var(--tw-shadow)}
+
+/* Cursor */
+.cursor-pointer{cursor:pointer}
+
+/* Box model */
+.box-border{box-sizing:border-box}
+
+/* Utilities */
+.hover\:bg-transparent:hover{background-color:transparent}
+
+/* Height for avatar images in header already inherit from container */
