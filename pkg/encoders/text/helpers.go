@@ -66,6 +66,10 @@ func UnmarshalQuoted(b []byte) (content, rem []byte, err error) {
 	}
 	rem = b[:]
 	for ; len(rem) >= 0; rem = rem[1:] {
+		if len(rem) == 0 {
+			err = io.EOF
+			return
+		}
 		// advance to open quotes
 		if rem[0] == '"' {
 			rem = rem[1:]
