@@ -73,7 +73,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			AuthRequired:     s.Config.ACLMode != "none",
 			RestrictedWrites: s.Config.ACLMode != "none",
 		},
-		Icon: "https://cdn.satellite.earth/ac9778868fbf23b63c47c769a74e163377e6ea94d3f0f31711931663d035c4f6.png",
+		Icon: "https://i.nostr.build/6wGXAn7Zaw9mHxFg.png",
 	}
 	if err := json.NewEncoder(w).Encode(info); chk.E(err) {
 	}
