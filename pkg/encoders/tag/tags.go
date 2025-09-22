@@ -166,3 +166,11 @@ func (s *S) GetAll(t []byte) (all []*T) {
 	}
 	return
 }
+
+func (s *S) GetTagElement(i int) (t *T) {
+	if s == nil || len(*s) < i {
+		return
+	}
+	t = (*s)[i]
+	return
+}

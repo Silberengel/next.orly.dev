@@ -8,7 +8,7 @@ import (
 
 	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/encoders/text"
-	utils "next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/utils"
 )
 
 // The tag position meanings, so they are clear when reading.
