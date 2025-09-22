@@ -8,7 +8,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
-	database "next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/protocol/publish"
 )
@@ -47,6 +47,16 @@ func Run(
 	}
 	// Initialize the user interface
 	l.UserInterface()
+	if l.paymentProcessor, err = NewPaymentProcessor(ctx, cfg, db); err != nil {
+		log.E.F("failed to create payment processor: %v", err)
+		// Continue without payment processor
+	} else {
+		if err = l.paymentProcessor.Start(); err != nil {
+			log.E.F("failed to start payment processor: %v", err)
+		} else {
+			log.I.F("payment processor started successfully")
+		}
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)
 	go func() {

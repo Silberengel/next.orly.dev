@@ -40,6 +40,8 @@ type Server struct {
 	// Challenge storage for HTTP UI authentication
 	challengeMutex sync.RWMutex
 	challenges     map[string][]byte
+	
+	paymentProcessor *PaymentProcessor
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -406,12 +408,13 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	filename := "events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set(
+		"Content-Disposition", "attachment; filename=\""+filename+"\"",
+	)
 
 	// Stream export
 	s.D.Export(s.Ctx, w, pks...)
 }
-
 
 // handleExportMine streams only the authenticated user's events as JSONL (NDJSON).
 func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
@@ -434,7 +437,9 @@ func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	filename := "my-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set(
+		"Content-Disposition", "attachment; filename=\""+filename+"\"",
+	)
 
 	// Stream export for this user's pubkey only
 	s.D.Export(s.Ctx, w, pubkey)
@@ -482,7 +487,7 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Empty request body", http.StatusBadRequest)
 			return
 		}
- 	s.D.Import(r.Body)
+		s.D.Import(r.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -552,7 +557,7 @@ func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Events are already sorted by QueryEvents in reverse chronological order
-	
+
 	// Apply offset and limit manually since QueryEvents doesn't support offset
 	totalEvents := len(events)
 	start := offset
@@ -568,11 +573,11 @@ func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 
 	// Convert events to JSON response format
 	type EventResponse struct {
-		ID        string    `json:"id"`
-		Kind      int       `json:"kind"`
-		CreatedAt int64     `json:"created_at"`
-		Content   string    `json:"content"`
-		RawJSON   string    `json:"raw_json"`
+		ID        string `json:"id"`
+		Kind      int    `json:"kind"`
+		CreatedAt int64  `json:"created_at"`
+		Content   string `json:"content"`
+		RawJSON   string `json:"raw_json"`
 	}
 
 	response := struct {
