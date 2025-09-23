@@ -230,3 +230,122 @@ The benchmark suite compares:
 * **Error Analysis**: Detailed error reporting and categorization
 
 Results are timestamped and stored in the `reports/` directory for tracking performance improvements over time.
+
+== follows ACL
+
+The follows ACL (Access Control List) system provides a flexible way to control relay access based on social relationships in the Nostr network. It grants different access levels to users based on whether they are followed by designated admin users.
+
+=== how it works
+
+The follows ACL system operates by:
+
+1. **Admin Configuration**: Designated admin users are specified in the relay configuration
+2. **Follow List Discovery**: The system fetches follow lists (kind 3 events) from admin users
+3. **Access Level Assignment**:
+   - **Admin access**: Users listed as admins get full administrative privileges
+   - **Write access**: Users followed by any admin can publish events to the relay
+   - **Read access**: All other users can only read events from the relay
+
+=== configuration
+
+Enable the follows ACL system by setting the ACL mode:
+
+[source,bash]
+----
+export ORLY_ACL_MODE=follows
+export ORLY_ADMINS=npub1abc...,npub1xyz...
+----
+
+Or in your environment configuration:
+
+[source,env]
+----
+ORLY_ACL_MODE=follows
+ORLY_ADMINS=npub1abc123...,npub1xyz456...
+----
+
+=== usage example
+
+[source,bash]
+----
+# Set up a relay with follows ACL
+export ORLY_ACL_MODE=follows
+export ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
+
+# Start the relay
+./orly
+----
+
+The relay will automatically:
+- Load the follow lists of the specified admin users
+- Grant write access to anyone followed by these admins
+- Provide read-only access to everyone else
+- Update follow lists dynamically as admins modify their follows
+
+== relay sync spider
+
+The relay sync spider is an intelligent synchronization system that discovers and syncs events from other Nostr relays based on social relationships. It works in conjunction with the follows ACL to create a distributed network of synchronized content.
+
+=== how it works
+
+The spider operates in two phases:
+
+1. **Relay Discovery**: 
+   - Finds relay lists (kind 10002 events) from followed users
+   - Builds a list of relays used by people in your social network
+   - Prioritizes relays mentioned by admin users
+
+2. **Event Synchronization**:
+   - Queries discovered relays for events from followed users
+   - Performs one-time historical sync (default: 1 month back)
+   - Runs periodic syncs to stay current with new events
+   - Validates and stores events locally
+
+=== configuration
+
+Enable the spider by setting the spider mode to "follow":
+
+[source,bash]
+----
+export ORLY_SPIDER_MODE=follow
+export ORLY_SPIDER_FREQUENCY=1h
+----
+
+Configuration options:
+
+* `ORLY_SPIDER_MODE` - Spider mode: "none" (disabled) or "follow" (enabled)
+* `ORLY_SPIDER_FREQUENCY` - How often to sync (default: 1h)
+
+=== usage example
+
+[source,bash]
+----
+# Enable both follows ACL and spider sync
+export ORLY_ACL_MODE=follows
+export ORLY_SPIDER_MODE=follow
+export ORLY_SPIDER_FREQUENCY=30m
+export ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
+
+# Start the relay
+./orly
+----
+
+The spider will:
+- Perform a one-time sync of the last month's events
+- Discover relays from followed users' relay lists
+- Sync events from those relays every 30 minutes
+- Only sync events from users in the follow network
+
+=== benefits
+
+* **Decentralized Content**: Automatically aggregates content from your social network
+* **Reduced Relay Dependency**: Less reliance on single large relays
+* **Improved User Experience**: Users see content from their social circle even when offline from other relays
+* **Network Resilience**: Content remains accessible even if origin relays go offline
+
+=== technical notes
+
+* The spider only runs when `ORLY_ACL_MODE=follows` to ensure proper authorization
+* One-time sync is marked to prevent repeated historical syncs on restart
+* Event validation ensures only properly signed events are stored
+* Sync windows are configurable to balance freshness with resource usage
