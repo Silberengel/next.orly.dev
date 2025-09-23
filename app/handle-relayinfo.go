@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strings"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/protocol/relayinfo"
 	"next.orly.dev/pkg/version"
 )
@@ -67,12 +70,22 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	dashboardURL := s.DashboardURL(r)
 	description := version.Description + " dashboard: " + dashboardURL
 	
+	// Get relay identity pubkey as hex
+	var relayPubkey string
+	if skb, err := s.D.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
+		sign := new(p256k.Signer)
+		if err := sign.InitSec(skb); err == nil {
+			relayPubkey = hex.Enc(sign.Pub())
+		}
+	}
+	
 	info = &relayinfo.T{
 		Name:        s.Config.AppName,
 		Description: description,
+		PubKey:      relayPubkey,
 		Nips:        supportedNIPs,
 		Software:    version.URL,
-		Version:     version.V,
+		Version:     strings.TrimPrefix(version.V, "v"),
 		Limitation: relayinfo.Limits{
 			AuthRequired:     s.Config.ACLMode != "none",
 			RestrictedWrites: s.Config.ACLMode != "none",

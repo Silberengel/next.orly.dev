@@ -820,6 +820,58 @@ func (pp *PaymentProcessor) npubToPubkey(npubStr string) ([]byte, error) {
 	return pubkey, nil
 }
 
+// UpdateRelayProfile creates or updates the relay's kind 0 profile with subscription information
+func (pp *PaymentProcessor) UpdateRelayProfile() error {
+	// Get relay identity secret to sign the profile
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return fmt.Errorf("no relay identity configured")
+	}
+
+	// Initialize signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return fmt.Errorf("failed to initialize signer: %w", err)
+	}
+
+	monthlyPrice := pp.config.MonthlyPriceSats
+	if monthlyPrice <= 0 {
+		monthlyPrice = 6000
+	}
+
+	// Calculate daily rate
+	dailyRate := monthlyPrice / 30
+
+	// Get relay wss:// URL - use dashboard URL but with wss:// scheme
+	relayURL := strings.Replace(pp.getDashboardURL(), "https://", "wss://", 1)
+
+	// Create profile content as JSON
+	profileContent := fmt.Sprintf(`{
+	"name": "Relay Bot",
+	"about": "This relay requires a subscription to access. Zap any of my notes to pay for access. Monthly price: %d sats (%d sats/day). Relay: %s",
+	"lud16": "",
+	"nip05": "",
+	"website": "%s"
+}`, monthlyPrice, dailyRate, relayURL, pp.getDashboardURL())
+
+	// Build the profile event
+	ev := event.New()
+	ev.Kind = kind.ProfileMetadata.K // Kind 0 for profile metadata
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Content = []byte(profileContent)
+	ev.Tags = tag.NewS()
+
+	// Sign and save the event
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return fmt.Errorf("failed to save relay profile: %w", err)
+	}
+
+	log.I.F("updated relay profile with subscription information")
+	return nil
+}
+
 // decodeAnyPubkey decodes a public key from either hex string or npub format
 func decodeAnyPubkey(s string) ([]byte, error) {
 	s = strings.TrimSpace(s)
