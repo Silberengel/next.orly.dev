@@ -31,11 +31,11 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	var info *relayinfo.T
 	supportedNIPs := relayinfo.GetList(
 		relayinfo.BasicProtocol,
-		// relayinfo.Authentication,
+		relayinfo.Authentication,
 		// relayinfo.EncryptedDirectMessage,
 		relayinfo.EventDeletion,
 		relayinfo.RelayInformationDocument,
-		// relayinfo.GenericTagQueries,
+		relayinfo.GenericTagQueries,
 		// relayinfo.NostrMarketplace,
 		relayinfo.EventTreatment,
 		// relayinfo.CommandResults,
@@ -51,12 +51,12 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			// relayinfo.EncryptedDirectMessage,
 			relayinfo.EventDeletion,
 			relayinfo.RelayInformationDocument,
-			// relayinfo.GenericTagQueries,
+			relayinfo.GenericTagQueries,
 			// relayinfo.NostrMarketplace,
 			relayinfo.EventTreatment,
 			// relayinfo.CommandResults,
-			// relayinfo.ParameterizedReplaceableEvents,
-			// relayinfo.ExpirationTimestamp,
+			relayinfo.ParameterizedReplaceableEvents,
+			relayinfo.ExpirationTimestamp,
 			relayinfo.ProtectedEvents,
 			relayinfo.RelayListMetadata,
 		)
@@ -72,6 +72,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		Limitation: relayinfo.Limits{
 			AuthRequired:     s.Config.ACLMode != "none",
 			RestrictedWrites: s.Config.ACLMode != "none",
+			PaymentRequired:  s.Config.MonthlyPriceSats > 0,
 		},
 		Icon: "https://i.nostr.build/6wGXAn7Zaw9mHxFg.png",
 	}
