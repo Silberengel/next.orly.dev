@@ -63,9 +63,13 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Sort(supportedNIPs)
 	log.T.Ln("supported NIPs", supportedNIPs)
+	// Construct description with dashboard URL
+	dashboardURL := s.DashboardURL(r)
+	description := version.Description + " dashboard: " + dashboardURL
+	
 	info = &relayinfo.T{
 		Name:        s.Config.AppName,
-		Description: version.Description,
+		Description: description,
 		Nips:        supportedNIPs,
 		Software:    version.URL,
 		Version:     version.V,
