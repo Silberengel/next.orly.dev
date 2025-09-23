@@ -45,6 +45,7 @@ type C struct {
 	NWCUri              string        `env:"ORLY_NWC_URI" usage:"NWC (Nostr Wallet Connect) connection string for Lightning payments"`
 	SubscriptionEnabled bool          `env:"ORLY_SUBSCRIPTION_ENABLED" default:"false" usage:"enable subscription-based access control requiring payment for non-directory events"`
 	MonthlyPriceSats    int64         `env:"ORLY_MONTHLY_PRICE_SATS" default:"6000" usage:"price in satoshis for one month subscription (default ~$2 USD)"`
+	RelayURL            string        `env:"ORLY_RELAY_URL" usage:"base URL for the relay dashboard (e.g., https://relay.example.com)"`
 
 	// Web UI and dev mode settings
 	WebDisableEmbedded bool   `env:"ORLY_WEB_DISABLE" default:"false" usage:"disable serving the embedded web UI; useful for hot-reload during development"`

@@ -113,6 +113,15 @@ func (s *Server) ServiceURL(req *http.Request) (st string) {
 	return proto + "://" + host
 }
 
+// DashboardURL constructs HTTPS URL for the dashboard based on the HTTP request
+func (s *Server) DashboardURL(req *http.Request) string {
+	host := req.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = req.Host
+	}
+	return "https://" + host
+}
+
 // UserInterface sets up a basic Nostr NDK interface that allows users to log into the relay user interface
 func (s *Server) UserInterface() {
 	if s.mux == nil {

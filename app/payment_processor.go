@@ -27,12 +27,13 @@ import (
 
 // PaymentProcessor handles NWC payment notifications and updates subscriptions
 type PaymentProcessor struct {
-	nwcClient *nwc.Client
-	db        *database.D
-	config    *config.C
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	nwcClient    *nwc.Client
+	db           *database.D
+	config       *config.C
+	ctx          context.Context
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	dashboardURL string
 }
 
 // NewPaymentProcessor creates a new payment processor
@@ -301,8 +302,10 @@ Your paid subscription to this relay will expire in 7 days on %s.
 
 Don't lose access to your private relay! Extend your subscription today.
 
-Relay: nostr:%s`, 
-		expiryTime.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, monthlyPrice, string(relayNpubForContent))
+Relay: nostr:%s
+
+Log in to the relay dashboard to access your configuration at: %s`, 
+		expiryTime.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
 
 	// Build the event
 	ev := event.New()
@@ -402,8 +405,10 @@ Simply zap this note with your payment amount:
 
 Thank you for considering supporting decentralized communication!
 
-Relay: nostr:%s`, 
-		trialEnd.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, dailyRate, monthlyPrice, string(relayNpubForContent))
+Relay: nostr:%s
+
+Log in to the relay dashboard to access your configuration at: %s`, 
+		trialEnd.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, dailyRate, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
 
 	// Build the event
 	ev := event.New()
@@ -605,9 +610,9 @@ func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived i
 		return fmt.Errorf("failed to encode relay npub: %w", err)
 	}
 
-	// Create the note content with nostr:npub link
-	content := fmt.Sprintf("Payment received: %d sats for %d days. Subscription expires: %s\n\nRelay: nostr:%s", 
-		satsReceived, days, expiryTime.Format("2006-01-02 15:04:05 UTC"), string(relayNpubForContent))
+	// Create the note content with nostr:npub link and dashboard link
+	content := fmt.Sprintf("Payment received: %d sats for %d days. Subscription expires: %s\n\nRelay: nostr:%s\n\nLog in to the relay dashboard to access your configuration at: %s", 
+		satsReceived, days, expiryTime.Format("2006-01-02 15:04:05 UTC"), string(relayNpubForContent), pp.getDashboardURL())
 
 	// Build the event
 	ev := event.New()
@@ -699,7 +704,9 @@ To extend your subscription after the trial ends, simply zap this note with the 
 
 Relay: nostr:%s
 
-Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForContent))
+Log in to the relay dashboard to access your configuration at: %s
+
+Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
 
 	// Build the event
 	ev := event.New()
@@ -748,6 +755,25 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForC
 
 	log.I.F("created welcome note for first-time user %s", hex.Enc(userPubkey))
 	return nil
+}
+
+// SetDashboardURL sets the dynamic dashboard URL based on HTTP request
+func (pp *PaymentProcessor) SetDashboardURL(url string) {
+	pp.dashboardURL = url
+}
+
+// getDashboardURL returns the dashboard URL for the relay
+func (pp *PaymentProcessor) getDashboardURL() string {
+	// Use dynamic URL if available
+	if pp.dashboardURL != "" {
+		return pp.dashboardURL
+	}
+	// Fallback to static config
+	if pp.config.RelayURL != "" {
+		return pp.config.RelayURL
+	}
+	// Default fallback if no URL is configured
+	return "https://your-relay.example.com"
 }
 
 // extractNpubFromDescription extracts an npub from the payment description

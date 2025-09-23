@@ -72,6 +72,10 @@ func (l *Listener) handleFirstTimeUser(pubkey []byte) {
 	
 	// Get payment processor to create welcome note
 	if l.Server.paymentProcessor != nil {
+		// Set the dashboard URL based on the current HTTP request
+		dashboardURL := l.Server.DashboardURL(l.req)
+		l.Server.paymentProcessor.SetDashboardURL(dashboardURL)
+		
 		if err := l.Server.paymentProcessor.CreateWelcomeNote(pubkey); err != nil {
 			log.E.F("failed to create welcome note for first-time user: %v", err)
 		}
