@@ -50,6 +50,30 @@ func (l *Listener) HandleAuth(b []byte) (err error) {
 			env.Event.Pubkey,
 		)
 		l.authedPubkey.Store(env.Event.Pubkey)
+		
+		// Check if this is a first-time user and create welcome note
+		go l.handleFirstTimeUser(env.Event.Pubkey)
 	}
 	return
+}
+
+// handleFirstTimeUser checks if user is logging in for first time and creates welcome note
+func (l *Listener) handleFirstTimeUser(pubkey []byte) {
+	// Check if this is a first-time user
+	isFirstTime, err := l.Server.D.IsFirstTimeUser(pubkey)
+	if err != nil {
+		log.E.F("failed to check first-time user status: %v", err)
+		return
+	}
+	
+	if !isFirstTime {
+		return // Not a first-time user
+	}
+	
+	// Get payment processor to create welcome note
+	if l.Server.paymentProcessor != nil {
+		if err := l.Server.paymentProcessor.CreateWelcomeNote(pubkey); err != nil {
+			log.E.F("failed to create welcome note for first-time user: %v", err)
+		}
+	}
 }

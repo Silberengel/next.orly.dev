@@ -17,7 +17,9 @@ import (
 	"next.orly.dev/app"
 	"next.orly.dev/app/config"
 	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/spider"
 	"next.orly.dev/pkg/version"
 )
@@ -51,11 +53,32 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	var err error
 	var cfg *config.C
-	if cfg, err = config.New(); chk.T(err) {
-	}
-	log.I.F("starting %s %s", cfg.AppName, version.V)
+ if cfg, err = config.New(); chk.T(err) {
+ }
+ log.I.F("starting %s %s", cfg.AppName, version.V)
 
-	// If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
+ // Handle 'identity' subcommand: print relay identity secret and pubkey and exit
+ if config.IdentityRequested() {
+ 	ctx, cancel := context.WithCancel(context.Background())
+ 	defer cancel()
+ 	var db *database.D
+ 	if db, err = database.New(ctx, cancel, cfg.DataDir, cfg.DBLogLevel); chk.E(err) {
+ 		os.Exit(1)
+ 	}
+ 	defer db.Close()
+ 	skb, err := db.GetOrCreateRelayIdentitySecret()
+ 	if chk.E(err) {
+ 		os.Exit(1)
+ 	}
+ 	pk, err := keys.SecretBytesToPubKeyHex(skb)
+ 	if chk.E(err) {
+ 		os.Exit(1)
+ 	}
+ 	fmt.Printf("identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk)
+ 	os.Exit(0)
+ }
+
+ // If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
 	if cfg.OpenPprofWeb && cfg.Pprof != "" && !cfg.PprofHTTP {
 		log.I.F("enabling HTTP pprof server to support web viewer")
 		cfg.PprofHTTP = true

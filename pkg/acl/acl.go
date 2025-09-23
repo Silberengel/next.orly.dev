@@ -66,3 +66,15 @@ func (s *S) Type() (typ string) {
 	}
 	return
 }
+
+// AddFollow forwards a pubkey to the active ACL if it supports dynamic follows
+func (s *S) AddFollow(pub []byte) {
+	for _, i := range s.ACL {
+		if i.Type() == s.Active.Load() {
+			if f, ok := i.(*Follows); ok {
+				f.AddFollow(pub)
+			}
+			break
+		}
+	}
+}

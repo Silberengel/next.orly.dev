@@ -188,3 +188,30 @@ func (d *D) GetPaymentHistory(pubkey []byte) ([]Payment, error) {
 
 	return payments, err
 }
+
+// IsFirstTimeUser checks if a user is logging in for the first time and marks them as seen
+func (d *D) IsFirstTimeUser(pubkey []byte) (bool, error) {
+	key := fmt.Sprintf("firstlogin:%s", hex.EncodeToString(pubkey))
+	
+	isFirstTime := false
+	err := d.DB.Update(
+		func(txn *badger.Txn) error {
+			_, err := txn.Get([]byte(key))
+			if errors.Is(err, badger.ErrKeyNotFound) {
+				// First time - record the login
+				isFirstTime = true
+				now := time.Now()
+				data, err := json.Marshal(map[string]interface{}{
+					"first_login": now,
+				})
+				if err != nil {
+					return err
+				}
+				return txn.Set([]byte(key), data)
+			}
+			return err // Return any other error as-is
+		},
+	)
+	
+	return isFirstTime, err
+}

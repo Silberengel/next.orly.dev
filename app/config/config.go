@@ -139,6 +139,21 @@ func GetEnv() (requested bool) {
 	return
 }
 
+// IdentityRequested checks if the first command line argument is "identity" and returns
+// whether the relay identity should be printed and the program should exit.
+//
+// Return Values
+//   - requested: true if the 'identity' subcommand was provided, false otherwise.
+func IdentityRequested() (requested bool) {
+	if len(os.Args) > 1 {
+		switch strings.ToLower(os.Args[1]) {
+		case "identity":
+			requested = true
+		}
+	}
+	return
+}
+
 // KV is a key/value pair.
 type KV struct{ Key, Value string }
 

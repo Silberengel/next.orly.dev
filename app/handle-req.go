@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/closedenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/eoseenvelope"
@@ -143,6 +145,43 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	var tmp event.S
 privCheck:
 	for _, ev := range events {
+		// Check for private tag first
+		privateTags := ev.Tags.GetAll([]byte("private"))
+		if len(privateTags) > 0 && accessLevel != "admin" {
+			pk := l.authedPubkey.Load()
+			if pk == nil {
+				continue // no auth, can't access private events
+			}
+			
+			// Convert authenticated pubkey to npub for comparison
+			authedNpub, err := bech32encoding.BinToNpub(pk)
+			if err != nil {
+				continue // couldn't convert pubkey, skip
+			}
+			
+			// Check if authenticated npub is in any private tag
+			authorized := false
+			for _, privateTag := range privateTags {
+				authorizedNpubs := strings.Split(string(privateTag.Value()), ",")
+				for _, npub := range authorizedNpubs {
+					if strings.TrimSpace(npub) == string(authedNpub) {
+						authorized = true
+						break
+					}
+				}
+				if authorized {
+					break
+				}
+			}
+			
+			if !authorized {
+				continue // not authorized to see this private event
+			}
+			
+			tmp = append(tmp, ev)
+			continue
+		}
+		
 		if kind.IsPrivileged(ev.Kind) &&
 			accessLevel != "admin" { // admins can see all events
 			// log.T.C(

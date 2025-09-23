@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"bytes"
 	"context"
 	"reflect"
 	"strings"
@@ -368,6 +369,32 @@ func (f *Follows) GetFollowedPubkeys() [][]byte {
 	followedPubkeys := make([][]byte, len(f.follows))
 	copy(followedPubkeys, f.follows)
 	return followedPubkeys
+}
+
+// AddFollow appends a pubkey to the in-memory follows list if not already present
+// and signals the syncer to refresh subscriptions.
+func (f *Follows) AddFollow(pub []byte) {
+	if len(pub) == 0 {
+		return
+	}
+	f.followsMx.Lock()
+	defer f.followsMx.Unlock()
+	for _, p := range f.follows {
+		if bytes.Equal(p, pub) {
+			return
+		}
+	}
+	b := make([]byte, len(pub))
+	copy(b, pub)
+	f.follows = append(f.follows, b)
+	// notify syncer if initialized
+	if f.updated != nil {
+		select {
+		case f.updated <- struct{}{}:
+		default:
+			// if channel is full or not yet listened to, ignore
+		}
+	}
 }
 
 func init() {

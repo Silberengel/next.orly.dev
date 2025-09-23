@@ -8,6 +8,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/protocol/publish"
@@ -47,6 +48,28 @@ func Run(
 	}
 	// Initialize the user interface
 	l.UserInterface()
+
+	// Ensure a relay identity secret key exists when subscriptions and NWC are enabled
+	if cfg.SubscriptionEnabled && cfg.NWCUri != "" {
+		if skb, e := db.GetOrCreateRelayIdentitySecret(); e != nil {
+			log.E.F("failed to ensure relay identity key: %v", e)
+		} else if pk, e2 := keys.SecretBytesToPubKeyHex(skb); e2 == nil {
+			log.I.F("relay identity loaded (pub=%s)", pk)
+			// ensure relay identity pubkey is considered an admin for ACL follows mode
+			found := false
+			for _, a := range cfg.Admins {
+				if a == pk {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.Admins = append(cfg.Admins, pk)
+				log.I.F("added relay identity to admins for follow-list whitelisting")
+			}
+		}
+	}
+
 	if l.paymentProcessor, err = NewPaymentProcessor(ctx, cfg, db); err != nil {
 		log.E.F("failed to create payment processor: %v", err)
 		// Continue without payment processor

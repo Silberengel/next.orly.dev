@@ -2,15 +2,26 @@ package app
 
 import (
 	"context"
+	// std hex not used; use project hex encoder instead
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/encoders/json"
+	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/encoders/timestamp"
 	"next.orly.dev/pkg/protocol/nwc"
 )
 
@@ -52,6 +63,7 @@ func NewPaymentProcessor(
 
 // Start begins listening for payment notifications
 func (pp *PaymentProcessor) Start() error {
+	// start NWC notifications listener
 	pp.wg.Add(1)
 	go func() {
 		defer pp.wg.Done()
@@ -59,6 +71,20 @@ func (pp *PaymentProcessor) Start() error {
 			log.E.F("payment processor error: %v", err)
 		}
 	}()
+	// start periodic follow-list sync if subscriptions are enabled
+	if pp.config != nil && pp.config.SubscriptionEnabled {
+		pp.wg.Add(1)
+		go func() {
+			defer pp.wg.Done()
+			pp.runFollowSyncLoop()
+		}()
+		// start daily subscription checker
+		pp.wg.Add(1)
+		go func() {
+			defer pp.wg.Done()
+			pp.runDailySubscriptionChecker()
+		}()
+	}
 	return nil
 }
 
@@ -75,6 +101,359 @@ func (pp *PaymentProcessor) listenForPayments() error {
 	return pp.nwcClient.SubscribeNotifications(pp.ctx, pp.handleNotification)
 }
 
+// runFollowSyncLoop periodically syncs the relay identity follow list with active subscribers
+func (pp *PaymentProcessor) runFollowSyncLoop() {
+	t := time.NewTicker(10 * time.Minute)
+	defer t.Stop()
+	// do an initial sync shortly after start
+	_ = pp.syncFollowList()
+	for {
+		select {
+		case <-pp.ctx.Done():
+			return
+		case <-t.C:
+			if err := pp.syncFollowList(); err != nil {
+				log.W.F("follow list sync failed: %v", err)
+			}
+		}
+	}
+}
+
+// runDailySubscriptionChecker checks once daily for subscription expiry warnings and trial reminders
+func (pp *PaymentProcessor) runDailySubscriptionChecker() {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	// do an initial check shortly after start
+	_ = pp.checkSubscriptionStatus()
+	for {
+		select {
+		case <-pp.ctx.Done():
+			return
+		case <-t.C:
+			if err := pp.checkSubscriptionStatus(); err != nil {
+				log.W.F("subscription status check failed: %v", err)
+			}
+		}
+	}
+}
+
+// syncFollowList builds a kind-3 event from the relay identity containing only active subscribers
+func (pp *PaymentProcessor) syncFollowList() error {
+	// ensure we have a relay identity secret
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return nil // nothing to do if no identity
+	}
+	// collect active subscribers
+	actives, err := pp.getActiveSubscriberPubkeys()
+	if err != nil {
+		return err
+	}
+	// signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return err
+	}
+	// build follow list event
+	ev := event.New()
+	ev.Kind = kind.FollowList.K
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Tags = tag.NewS()
+	for _, pk := range actives {
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(pk)))
+	}
+	// sign and save
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return err
+	}
+	log.I.F(
+		"updated relay follow list with %d active subscribers", len(actives),
+	)
+	return nil
+}
+
+// getActiveSubscriberPubkeys scans the subscription records and returns active ones
+func (pp *PaymentProcessor) getActiveSubscriberPubkeys() ([][]byte, error) {
+	prefix := []byte("sub:")
+	now := time.Now()
+	var out [][]byte
+	err := pp.db.DB.View(
+		func(txn *badger.Txn) error {
+			it := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer it.Close()
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				key := item.KeyCopy(nil)
+				// key format: sub:<hexpub>
+				hexpub := string(key[len(prefix):])
+				var sub database.Subscription
+				if err := item.Value(
+					func(val []byte) error {
+						return json.Unmarshal(val, &sub)
+					},
+				); err != nil {
+					return err
+				}
+				if now.Before(sub.TrialEnd) || (!sub.PaidUntil.IsZero() && now.Before(sub.PaidUntil)) {
+					if b, err := hex.Dec(hexpub); err == nil {
+						out = append(out, b)
+					}
+				}
+			}
+			return nil
+		},
+	)
+	return out, err
+}
+
+// checkSubscriptionStatus scans all subscriptions and creates warning/reminder notes
+func (pp *PaymentProcessor) checkSubscriptionStatus() error {
+	prefix := []byte("sub:")
+	now := time.Now()
+	sevenDaysFromNow := now.AddDate(0, 0, 7)
+
+	return pp.db.DB.View(
+		func(txn *badger.Txn) error {
+			it := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer it.Close()
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				key := item.KeyCopy(nil)
+				// key format: sub:<hexpub>
+				hexpub := string(key[len(prefix):])
+				
+				var sub database.Subscription
+				if err := item.Value(
+					func(val []byte) error {
+						return json.Unmarshal(val, &sub)
+					},
+				); err != nil {
+					continue // skip invalid subscription records
+				}
+				
+				pubkey, err := hex.Dec(hexpub)
+				if err != nil {
+					continue // skip invalid pubkey
+				}
+				
+				// Check if paid subscription is expiring in 7 days
+				if !sub.PaidUntil.IsZero() {
+					// Format dates for comparison (ignore time component)
+					paidUntilDate := sub.PaidUntil.Truncate(24 * time.Hour)
+					sevenDaysDate := sevenDaysFromNow.Truncate(24 * time.Hour)
+					
+					if paidUntilDate.Equal(sevenDaysDate) {
+						go pp.createExpiryWarningNote(pubkey, sub.PaidUntil)
+					}
+				}
+				
+				// Check if user is on trial (no paid subscription, trial not expired)
+				if sub.PaidUntil.IsZero() && now.Before(sub.TrialEnd) {
+					go pp.createTrialReminderNote(pubkey, sub.TrialEnd)
+				}
+			}
+			return nil
+		},
+	)
+}
+
+// createExpiryWarningNote creates a warning note for users whose paid subscription expires in 7 days
+func (pp *PaymentProcessor) createExpiryWarningNote(userPubkey []byte, expiryTime time.Time) error {
+	// Get relay identity secret to sign the note
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return fmt.Errorf("no relay identity configured")
+	}
+
+	// Initialize signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return fmt.Errorf("failed to initialize signer: %w", err)
+	}
+
+	monthlyPrice := pp.config.MonthlyPriceSats
+	if monthlyPrice <= 0 {
+		monthlyPrice = 6000
+	}
+
+	// Get relay npub for content link
+	relayNpubForContent, err := bech32encoding.BinToNpub(sign.Pub())
+	if err != nil {
+		return fmt.Errorf("failed to encode relay npub: %w", err)
+	}
+
+	// Create the warning note content
+	content := fmt.Sprintf(`⚠️ Subscription Expiring Soon ⚠️
+
+Your paid subscription to this relay will expire in 7 days on %s.
+
+💰 To extend your subscription:
+- Monthly price: %d sats
+- Zap this note with your payment amount
+- Each %d sats = 30 days of access
+
+⚡ Payment Instructions:
+1. Use any Lightning wallet that supports zaps
+2. Zap this note with your payment
+3. Your subscription will be automatically extended
+
+Don't lose access to your private relay! Extend your subscription today.
+
+Relay: nostr:%s`, 
+		expiryTime.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, monthlyPrice, string(relayNpubForContent))
+
+	// Build the event
+	ev := event.New()
+	ev.Kind = kind.TextNote.K // Kind 1 for text note
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Add "p" tag for the user
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(userPubkey)))
+
+	// Add expiration tag (5 days from creation)
+	noteExpiry := time.Now().AddDate(0, 0, 5)
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+
+	// Add "private" tag with authorized npubs (user and relay)
+	var authorizedNpubs []string
+	
+	// Add user npub
+	userNpub, err := bech32encoding.BinToNpub(userPubkey)
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(userNpub))
+	}
+	
+	// Add relay npub
+	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(relayNpub))
+	}
+
+	// Create the private tag with comma-separated npubs
+	if len(authorizedNpubs) > 0 {
+		privateTagValue := strings.Join(authorizedNpubs, ",")
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+	}
+
+	// Add a special tag to mark this as an expiry warning
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("warning", "subscription-expiry"))
+
+	// Sign and save the event
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return fmt.Errorf("failed to save expiry warning note: %w", err)
+	}
+
+	log.I.F("created expiry warning note for user %s (expires %s)", hex.Enc(userPubkey), expiryTime.Format("2006-01-02"))
+	return nil
+}
+
+// createTrialReminderNote creates a reminder note for users on trial to support the relay
+func (pp *PaymentProcessor) createTrialReminderNote(userPubkey []byte, trialEnd time.Time) error {
+	// Get relay identity secret to sign the note
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return fmt.Errorf("no relay identity configured")
+	}
+
+	// Initialize signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return fmt.Errorf("failed to initialize signer: %w", err)
+	}
+
+	monthlyPrice := pp.config.MonthlyPriceSats
+	if monthlyPrice <= 0 {
+		monthlyPrice = 6000
+	}
+
+	// Calculate daily rate
+	dailyRate := monthlyPrice / 30
+
+	// Get relay npub for content link
+	relayNpubForContent, err := bech32encoding.BinToNpub(sign.Pub())
+	if err != nil {
+		return fmt.Errorf("failed to encode relay npub: %w", err)
+	}
+
+	// Create the reminder note content
+	content := fmt.Sprintf(`🆓 Free Trial Reminder 🆓
+
+You're currently using this relay for FREE! Your trial expires on %s.
+
+🙏 Support Relay Operations:
+This relay provides you with private, censorship-resistant communication. Please consider supporting its continued operation.
+
+💰 Subscription Details:
+- Monthly price: %d sats (%d sats/day)
+- Fair pricing for premium service
+- Helps keep the relay running 24/7
+
+⚡ How to Subscribe:
+Simply zap this note with your payment amount:
+- Each %d sats = 30 days of access
+- Payment is processed automatically
+- No account setup required
+
+Thank you for considering supporting decentralized communication!
+
+Relay: nostr:%s`, 
+		trialEnd.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, dailyRate, monthlyPrice, string(relayNpubForContent))
+
+	// Build the event
+	ev := event.New()
+	ev.Kind = kind.TextNote.K // Kind 1 for text note
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Add "p" tag for the user
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(userPubkey)))
+
+	// Add expiration tag (5 days from creation)
+	noteExpiry := time.Now().AddDate(0, 0, 5)
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+
+	// Add "private" tag with authorized npubs (user and relay)
+	var authorizedNpubs []string
+	
+	// Add user npub
+	userNpub, err := bech32encoding.BinToNpub(userPubkey)
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(userNpub))
+	}
+	
+	// Add relay npub
+	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(relayNpub))
+	}
+
+	// Create the private tag with comma-separated npubs
+	if len(authorizedNpubs) > 0 {
+		privateTagValue := strings.Join(authorizedNpubs, ",")
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+	}
+
+	// Add a special tag to mark this as a trial reminder
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("reminder", "trial-support"))
+
+	// Sign and save the event
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return fmt.Errorf("failed to save trial reminder note: %w", err)
+	}
+
+	log.I.F("created trial reminder note for user %s (trial ends %s)", hex.Enc(userPubkey), trialEnd.Format("2006-01-02"))
+	return nil
+}
+
 // handleNotification processes incoming payment notifications
 func (pp *PaymentProcessor) handleNotification(
 	notificationType string, notification map[string]any,
@@ -89,22 +468,61 @@ func (pp *PaymentProcessor) handleNotification(
 		return fmt.Errorf("invalid amount")
 	}
 
-	description, _ := notification["description"].(string)
-	userNpub := pp.extractNpubFromDescription(description)
-	if userNpub == "" {
-		if metadata, ok := notification["metadata"].(map[string]any); ok {
+	// Prefer explicit payer/relay pubkeys if provided in metadata
+	var payerPubkey []byte
+	var userNpub string
+	if metadata, ok := notification["metadata"].(map[string]any); ok {
+		if s, ok := metadata["payer_pubkey"].(string); ok && s != "" {
+			if pk, err := decodeAnyPubkey(s); err == nil {
+				payerPubkey = pk
+			}
+		}
+		if payerPubkey == nil {
+			if s, ok := metadata["sender_pubkey"].(string); ok && s != "" { // alias
+				if pk, err := decodeAnyPubkey(s); err == nil {
+					payerPubkey = pk
+				}
+			}
+		}
+		// Optional: the intended subscriber npub (for backwards compat)
+		if userNpub == "" {
 			if npubField, ok := metadata["npub"].(string); ok {
 				userNpub = npubField
 			}
 		}
-	}
-	if userNpub == "" {
-		return fmt.Errorf("no npub in payment description")
+		// If relay identity pubkey is provided, verify it matches ours
+		if s, ok := metadata["relay_pubkey"].(string); ok && s != "" {
+			if rpk, err := decodeAnyPubkey(s); err == nil {
+				if skb, err := pp.db.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
+					var signer p256k.Signer
+					if err := signer.InitSec(skb); err == nil {
+						if !strings.EqualFold(hex.Enc(rpk), hex.Enc(signer.Pub())) {
+							log.W.F("relay_pubkey in payment metadata does not match this relay identity: got %s want %s", hex.Enc(rpk), hex.Enc(signer.Pub()))
+						}
+					}
+				}
+			}
+		}
 	}
 
-	pubkey, err := pp.npubToPubkey(userNpub)
-	if err != nil {
-		return fmt.Errorf("invalid npub: %w", err)
+	// Fallback: extract npub from description or metadata
+	description, _ := notification["description"].(string)
+	if userNpub == "" {
+		userNpub = pp.extractNpubFromDescription(description)
+	}
+
+	var pubkey []byte
+	var err error
+	if payerPubkey != nil {
+		pubkey = payerPubkey
+	} else {
+		if userNpub == "" {
+			return fmt.Errorf("no payer_pubkey or npub provided in payment notification")
+		}
+		pubkey, err = pp.npubToPubkey(userNpub)
+		if err != nil {
+			return fmt.Errorf("invalid npub: %w", err)
+		}
 	}
 
 	satsReceived := int64(amount / 1000)
@@ -131,28 +549,221 @@ func (pp *PaymentProcessor) handleNotification(
 		log.E.F("failed to record payment: %v", err)
 	}
 
-	log.I.F(
-		"payment processed: %s %d sats -> %d days", userNpub, satsReceived,
-		days,
-	)
+	// Log helpful identifiers
+	var payerHex = hex.Enc(pubkey)
+	if userNpub == "" {
+		log.I.F("payment processed: payer %s %d sats -> %d days", payerHex, satsReceived, days)
+	} else {
+		log.I.F("payment processed: %s (%s) %d sats -> %d days", userNpub, payerHex, satsReceived, days)
+	}
 
+	// Update ACL follows cache and relay follow list immediately
+	if pp.config != nil && pp.config.ACLMode == "follows" {
+		acl.Registry.AddFollow(pubkey)
+	}
+	// Trigger an immediate follow-list sync in background (best-effort)
+	go func() { _ = pp.syncFollowList() }()
+
+	// Create a note with payment confirmation and private tag
+	if err := pp.createPaymentNote(pubkey, satsReceived, days); err != nil {
+		log.E.F("failed to create payment note: %v", err)
+	}
+
+	return nil
+}
+
+// createPaymentNote creates a note recording the payment with private tag for authorization
+func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived int64, days int) error {
+	// Get relay identity secret to sign the note
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return fmt.Errorf("no relay identity configured")
+	}
+
+	// Initialize signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return fmt.Errorf("failed to initialize signer: %w", err)
+	}
+
+	// Get subscription info to determine expiry
+	sub, err := pp.db.GetSubscription(payerPubkey)
+	if err != nil {
+		return fmt.Errorf("failed to get subscription: %w", err)
+	}
+
+	var expiryTime time.Time
+	if sub != nil && !sub.PaidUntil.IsZero() {
+		expiryTime = sub.PaidUntil
+	} else {
+		expiryTime = time.Now().AddDate(0, 0, days)
+	}
+
+	// Get relay npub for content link
+	relayNpubForContent, err := bech32encoding.BinToNpub(sign.Pub())
+	if err != nil {
+		return fmt.Errorf("failed to encode relay npub: %w", err)
+	}
+
+	// Create the note content with nostr:npub link
+	content := fmt.Sprintf("Payment received: %d sats for %d days. Subscription expires: %s\n\nRelay: nostr:%s", 
+		satsReceived, days, expiryTime.Format("2006-01-02 15:04:05 UTC"), string(relayNpubForContent))
+
+	// Build the event
+	ev := event.New()
+	ev.Kind = kind.TextNote.K // Kind 1 for text note
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Add "p" tag for the payer
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(payerPubkey)))
+
+	// Add expiration tag (5 days from creation)
+	noteExpiry := time.Now().AddDate(0, 0, 5)
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+
+	// Add "private" tag with authorized npubs (payer and relay)
+	var authorizedNpubs []string
+	
+	// Add payer npub
+	payerNpub, err := bech32encoding.BinToNpub(payerPubkey)
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(payerNpub))
+	}
+	
+	// Add relay npub
+	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(relayNpub))
+	}
+
+	// Create the private tag with comma-separated npubs
+	if len(authorizedNpubs) > 0 {
+		privateTagValue := strings.Join(authorizedNpubs, ",")
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+	}
+
+	// Sign and save the event
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return fmt.Errorf("failed to save payment note: %w", err)
+	}
+
+	log.I.F("created payment note for %s with private authorization", hex.Enc(payerPubkey))
+	return nil
+}
+
+// CreateWelcomeNote creates a welcome note for first-time users with private tag for authorization
+func (pp *PaymentProcessor) CreateWelcomeNote(userPubkey []byte) error {
+	// Get relay identity secret to sign the note
+	skb, err := pp.db.GetRelayIdentitySecret()
+	if err != nil || len(skb) != 32 {
+		return fmt.Errorf("no relay identity configured")
+	}
+
+	// Initialize signer
+	sign := new(p256k.Signer)
+	if err := sign.InitSec(skb); err != nil {
+		return fmt.Errorf("failed to initialize signer: %w", err)
+	}
+
+	monthlyPrice := pp.config.MonthlyPriceSats
+	if monthlyPrice <= 0 {
+		monthlyPrice = 6000
+	}
+
+	// Get relay npub for content link
+	relayNpubForContent, err := bech32encoding.BinToNpub(sign.Pub())
+	if err != nil {
+		return fmt.Errorf("failed to encode relay npub: %w", err)
+	}
+
+	// Create the welcome note content with nostr:npub link
+	content := fmt.Sprintf(`Welcome to the relay! 🎉
+
+You have a FREE 30-day trial that started when you first logged in.
+
+💰 Subscription Details:
+- Monthly price: %d sats
+- Trial period: 30 days from first login
+
+💡 How to Subscribe:
+To extend your subscription after the trial ends, simply zap this note with the amount you want to pay. Each %d sats = 30 days of access.
+
+⚡ Payment Instructions:
+1. Use any Lightning wallet that supports zaps
+2. Zap this note with your payment
+3. Your subscription will be automatically extended
+
+Relay: nostr:%s
+
+Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForContent))
+
+	// Build the event
+	ev := event.New()
+	ev.Kind = kind.TextNote.K // Kind 1 for text note
+	ev.Pubkey = sign.Pub()
+	ev.CreatedAt = timestamp.Now().V
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Add "p" tag for the user
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(userPubkey)))
+
+	// Add expiration tag (5 days from creation)
+	noteExpiry := time.Now().AddDate(0, 0, 5)
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+
+	// Add "private" tag with authorized npubs (user and relay)
+	var authorizedNpubs []string
+	
+	// Add user npub
+	userNpub, err := bech32encoding.BinToNpub(userPubkey)
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(userNpub))
+	}
+	
+	// Add relay npub
+	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
+	if err == nil {
+		authorizedNpubs = append(authorizedNpubs, string(relayNpub))
+	}
+
+	// Create the private tag with comma-separated npubs
+	if len(authorizedNpubs) > 0 {
+		privateTagValue := strings.Join(authorizedNpubs, ",")
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+	}
+
+	// Add a special tag to mark this as a welcome note
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("welcome", "first-time-user"))
+
+	// Sign and save the event
+	ev.Sign(sign)
+	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+		return fmt.Errorf("failed to save welcome note: %w", err)
+	}
+
+	log.I.F("created welcome note for first-time user %s", hex.Enc(userPubkey))
 	return nil
 }
 
 // extractNpubFromDescription extracts an npub from the payment description
 func (pp *PaymentProcessor) extractNpubFromDescription(description string) string {
+	// check if the entire description is just an npub
+	description = strings.TrimSpace(description)
+	if strings.HasPrefix(description, "npub1") && len(description) == 63 {
+		return description
+	}
+
 	// Look for npub1... pattern in the description
 	parts := strings.Fields(description)
 	for _, part := range parts {
 		if strings.HasPrefix(part, "npub1") && len(part) == 63 {
 			return part
 		}
-	}
-
-	// Also check if the entire description is just an npub
-	description = strings.TrimSpace(description)
-	if strings.HasPrefix(description, "npub1") && len(description) == 63 {
-		return description
 	}
 
 	return ""
@@ -181,4 +792,25 @@ func (pp *PaymentProcessor) npubToPubkey(npubStr string) ([]byte, error) {
 	}
 
 	return pubkey, nil
+}
+
+// decodeAnyPubkey decodes a public key from either hex string or npub format
+func decodeAnyPubkey(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "npub1") {
+		prefix, value, err := bech32encoding.Decode([]byte(s))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode npub: %w", err)
+		}
+		if !strings.EqualFold(string(prefix), "npub") {
+			return nil, fmt.Errorf("invalid prefix: %s", string(prefix))
+		}
+		b, ok := value.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("decoded value is not []byte")
+		}
+		return b, nil
+	}
+	// assume hex-encoded public key
+	return hex.Dec(s)
 }
