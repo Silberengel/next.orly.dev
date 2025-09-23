@@ -20,4 +20,213 @@ ORLY is a nostr relay written from the ground up to be performant, low latency, 
 
 ORLY uses a fast embedded link:https://github.com/hypermodeinc/badger[badger] database with a database designed for high performance querying and event storage.
 
-On linux platforms, it uses https://github.com/bitcoin/secp256k1[libsecp256k1]-enabled signature and signature verification (see link:pkg/p256k/README.md[here]).
+On linux platforms, it uses https://github.com/bitcoin/secp256k1[libsecp256k1]-enabled signature and signature verification (see link:pkg/crypto/p256k/README.md[here]).
+
+== building
+
+ORLY is a standard Go application that can be built using the Go toolchain.
+
+=== prerequisites
+
+- Go 1.25.0 or later
+- Git
+- For web UI: link:https://bun.sh/[Bun] JavaScript runtime
+
+=== basic build
+
+To build the relay binary only:
+
+[source,bash]
+----
+git clone <repository-url>
+cd next.orly.dev
+go build -o orly
+----
+
+=== building with web UI
+
+To build with the embedded web interface:
+
+[source,bash]
+----
+# Build the React web application
+cd app/web
+bun install
+bun run build
+
+# Build the Go binary from project root
+cd ../../
+go build -o orly
+----
+
+You can automate this process with a build script:
+
+[source,bash]
+----
+#!/bin/bash
+# build.sh
+echo "Building React app..."
+cd app/web
+bun install
+bun run build
+
+echo "Building Go binary..."
+cd ../../
+go build -o orly
+
+echo "Build complete!"
+----
+
+Make it executable with `chmod +x build.sh` and run with `./build.sh`.
+
+== secp256k1 dependency
+
+ORLY uses the optimized `libsecp256k1` C library from Bitcoin Core for schnorr signatures, providing 4x faster signing and ECDH operations compared to pure Go implementations.
+
+=== installation
+
+For Ubuntu/Debian, you can use the provided installation script:
+
+[source,bash]
+----
+./scripts/ubuntu_install_libsecp256k1.sh
+----
+
+Or install manually:
+
+[source,bash]
+----
+# Install build dependencies
+sudo apt -y install build-essential autoconf libtool
+
+# Initialize and build secp256k1
+cd pkg/crypto/p256k/secp256k1
+git submodule init
+git submodule update
+./autogen.sh
+./configure --enable-module-schnorrsig --enable-module-ecdh --prefix=/usr
+make
+sudo make install
+----
+
+=== fallback mode
+
+If you need to build without the C library dependency, disable CGO:
+
+[source,bash]
+----
+export CGO_ENABLED=0
+go build -o orly
+----
+
+This uses the pure Go `btcec` fallback library, which is slower but doesn't require system dependencies.
+
+== stress testing
+
+The stress tester is a tool for performance testing relay implementations under various load conditions.
+
+=== usage
+
+[source,bash]
+----
+cd cmd/stresstest
+go run . [options]
+----
+
+Or use the compiled binary:
+
+[source,bash]
+----
+./cmd/stresstest/stresstest [options]
+----
+
+=== options
+
+* `--address` - Relay address (default: localhost)
+* `--port` - Relay port (default: 3334)  
+* `--workers` - Number of concurrent publisher workers (default: 8)
+* `--duration` - How long to run the stress test (default: 60s)
+* `--publish-timeout` - Timeout waiting for OK per publish (default: 15s)
+* `--query-workers` - Number of concurrent query workers (default: 4)
+* `--query-timeout` - Subscription timeout for queries (default: 3s)
+* `--query-min-interval` - Minimum interval between queries per worker (default: 50ms)
+* `--query-max-interval` - Maximum interval between queries per worker (default: 300ms)
+* `--skip-cache` - Skip uploading example events before running
+
+=== example
+
+[source,bash]
+----
+# Run stress test against local relay for 2 minutes with 16 workers
+go run cmd/stresstest/main.go --address localhost --port 3334 --workers 16 --duration 120s
+
+# Test a remote relay with higher query load
+go run cmd/stresstest/main.go --address relay.example.com --port 443 --query-workers 8 --duration 300s
+----
+
+The stress tester will show real-time statistics including events sent/received per second, query counts, and results.
+
+== benchmarks
+
+The benchmark suite provides comprehensive performance testing and comparison across multiple relay implementations.
+
+=== quick start
+
+1. **Setup external relays:**
++
+[source,bash]
+----
+cd cmd/benchmark
+./setup-external-relays.sh
+----
+
+2. **Run all benchmarks:**
++
+[source,bash]
+----
+docker compose up --build
+----
+
+3. **View results:**
++
+[source,bash]
+----
+# View aggregate report
+cat reports/run_YYYYMMDD_HHMMSS/aggregate_report.txt
+
+# List individual relay results
+ls reports/run_YYYYMMDD_HHMMSS/
+----
+
+=== benchmark types
+
+The suite includes three main benchmark patterns:
+
+==== peak throughput test
+Tests maximum event ingestion rate with concurrent workers pushing events as fast as possible. Measures events/second, latency distribution, and success rate.
+
+==== burst pattern test  
+Simulates real-world traffic with alternating high-activity bursts and quiet periods to test relay behavior under varying loads.
+
+==== mixed read/write test
+Concurrent read and write operations to test query performance while events are being ingested. Measures combined throughput and latency.
+
+=== tested relays
+
+The benchmark suite compares:
+
+* **next.orly.dev** (this repository) - BadgerDB-based relay
+* **Khatru** - SQLite and Badger variants  
+* **Relayer** - Basic example implementation
+* **Strfry** - C++ LMDB-based relay
+* **nostr-rs-relay** - Rust-based relay with SQLite
+
+=== metrics reported
+
+* **Throughput**: Events processed per second
+* **Latency**: Average, P95, and P99 response times  
+* **Success Rate**: Percentage of successful operations
+* **Memory Usage**: Peak memory consumption during tests
+* **Error Analysis**: Detailed error reporting and categorization
+
+Results are timestamped and stored in the `reports/` directory for tracking performance improvements over time.
