@@ -36,9 +36,6 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	if _, err = env.Unmarshal(msg); chk.E(err) {
 		return normalize.Error.Errorf(err.Error())
 	}
-	// if len(rem) > 0 {
-	// 	log.I.F("REQ extra bytes: '%s'", rem)
-	// }
 	// send a challenge to the client to auth if an ACL is active
 	if acl.Registry.Active.Load() != "none" {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
@@ -59,58 +56,15 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		return
 	default:
 		// user has read access or better, continue
-		// log.D.F("user has %s access", accessLevel)
 	}
 	var events event.S
 	for _, f := range *env.Filters {
-		// idsLen := 0
-		// kindsLen := 0
-		// authorsLen := 0
-		// tagsLen := 0
-		// if f != nil {
-		// 	if f.Ids != nil {
-		// 		idsLen = f.Ids.Len()
-		// 	}
-		// 	if f.Kinds != nil {
-		// 		kindsLen = f.Kinds.Len()
-		// 	}
-		// 	if f.Authors != nil {
-		// 		authorsLen = f.Authors.Len()
-		// 	}
-		// 	if f.Tags != nil {
-		// 		tagsLen = f.Tags.Len()
-		// 	}
-		// }
-		// log.T.F(
-		// 	"REQ %s: filter summary ids=%d kinds=%d authors=%d tags=%d",
-		// 	env.Subscription, idsLen, kindsLen, authorsLen, tagsLen,
-		// )
 		if f != nil && f.Authors != nil && f.Authors.Len() > 0 {
 			var authors []string
 			for _, a := range f.Authors.T {
 				authors = append(authors, hex.Enc(a))
 			}
-			// log.T.F("REQ %s: authors=%v", env.Subscription, authors)
 		}
-		// if f != nil && f.Kinds != nil && f.Kinds.Len() > 0 {
-		// 	log.T.F("REQ %s: kinds=%v", env.Subscription, f.Kinds.ToUint16())
-		// }
-		// if f != nil && f.Ids != nil && f.Ids.Len() > 0 {
-		// 	var ids []string
-		// 	for _, id := range f.Ids.T {
-		// 		ids = append(ids, hex.Enc(id))
-		// 	}
-		// 	// var lim any
-		// 	// if pointers.Present(f.Limit) {
-		// 	// 	lim = *f.Limit
-		// 	// } else {
-		// 	// 	lim = nil
-		// 	// }
-		// 	// log.T.F(
-		// 	// 	"REQ %s: ids filter count=%d ids=%v limit=%v", env.Subscription,
-		// 	// 	f.Ids.Len(), ids, lim,
-		// 	// )
-		// }
 		if f != nil && pointers.Present(f.Limit) {
 			if *f.Limit == 0 {
 				continue
@@ -121,15 +75,10 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			context.Background(), 30*time.Second,
 		)
 		defer cancel()
-		// log.T.F(
-		// 	"HandleReq: About to QueryEvents for %s, main context done: %v",
-		// 	l.remote, l.ctx.Err() != nil,
-		// )
 		if events, err = l.QueryEvents(queryCtx, f); chk.E(err) {
 			if errors.Is(err, badger.ErrDBClosed) {
 				return
 			}
-			// log.T.F("HandleReq: QueryEvents error for %s: %v", l.remote, err)
 			err = nil
 		}
 		defer func() {
@@ -137,10 +86,6 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				ev.Free()
 			}
 		}()
-		// log.T.F(
-		// 	"HandleReq: QueryEvents completed for %s, found %d events",
-		// 	l.remote, len(events),
-		// )
 	}
 	var tmp event.S
 privCheck:
@@ -152,17 +97,19 @@ privCheck:
 			if pk == nil {
 				continue // no auth, can't access private events
 			}
-			
+
 			// Convert authenticated pubkey to npub for comparison
 			authedNpub, err := bech32encoding.BinToNpub(pk)
 			if err != nil {
 				continue // couldn't convert pubkey, skip
 			}
-			
+
 			// Check if authenticated npub is in any private tag
 			authorized := false
 			for _, privateTag := range privateTags {
-				authorizedNpubs := strings.Split(string(privateTag.Value()), ",")
+				authorizedNpubs := strings.Split(
+					string(privateTag.Value()), ",",
+				)
 				for _, npub := range authorizedNpubs {
 					if strings.TrimSpace(npub) == string(authedNpub) {
 						authorized = true
@@ -173,15 +120,15 @@ privCheck:
 					break
 				}
 			}
-			
+
 			if !authorized {
 				continue // not authorized to see this private event
 			}
-			
+
 			tmp = append(tmp, ev)
 			continue
 		}
-		
+
 		if kind.IsPrivileged(ev.Kind) &&
 			accessLevel != "admin" { // admins can see all events
 			// log.T.C(

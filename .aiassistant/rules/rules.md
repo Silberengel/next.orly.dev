@@ -95,3 +95,5 @@ and use context7 for information about the nostr protocol, and use additional
 log statements to help locate the cause of bugs
 
 always use Go v1.25.1 for everything involving Go
+
+always use the nips repository that is available at /nips in the root of the repository for documentation about nostr protocol
