@@ -153,7 +153,7 @@ whitelist:
 			continue
 		}
 		// log.T.F("received message from %s: %s", remote, string(msg))
-		go listener.HandleMessage(msg, remote)
+		listener.HandleMessage(msg, remote)
 	}
 }
 

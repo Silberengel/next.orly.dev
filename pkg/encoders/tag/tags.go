@@ -147,6 +147,9 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 
 // GetFirst returns the first tag.T that has the same Key as t.
 func (s *S) GetFirst(t []byte) (first *T) {
+	if s == nil || len(*s) < 1 {
+		return
+	}
 	for _, tt := range *s {
 		if tt.Len() == 0 {
 			continue
@@ -159,7 +162,13 @@ func (s *S) GetFirst(t []byte) (first *T) {
 }
 
 func (s *S) GetAll(t []byte) (all []*T) {
+	if s == nil || len(*s) < 1 {
+		return
+	}
 	for _, tt := range *s {
+		if len(tt.T) < 1 {
+			continue
+		}
 		if utils.FastEqual(tt.T[0], t) {
 			all = append(all, tt)
 		}

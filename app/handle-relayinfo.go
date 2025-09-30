@@ -35,7 +35,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	supportedNIPs := relayinfo.GetList(
 		relayinfo.BasicProtocol,
 		relayinfo.Authentication,
-		// relayinfo.EncryptedDirectMessage,
+		relayinfo.EncryptedDirectMessage,
 		relayinfo.EventDeletion,
 		relayinfo.RelayInformationDocument,
 		relayinfo.GenericTagQueries,
@@ -43,7 +43,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		relayinfo.EventTreatment,
 		// relayinfo.CommandResults,
 		relayinfo.ParameterizedReplaceableEvents,
-		// relayinfo.ExpirationTimestamp,
+		relayinfo.ExpirationTimestamp,
 		relayinfo.ProtectedEvents,
 		relayinfo.RelayListMetadata,
 	)
@@ -51,7 +51,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		supportedNIPs = relayinfo.GetList(
 			relayinfo.BasicProtocol,
 			relayinfo.Authentication,
-			// relayinfo.EncryptedDirectMessage,
+			relayinfo.EncryptedDirectMessage,
 			relayinfo.EventDeletion,
 			relayinfo.RelayInformationDocument,
 			relayinfo.GenericTagQueries,
@@ -69,7 +69,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	// Construct description with dashboard URL
 	dashboardURL := s.DashboardURL(r)
 	description := version.Description + " dashboard: " + dashboardURL
-	
+
 	// Get relay identity pubkey as hex
 	var relayPubkey string
 	if skb, err := s.D.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
@@ -78,7 +78,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			relayPubkey = hex.Enc(sign.Pub())
 		}
 	}
-	
+
 	info = &relayinfo.T{
 		Name:        s.Config.AppName,
 		Description: description,
