@@ -19,7 +19,6 @@ const (
 	DefaultWriteWait      = 10 * time.Second
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
-	DefaultReadTimeout    = 7 * time.Second // Read timeout to detect stalled connections
 	DefaultWriteTimeout   = 3 * time.Second
 	DefaultMaxMessageSize = 1 * units.Mb
 
@@ -99,23 +98,13 @@ whitelist:
 		var msg []byte
 		// log.T.F("waiting for message from %s", remote)
 
-		// Create a read context with timeout to prevent indefinite blocking
-		readCtx, readCancel := context.WithTimeout(ctx, DefaultReadTimeout)
-		typ, msg, err = conn.Read(readCtx)
-		readCancel()
+		// Block waiting for message; rely on pings and context cancellation to detect dead peers
+		typ, msg, err = conn.Read(ctx)
 
 		if err != nil {
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
-				return
-			}
-			// Handle timeout errors - occurs when client becomes unresponsive
-			if strings.Contains(err.Error(), "context deadline exceeded") {
-				log.T.F(
-					"connection from %s timed out after %v", remote,
-					DefaultReadTimeout,
-				)
 				return
 			}
 			// Handle EOF errors gracefully - these occur when client closes connection

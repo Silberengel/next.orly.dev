@@ -129,15 +129,16 @@ privCheck:
 			continue
 		}
 
-		if kind.IsPrivileged(ev.Kind) &&
-			accessLevel != "admin" { // admins can see all events
-			// log.T.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"checking privileged event %0x", ev.ID,
-			// 		)
-			// 	},
-			// )
+		if l.Config.ACLMode != "none" &&
+			(kind.IsPrivileged(ev.Kind) && accessLevel != "admin") &&
+			l.authedPubkey.Load() != nil { // admins can see all events
+			log.T.C(
+				func() string {
+					return fmt.Sprintf(
+						"checking privileged event %0x", ev.ID,
+					)
+				},
+			)
 			pk := l.authedPubkey.Load()
 			if pk == nil {
 				continue
@@ -161,26 +162,26 @@ privCheck:
 					continue
 				}
 				if utils.FastEqual(pt, pk) {
-					// log.T.C(
-					// 	func() string {
-					// 		return fmt.Sprintf(
-					// 			"privileged event %s is for logged in pubkey %0x",
-					// 			ev.ID, pk,
-					// 		)
-					// 	},
-					// )
+					log.T.C(
+						func() string {
+							return fmt.Sprintf(
+								"privileged event %s is for logged in pubkey %0x",
+								ev.ID, pk,
+							)
+						},
+					)
 					tmp = append(tmp, ev)
 					continue privCheck
 				}
 			}
-			// log.T.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"privileged event %s does not contain the logged in pubkey %0x",
-			// 			ev.ID, pk,
-			// 		)
-			// 	},
-			// )
+			log.T.C(
+				func() string {
+					return fmt.Sprintf(
+						"privileged event %s does not contain the logged in pubkey %0x",
+						ev.ID, pk,
+					)
+				},
+			)
 		} else {
 			tmp = append(tmp, ev)
 		}
@@ -188,19 +189,19 @@ privCheck:
 	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
-		// log.D.C(
-		// 	func() string {
-		// 		return fmt.Sprintf(
-		// 			"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
-		// 			hex.Enc(ev.ID), ev.Kind,
-		// 		)
-		// 	},
-		// )
-		// log.T.C(
-		// 	func() string {
-		// 		return fmt.Sprintf("event:\n%s\n", ev.Serialize())
-		// 	},
-		// )
+		log.D.C(
+			func() string {
+				return fmt.Sprintf(
+					"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
+					hex.Enc(ev.ID), ev.Kind,
+				)
+			},
+		)
+		log.T.C(
+			func() string {
+				return fmt.Sprintf("event:\n%s\n", ev.Serialize())
+			},
+		)
 		var res *eventenvelope.Result
 		if res, err = eventenvelope.NewResultWith(
 			env.Subscription, ev,
@@ -215,7 +216,7 @@ privCheck:
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
-	// log.T.F("sending EOSE to %s", l.remote)
+	log.T.F("sending EOSE to %s", l.remote)
 	if err = eoseenvelope.NewFrom(env.Subscription).
 		Write(l); chk.E(err) {
 		return
@@ -223,10 +224,10 @@ privCheck:
 	// if the query was for just Ids, we know there can't be any more results,
 	// so cancel the subscription.
 	cancel := true
-	// log.T.F(
-	// 	"REQ %s: computing cancel/subscription; events_sent=%d",
-	// 	env.Subscription, len(events),
-	// )
+	log.T.F(
+		"REQ %s: computing cancel/subscription; events_sent=%d",
+		env.Subscription, len(events),
+	)
 	var subbedFilters filter.S
 	for _, f := range *env.Filters {
 		if f.Ids.Len() < 1 {
@@ -241,10 +242,10 @@ privCheck:
 				}
 				notFounds = append(notFounds, id)
 			}
-			// log.T.F(
-			// 	"REQ %s: ids outstanding=%d of %d", env.Subscription,
-			// 	len(notFounds), f.Ids.Len(),
-			// )
+			log.T.F(
+				"REQ %s: ids outstanding=%d of %d", env.Subscription,
+				len(notFounds), f.Ids.Len(),
+			)
 			// if all were found, don't add to subbedFilters
 			if len(notFounds) == 0 {
 				continue
@@ -281,6 +282,6 @@ privCheck:
 			return
 		}
 	}
-	// log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
+	log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
 	return
 }

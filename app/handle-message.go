@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/closeenvelope"
@@ -36,13 +37,13 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 		}
 	}
 	if err != nil {
-		// log.D.C(
-		// 	func() string {
-		// 		return fmt.Sprintf(
-		// 			"notice->%s %s", remote, err,
-		// 		)
-		// 	},
-		// )
+		log.D.C(
+			func() string {
+				return fmt.Sprintf(
+					"notice->%s %s", remote, err,
+				)
+			},
+		)
 		if err = noticeenvelope.NewFrom(err.Error()).Write(l); err != nil {
 			return
 		}
