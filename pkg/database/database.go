@@ -58,6 +58,12 @@ func New(
 	// Set BlockCacheSize to a moderate value and keep BlockSize small.
 	opts.BlockCacheSize = int64(256 * units.Mb) // 256 MB cache
 	opts.BlockSize = 4 * units.Kb               // 4 KB block size
+	// Prevent huge allocations during table building and memtable flush.
+	// Badger's TableBuilder buffer is sized by BaseTableSize; ensure it's small.
+	opts.BaseTableSize = 64 * units.Mb           // 64 MB per table (default ~2MB, increased for fewer files but safe)
+	opts.MemTableSize = 64 * units.Mb            // 64 MB memtable to match table size
+	// Keep value log files to a moderate size as well
+	opts.ValueLogFileSize = 256 * units.Mb       // 256 MB value log files
 	opts.CompactL0OnClose = true
 	opts.LmaxCompaction = true
 	opts.Compression = options.None
