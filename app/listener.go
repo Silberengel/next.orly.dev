@@ -19,6 +19,7 @@ type Listener struct {
 	req          *http.Request
 	challenge    atomic.Bytes
 	authedPubkey atomic.Bytes
+	startTime    time.Time
 	// Diagnostics: per-connection counters
 	msgCount     int
 	reqCount     int

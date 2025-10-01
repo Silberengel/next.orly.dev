@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/utils"
 )
 
@@ -83,6 +84,10 @@ func (s *S) MarshalJSON() (b []byte, err error) {
 }
 
 func (s *S) Marshal(dst []byte) (b []byte) {
+	if s == nil {
+		log.I.F("tags cannot be used without initialization")
+		return
+	}
 	b = dst
 	b = append(b, '[')
 	for i, ss := range *s {
