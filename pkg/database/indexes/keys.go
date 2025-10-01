@@ -69,6 +69,7 @@ const (
 	TagPubkeyPrefix     = I("tpc") // tag, pubkey, created at
 	TagKindPubkeyPrefix = I("tkp") // tag, kind, pubkey, created at
 
+	WordPrefix      = I("wrd") // word hash, serial
 	ExpirationPrefix = I("exp") // timestamp of expiration
 	VersionPrefix    = I("ver") // database version number, for triggering reindexes when new keys are added (policy is add-only).
 )
@@ -106,6 +107,8 @@ func Prefix(prf int) (i I) {
 		return ExpirationPrefix
 	case Version:
 		return VersionPrefix
+	case Word:
+		return WordPrefix
 	}
 	return
 }
@@ -147,6 +150,8 @@ func Identify(r io.Reader) (i int, err error) {
 
 	case ExpirationPrefix:
 		i = Expiration
+	case WordPrefix:
+		i = Word
 	}
 	return
 }
@@ -231,6 +236,21 @@ func FullIdPubkeyDec(
 	ser *types.Uint40, fid *types.Id, p *types.PubHash, ca *types.Uint64,
 ) (enc *T) {
 	return New(NewPrefix(), ser, fid, p, ca)
+}
+
+// Word index for tokenized search terms
+//
+//	3 prefix|8 word-hash|5 serial
+var Word = next()
+
+func WordVars() (w *types.Word, ser *types.Uint40) {
+	return new(types.Word), new(types.Uint40)
+}
+func WordEnc(w *types.Word, ser *types.Uint40) (enc *T) {
+	return New(NewPrefix(Word), w, ser)
+}
+func WordDec(w *types.Word, ser *types.Uint40) (enc *T) {
+	return New(NewPrefix(), w, ser)
 }
 
 // CreatedAt is an index that allows search for the timestamp on the event.

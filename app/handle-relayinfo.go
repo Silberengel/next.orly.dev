@@ -46,6 +46,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		relayinfo.ExpirationTimestamp,
 		relayinfo.ProtectedEvents,
 		relayinfo.RelayListMetadata,
+		relayinfo.SearchCapability,
 	)
 	if s.Config.ACLMode != "none" {
 		supportedNIPs = relayinfo.GetList(
@@ -62,6 +63,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			relayinfo.ExpirationTimestamp,
 			relayinfo.ProtectedEvents,
 			relayinfo.RelayListMetadata,
+			relayinfo.SearchCapability,
 		)
 	}
 	sort.Sort(supportedNIPs)

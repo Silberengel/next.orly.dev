@@ -96,4 +96,4 @@ log statements to help locate the cause of bugs
 
 always use Go v1.25.1 for everything involving Go
 
-always use the nips repository that is available at /nips in the root of the repository for documentation about nostr protocol
+always use the nips repository also for information, found at ../github.com/nostr-protocol/nips attached to the project

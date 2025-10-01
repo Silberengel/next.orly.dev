@@ -153,5 +153,35 @@ func GetIndexesForEvent(ev *event.E, serial uint64) (
 	if err = appendIndexBytes(&idxs, kindPubkeyIndex); chk.E(err) {
 		return
 	}
+
+	// Word token indexes (from content)
+	if len(ev.Content) > 0 {
+		for _, h := range TokenHashes(ev.Content) {
+			w := new(Word)
+			w.FromWord(h) // 8-byte truncated hash
+			wIdx := indexes.WordEnc(w, ser)
+			if err = appendIndexBytes(&idxs, wIdx); chk.E(err) {
+				return
+			}
+		}
+	}
+	// Extend full-text search to include all fields of all tags
+	if ev.Tags != nil && ev.Tags.Len() > 0 {
+		for _, t := range *ev.Tags {
+			for _, field := range t.T { // include key and all values
+				if len(field) == 0 {
+					continue
+				}
+				for _, h := range TokenHashes(field) {
+					w := new(Word)
+					w.FromWord(h)
+					wIdx := indexes.WordEnc(w, ser)
+					if err = appendIndexBytes(&idxs, wIdx); chk.E(err) {
+						return
+					}
+				}
+			}
+		}
+	}
 	return
 }

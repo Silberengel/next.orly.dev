@@ -113,6 +113,27 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 		return
 	}
 
+	// Word search: if Search field is present, generate word index ranges
+	if len(f.Search) > 0 {
+		for _, h := range TokenHashes(f.Search) {
+			w := new(types2.Word)
+			w.FromWord(h)
+			buf := new(bytes.Buffer)
+			idx := indexes.WordEnc(w, nil)
+			if err = idx.MarshalWrite(buf); chk.E(err) {
+				return
+			}
+			b := buf.Bytes()
+			end := make([]byte, len(b))
+			copy(end, b)
+			for i := 0; i < 5; i++ { // match any serial
+				end = append(end, 0xff)
+			}
+			idxs = append(idxs, Range{b, end})
+		}
+		return
+	}
+
 	caStart := new(types2.Uint64)
 	caEnd := new(types2.Uint64)
 
