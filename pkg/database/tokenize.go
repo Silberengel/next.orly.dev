@@ -71,7 +71,12 @@ func TokenHashes(content []byte) [][]byte {
 			}
 			break
 		}
-		_ = start
+		// If we didn't consume any rune for a word, advance by one rune to avoid stalling
+		if i == start {
+			_, size2 := utf8DecodeRuneInString(s[i:])
+			i += size2
+			continue
+		}
 		if len(runes) >= 2 {
 			w := string(runes)
 			// Exclude 64-char hex strings

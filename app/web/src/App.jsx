@@ -25,6 +25,14 @@ function App() {
   const [allEventsHasMore, setAllEventsHasMore] = useState(true);
   const [expandedAllEventId, setExpandedAllEventId] = useState(null);
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOffset, setSearchOffset] = useState(0);
+  const [searchHasMore, setSearchHasMore] = useState(true);
+  const [expandedSearchEventId, setExpandedSearchEventId] = useState(null);
+
   // Profile cache for All Events Log
   const [profileCache, setProfileCache] = useState({});
 
@@ -68,6 +76,7 @@ function App() {
     exportAll: false,
     exportSpecific: false,
     importEvents: false,
+    search: true,
     eventsLog: false,
     allEventsLog: false
   });
@@ -992,6 +1001,177 @@ function App() {
     }
   }
 
+  // Search functions
+  function processSearchResponse(receivedEvents, reset) {
+    try {
+      const filtered = filterDeletedEvents(receivedEvents);
+      const sorted = filtered.sort((a, b) => b.created_at - a.created_at);
+      const currentOffset = reset ? 0 : searchOffset;
+      const limit = 50;
+      const page = sorted.slice(currentOffset, currentOffset + limit);
+      if (reset) {
+        setSearchResults(page);
+        setSearchOffset(page.length);
+      } else {
+        setSearchResults(prev => [...prev, ...page]);
+        setSearchOffset(prev => prev + page.length);
+      }
+      setSearchHasMore(currentOffset + page.length < sorted.length);
+      // fetch profiles for authors in search results
+      fetchProfilesForEvents(page);
+    } catch (e) {
+      console.error('Error processing search results:', e);
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  async function fetchSearchResultsFromRelay(query, reset = true, limit = 50, timeoutMs = 10000) {
+    if (!query || !query.trim()) {
+      // clear results on empty query when resetting
+      if (reset) {
+        setSearchResults([]);
+        setSearchOffset(0);
+        setSearchHasMore(true);
+      }
+      return;
+    }
+    if (searchLoading) return;
+    if (!reset && !searchHasMore) return;
+
+    setSearchLoading(true);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      let receivedEvents = [];
+      let ws;
+      let reqSent = false;
+
+      try {
+        ws = new WebSocket(relayURL());
+      } catch (e) {
+        console.error('Failed to create WebSocket:', e);
+        setSearchLoading(false);
+        resolve();
+        return;
+      }
+
+      const subId = 'search-' + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => {
+        if (ws && ws.readyState === 1) {
+          try { ws.close(); } catch (_) {}
+        }
+        if (!resolved) {
+          resolved = true;
+          processSearchResponse(receivedEvents, reset);
+          resolve();
+        }
+      }, timeoutMs);
+
+      const sendRequest = () => {
+        if (!reqSent && ws && ws.readyState === 1) {
+          try {
+            const req = ['REQ', subId, { search: query }];
+            ws.send(JSON.stringify(req));
+            reqSent = true;
+          } catch (e) {
+            console.error('Failed to send WebSocket request:', e);
+          }
+        }
+      };
+
+      ws.onopen = () => sendRequest();
+
+      ws.onmessage = async (msg) => {
+        try {
+          const data = JSON.parse(msg.data);
+          const type = data[0];
+          if (type === 'AUTH') {
+            const challenge = data[1];
+            if (!window.nostr) {
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processSearchResponse(receivedEvents, reset);
+                resolve();
+              }
+              return;
+            }
+            try {
+              const authEvent = { kind: 22242, created_at: Math.floor(Date.now()/1000), tags: [['relay', relayURL()], ['challenge', challenge]], content: '' };
+              const signed = await window.nostr.signEvent(authEvent);
+              ws.send(JSON.stringify(['AUTH', signed]));
+            } catch (authErr) {
+              console.error('Search auth failed:', authErr);
+              clearTimeout(timer);
+              if (!resolved) {
+                resolved = true;
+                processSearchResponse(receivedEvents, reset);
+                resolve();
+              }
+            }
+          } else if (type === 'EVENT' && data[1] === subId) {
+            const ev = data[2];
+            if (ev) {
+              receivedEvents.push({
+                id: ev.id,
+                kind: ev.kind,
+                created_at: ev.created_at,
+                content: ev.content || '',
+                author: ev.pubkey || '',
+                raw_json: JSON.stringify(ev)
+              });
+            }
+          } else if (type === 'EOSE' && data[1] === subId) {
+            try { ws.send(JSON.stringify(['CLOSE', subId])); } catch (_) {}
+            try { ws.close(); } catch (_) {}
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              processSearchResponse(receivedEvents, reset);
+              resolve();
+            }
+          } else if (type === 'CLOSED' && data[1] === subId) {
+            clearTimeout(timer);
+            if (!resolved) {
+              resolved = true;
+              processSearchResponse(receivedEvents, reset);
+              resolve();
+            }
+          } else if (type === 'OK' && data[1] && data[1].length === 64 && !reqSent) {
+            sendRequest();
+          }
+        } catch (e) {
+          console.error('Search WS message parse error:', e);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('Search WS error:', err);
+        try { ws.close(); } catch (_) {}
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          processSearchResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+
+      ws.onclose = () => {
+        clearTimeout(timer);
+        if (!resolved) {
+          resolved = true;
+          processSearchResponse(receivedEvents, reset);
+          resolve();
+        }
+      };
+    });
+  }
+
+  function toggleSearchEventExpansion(eventId) {
+    setExpandedSearchEventId(current => current === eventId ? null : eventId);
+  }
+
   // Events log functions
   async function fetchEvents(reset = false) {
     await fetchEventsFromRelay(reset);
@@ -1617,6 +1797,140 @@ function App() {
                 </div>
               </>
             )}
+            {/* Search */}
+            <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
+              <div
+                className={`text-lg font-bold flex items-center justify-between cursor-pointer p-2 ${getTextClass()} ${getThemeClasses('hover:bg-gray-300', 'hover:bg-gray-700')} rounded`}
+                onClick={() => toggleSection('search')}
+              >
+                <span>Search</span>
+                <span className="text-xl">
+                  {expandedSections.search ? '▼' : '▶'}
+                </span>
+              </div>
+              {expandedSections.search && (
+                <div className="p-2 bg-gray-900 rounded-lg mt-2">
+                  <div className="flex gap-2 items-center mb-3">
+                    <input
+                      type="text"
+                      placeholder="Search notes..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { fetchSearchResultsFromRelay(searchQuery, true); } }}
+                      className={`${getThemeClasses('bg-white text-black border-gray-300', 'bg-gray-800 text-white border-gray-600')} border rounded px-3 py-2 flex-grow`}
+                    />
+                    <button
+                      className={`${getThemeClasses('bg-blue-600 hover:bg-blue-700', 'bg-blue-500 hover:bg-blue-600')} text-white px-4 py-2 rounded`}
+                      onClick={() => fetchSearchResultsFromRelay(searchQuery, true)}
+                      disabled={searchLoading}
+                      title="Search"
+                    >
+                      {searchLoading ? 'Searching…' : 'Search'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {searchResults.length === 0 && !searchLoading && (
+                      <div className={`text-center py-4 ${getTextClass()}`}>No results</div>
+                    )}
+
+                    {searchResults.map((event) => (
+                      <div key={event.id} className={`border rounded p-3 ${getThemeClasses('border-gray-300 bg-white', 'border-gray-600 bg-gray-800')}`}>
+                        <div className="cursor-pointer" onClick={() => toggleSearchEventExpansion(event.id)}>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-6 w-full">
+                              <div className="flex items-center gap-3 min-w-0">
+                                {event.author && profileCache[event.author] && (
+                                  <>
+                                    {profileCache[event.author].picture && (
+                                      <img
+                                        src={profileCache[event.author].picture}
+                                        alt={profileCache[event.author].display_name || profileCache[event.author].name || 'User avatar'}
+                                        className={`w-8 h-8 rounded-full object-cover border h-16 ${getThemeClasses('border-gray-300', 'border-gray-600')}`}
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                      />
+                                    )}
+                                    <div className="flex flex-col flex-grow w-full">
+                                      <span className={`text-sm font-medium ${getTextClass()}`}>
+                                        {profileCache[event.author].display_name || profileCache[event.author].name || `${event.author.slice(0, 8)}...`}
+                                      </span>
+                                      {profileCache[event.author].display_name && profileCache[event.author].name && (
+                                        <span className={`text-xs ${getTextClass()} opacity-70`}>
+                                          {profileCache[event.author].name}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </>
+                                )}
+                                {event.author && !profileCache[event.author] && (
+                                  <span className={`text-sm font-medium ${getTextClass()}`}>
+                                    {`${event.author.slice(0, 8)}...`}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span className={`font-mono text-sm px-2 py-1 rounded ${getThemeClasses('bg-blue-100 text-blue-800', 'bg-blue-900 text-blue-200')}`}>
+                                  Kind {event.kind}
+                                </span>
+                                <span className={`text-sm ${getTextClass()}`}>
+                                  {formatTimestamp(event.created_at)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="justify-end ml-auto rounded-full h-16 w-16 flex items-center justify-center">
+                              <div className={`text-white text-xs px-4 py-4 rounded flex flex-grow items-center ${getThemeClasses('text-gray-700', 'text-gray-300')}`}>
+                                {expandedSearchEventId === event.id ? '▼' : ' '}
+                              </div>
+                              <button
+                                className="bg-red-600 hover:bg-red-700 text-white text-xs px-1 py-1 rounded flex items-center"
+                                onClick={(e) => { e.stopPropagation(); deleteEvent(event.id, event.raw_json, event.author); }}
+                                title="Delete this event"
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </div>
+
+                          {event.content && (
+                            <div className={`mt-2 text-sm ${getTextClass()}`}>
+                              {truncateContent(event.content)}
+                            </div>
+                          )}
+                        </div>
+
+                        {expandedSearchEventId === event.id && (
+                          <div className={`mt-3 p-3 rounded ${getThemeClasses('bg-gray-100', 'bg-gray-900')}`} onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className={`text-sm font-semibold ${getTextClass()}`}>Raw JSON</span>
+                              <button
+                                className={`${getThemeClasses('bg-gray-200 hover:bg-gray-300 text-black', 'bg-gray-800 hover:bg-gray-700 text-white')} text-xs px-2 py-1 rounded`}
+                                onClick={() => copyEventJSON(event.raw_json)}
+                              >
+                                Copy JSON
+                              </button>
+                            </div>
+                            <pre className={`text-xs overflow-auto max-h-64 ${getThemeClasses('bg-white text-black', 'bg-gray-950 text-gray-200')} p-2 rounded`}>{event.raw_json}</pre>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+
+                    {!searchLoading && searchHasMore && searchResults.length > 0 && (
+                      <div className="text-center py-4">
+                        <button
+                          className={`${getThemeClasses('bg-blue-600 hover:bg-blue-700', 'bg-blue-500 hover:bg-blue-600')} text-white px-4 py-2 rounded`}
+                          onClick={() => fetchSearchResultsFromRelay(searchQuery, false)}
+                        >
+                          Load More
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* My Events Log */}
             <div className={`m-2 p-2 ${getPanelBgClass()} rounded-lg w-full`}>
               <div
