@@ -325,10 +325,10 @@ func (b *Benchmark) RunSuite() {
 		fmt.Printf("RunConcurrentQueryStoreTest..\n")
 		b.RunConcurrentQueryStoreTest()
 		if round < 2 {
-			fmt.Println("\nPausing 10s before next round...")
+			fmt.Printf("\nPausing 10s before next round...\n")
 			time.Sleep(10 * time.Second)
 		}
-		fmt.Println("\n=== Test round completed ===\n")
+		fmt.Printf("\n=== Test round completed ===\n\n")
 	}
 }
 

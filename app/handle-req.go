@@ -16,7 +16,6 @@ import (
 	"next.orly.dev/pkg/encoders/envelopes/closedenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/eoseenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
-	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/reqenvelope"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
@@ -30,12 +29,13 @@ import (
 )
 
 func (l *Listener) HandleReq(msg []byte) (err error) {
-	// log.T.F("HandleReq: START processing from %s\n%s\n", l.remote, msg)
+	log.D.F("HandleReq: START processing from %s", l.remote)
 	// var rem []byte
 	env := reqenvelope.New()
 	if _, err = env.Unmarshal(msg); chk.E(err) {
 		return normalize.Error.Errorf(err.Error())
 	}
+	log.D.C(func() string { return fmt.Sprintf("REQ sub=%s filters=%d", env.Subscription, len(*env.Filters)) })
 	// send a challenge to the client to auth if an ACL is active
 	if acl.Registry.Active.Load() != "none" {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
@@ -47,8 +47,9 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load(), l.remote)
 	switch accessLevel {
 	case "none":
-		if err = okenvelope.NewFrom(
-			env.Subscription, false,
+		// For REQ denial, send a CLOSED with auth-required reason (NIP-01)
+		if err = closedenvelope.NewFrom(
+			env.Subscription,
 			reason.AuthRequired.F("user not authed or has no read access"),
 		).Write(l); chk.E(err) {
 			return
@@ -58,35 +59,74 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		// user has read access or better, continue
 	}
 	var events event.S
+	// Create a single context for all filter queries, tied to the connection context, to prevent leaks and support timely cancellation
+	queryCtx, queryCancel := context.WithTimeout(
+		l.ctx, 30*time.Second,
+	)
+	defer queryCancel()
+	
+	// Collect all events from all filters
+	var allEvents event.S
 	for _, f := range *env.Filters {
-		if f != nil && f.Authors != nil && f.Authors.Len() > 0 {
-			var authors []string
-			for _, a := range f.Authors.T {
-				authors = append(authors, hex.Enc(a))
+		if f != nil {
+			// Summarize filter details for diagnostics (avoid internal fields)
+			var kindsLen int
+			if f.Kinds != nil {
+				kindsLen = f.Kinds.Len()
 			}
+			var authorsLen int
+			if f.Authors != nil {
+				authorsLen = f.Authors.Len()
+			}
+			var idsLen int
+			if f.Ids != nil {
+				idsLen = f.Ids.Len()
+			}
+			var dtag string
+			if f.Tags != nil {
+				if d := f.Tags.GetFirst([]byte("d")); d != nil {
+					dtag = string(d.Value())
+				}
+			}
+			var lim any
+			if f.Limit != nil {
+				lim = *f.Limit
+			}
+			var since any
+			if f.Since != nil {
+				since = f.Since.Int()
+			}
+			var until any
+			if f.Until != nil {
+				until = f.Until.Int()
+			}
+			log.D.C(func() string {
+				return fmt.Sprintf("REQ %s filter: kinds.len=%d authors.len=%d ids.len=%d d=%q limit=%v since=%v until=%v", env.Subscription, kindsLen, authorsLen, idsLen, dtag, lim, since, until)
+			})
 		}
 		if f != nil && pointers.Present(f.Limit) {
 			if *f.Limit == 0 {
 				continue
 			}
 		}
-		// Use a separate context for QueryEvents to prevent cancellation issues
-		queryCtx, cancel := context.WithTimeout(
-			context.Background(), 30*time.Second,
-		)
-		defer cancel()
-		if events, err = l.QueryEvents(queryCtx, f); chk.E(err) {
+		var filterEvents event.S
+		if filterEvents, err = l.QueryEvents(queryCtx, f); chk.E(err) {
 			if errors.Is(err, badger.ErrDBClosed) {
 				return
 			}
+			log.E.F("QueryEvents failed for filter: %v", err)
 			err = nil
+			continue
 		}
-		defer func() {
-			for _, ev := range events {
-				ev.Free()
-			}
-		}()
+		// Append events from this filter to the overall collection
+		allEvents = append(allEvents, filterEvents...)
 	}
+	events = allEvents
+	defer func() {
+		for _, ev := range events {
+			ev.Free()
+		}
+	}()
 	var tmp event.S
 privCheck:
 	for _, ev := range events {
@@ -216,7 +256,7 @@ privCheck:
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
-	log.T.F("sending EOSE to %s", l.remote)
+	log.D.F("sending EOSE to %s", l.remote)
 	if err = eoseenvelope.NewFrom(env.Subscription).
 		Write(l); chk.E(err) {
 		return
@@ -224,7 +264,7 @@ privCheck:
 	// if the query was for just Ids, we know there can't be any more results,
 	// so cancel the subscription.
 	cancel := true
-	log.T.F(
+	log.D.F(
 		"REQ %s: computing cancel/subscription; events_sent=%d",
 		env.Subscription, len(events),
 	)
@@ -257,8 +297,8 @@ privCheck:
 		}
 		// also, if we received the limit number of events, subscription ded
 		if pointers.Present(f.Limit) {
-			if len(events) < int(*f.Limit) {
-				cancel = false
+			if len(events) >= int(*f.Limit) {
+				cancel = true
 			}
 		}
 	}
@@ -276,12 +316,8 @@ privCheck:
 			},
 		)
 	} else {
-		if err = closedenvelope.NewFrom(
-			env.Subscription, nil,
-		).Write(l); chk.E(err) {
-			return
-		}
+		// suppress server-sent CLOSED; client will close subscription if desired
 	}
-	log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
+	log.D.F("HandleReq: COMPLETED processing from %s", l.remote)
 	return
 }

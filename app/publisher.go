@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
@@ -210,39 +211,68 @@ func (p *P) Deliver(ev *event.E) {
 						break
 					}
 				}
-			}
-			if !allowed {
-				// Skip delivery for this subscriber
-				continue
-			}
-		}
-		var res *eventenvelope.Result
-		if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
-			continue
-		}
-		// Use a separate context with timeout for writes to prevent race conditions
-		// where the publisher context gets cancelled while writing events
-		writeCtx, cancel := context.WithTimeout(
-			context.Background(), DefaultWriteTimeout,
-		)
-		defer cancel()
+ 		}
+ 		if !allowed {
+ 			log.D.F("subscription delivery DENIED for privileged event %s to %s (auth mismatch)", 
+ 				hex.Enc(ev.ID), d.sub.remote)
+ 			// Skip delivery for this subscriber
+ 			continue
+ 		}
+ 	}
+	
+ 	var res *eventenvelope.Result
+ 	if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
+ 		log.E.F("failed to create event envelope for %s to %s: %v", 
+ 			hex.Enc(ev.ID), d.sub.remote, err)
+ 		continue
+ 	}
+	
+ 	// Log delivery attempt
+ 	msgData := res.Marshal(nil)
+ 	log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s", 
+ 		hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
+	
+ 	// Use a separate context with timeout for writes to prevent race conditions
+ 	// where the publisher context gets cancelled while writing events
+ 	writeCtx, cancel := context.WithTimeout(
+ 		context.Background(), DefaultWriteTimeout,
+ 	)
+ 	defer cancel()
 
-		if err = d.w.Write(
-			writeCtx, websocket.MessageText, res.Marshal(nil),
-		); err != nil {
-			// On error, remove the subscriber connection safely
-			p.removeSubscriber(d.w)
-			_ = d.w.CloseNow()
-			continue
-		}
-		log.D.C(
-			func() string {
-				return fmt.Sprintf(
-					"dispatched event %0x to subscription %s, %s",
-					ev.ID, d.id, d.sub.remote,
-				)
-			},
-		)
+ 	deliveryStart := time.Now()
+ 	if err = d.w.Write(
+ 		writeCtx, websocket.MessageText, msgData,
+ 	); err != nil {
+ 		deliveryDuration := time.Since(deliveryStart)
+		
+ 		// Log detailed failure information
+ 		log.E.F("subscription delivery FAILED: event=%s to=%s sub=%s duration=%v error=%v", 
+ 			hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
+		
+ 		// Check for timeout specifically
+ 		if writeCtx.Err() != nil {
+ 			log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)", 
+ 				hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
+ 		}
+		
+ 		// Log connection cleanup
+ 		log.D.F("removing failed subscriber connection: %s", d.sub.remote)
+		
+ 		// On error, remove the subscriber connection safely
+ 		p.removeSubscriber(d.w)
+ 		_ = d.w.CloseNow()
+ 		continue
+ 	}
+	
+ 	deliveryDuration := time.Since(deliveryStart)
+ 	log.D.F("subscription delivery SUCCESS: event=%s to=%s sub=%s duration=%v len=%d", 
+ 		hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, len(msgData))
+	
+ 	// Log slow deliveries for performance monitoring
+ 	if deliveryDuration > time.Millisecond*50 {
+ 		log.D.F("SLOW subscription delivery: event=%s to=%s duration=%v (>50ms)", 
+ 			hex.Enc(ev.ID), d.sub.remote, deliveryDuration)
+ 	}
 	}
 }
 

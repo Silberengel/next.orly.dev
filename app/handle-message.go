@@ -14,39 +14,65 @@ import (
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
-	// log.D.F("%s received message:\n%s", remote, msg)
+	msgPreview := string(msg)
+	if len(msgPreview) > 150 {
+		msgPreview = msgPreview[:150] + "..."
+	}
+	log.D.F("%s processing message (len=%d): %s", remote, len(msg), msgPreview)
+	
+	l.msgCount++
 	var err error
 	var t string
 	var rem []byte
-	if t, rem, err = envelopes.Identify(msg); !chk.E(err) {
-		switch t {
-		case eventenvelope.L:
-			// log.D.F("eventenvelope: %s %s", remote, rem)
-			err = l.HandleEvent(rem)
-		case reqenvelope.L:
-			// log.D.F("reqenvelope: %s %s", remote, rem)
-			err = l.HandleReq(rem)
-		case closeenvelope.L:
-			// log.D.F("closeenvelope: %s %s", remote, rem)
-			err = l.HandleClose(rem)
-		case authenvelope.L:
-			// log.D.F("authenvelope: %s %s", remote, rem)
-			err = l.HandleAuth(rem)
-		default:
-			err = fmt.Errorf("unknown envelope type %s\n%s", t, rem)
+	
+	// Attempt to identify the envelope type
+	if t, rem, err = envelopes.Identify(msg); err != nil {
+		log.E.F("%s envelope identification FAILED (len=%d): %v", remote, len(msg), err)
+		log.D.F("%s malformed message content: %q", remote, msgPreview)
+		chk.E(err)
+		// Send error notice to client
+		if noticeErr := noticeenvelope.NewFrom("malformed message: " + err.Error()).Write(l); noticeErr != nil {
+			log.E.F("%s failed to send malformed message notice: %v", remote, noticeErr)
 		}
+		return
 	}
+	
+	log.D.F("%s identified envelope type: %s (payload_len=%d)", remote, t, len(rem))
+	
+	// Process the identified envelope type
+	switch t {
+	case eventenvelope.L:
+		log.D.F("%s processing EVENT envelope", remote)
+		l.eventCount++
+		err = l.HandleEvent(rem)
+	case reqenvelope.L:
+		log.D.F("%s processing REQ envelope", remote)
+		l.reqCount++
+		err = l.HandleReq(rem)
+	case closeenvelope.L:
+		log.D.F("%s processing CLOSE envelope", remote)
+		err = l.HandleClose(rem)
+	case authenvelope.L:
+		log.D.F("%s processing AUTH envelope", remote)
+		err = l.HandleAuth(rem)
+	default:
+		err = fmt.Errorf("unknown envelope type %s", t)
+		log.E.F("%s unknown envelope type: %s (payload: %q)", remote, t, string(rem))
+	}
+	
+	// Handle any processing errors
 	if err != nil {
-		log.D.C(
-			func() string {
-				return fmt.Sprintf(
-					"notice->%s %s", remote, err,
-				)
-			},
-		)
-		if err = noticeenvelope.NewFrom(err.Error()).Write(l); err != nil {
+		log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
+		log.D.F("%s error context - original message: %q", remote, msgPreview)
+		
+		// Send error notice to client
+		noticeMsg := fmt.Sprintf("%s: %s", t, err.Error())
+		if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
+			log.E.F("%s failed to send error notice after %s processing failure: %v", remote, t, noticeErr)
 			return
 		}
+		log.D.F("%s sent error notice for %s processing failure", remote, t)
+	} else {
+		log.D.F("%s message processing SUCCESS (type=%s)", remote, t)
 	}
-
 }
