@@ -52,8 +52,12 @@ func New(
 	}
 
 	opts := badger.DefaultOptions(d.dataDir)
-	opts.BlockCacheSize = int64(units.Gb)
-	opts.BlockSize = units.Gb
+	// Use sane defaults to avoid excessive memory usage during startup.
+	// Badger's default BlockSize is small (e.g., 4KB). Overriding it to very large values
+	// can cause massive allocations and OOM panics during deployments.
+	// Set BlockCacheSize to a moderate value and keep BlockSize small.
+	opts.BlockCacheSize = int64(256 * units.Mb) // 256 MB cache
+	opts.BlockSize = 4 * units.Kb               // 4 KB block size
 	opts.CompactL0OnClose = true
 	opts.LmaxCompaction = true
 	opts.Compression = options.None
