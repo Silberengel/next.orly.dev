@@ -1,4 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
+import JSONPretty from 'react-json-pretty';
+
+function PrettyJSONView({ jsonString, maxHeightClass = 'max-h-64' }) {
+  let data;
+  try {
+    data = JSON.parse(jsonString);
+  } catch (_) {
+    data = jsonString;
+  }
+  return (
+    <div
+      className={`text-xs p-2 rounded overflow-auto ${maxHeightClass} break-all break-words whitespace-pre-wrap bg-gray-950 text-white`}
+      style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+    >
+      <JSONPretty data={data} space={2} />
+    </div>
+  );
+}
 
 function App() {
   const [user, setUser] = useState(null);
@@ -1195,11 +1213,22 @@ function App() {
 
   function copyEventJSON(eventJSON) {
     try {
-      navigator.clipboard.writeText(eventJSON);
+      // Ensure minified JSON is copied regardless of input format
+      let toCopy = eventJSON;
+      try {
+        toCopy = JSON.stringify(JSON.parse(eventJSON));
+      } catch (_) {
+        // if not valid JSON string, fall back to original
+      }
+      navigator.clipboard.writeText(toCopy);
     } catch (error) {
       // Fallback for older browsers
       const textArea = document.createElement('textarea');
-      textArea.value = eventJSON;
+      let toCopy = eventJSON;
+      try {
+        toCopy = JSON.stringify(JSON.parse(eventJSON));
+      } catch (_) {}
+      textArea.value = toCopy;
       document.body.appendChild(textArea);
       textArea.select();
       document.execCommand('copy');
@@ -1910,7 +1939,7 @@ function App() {
                                 Copy JSON
                               </button>
                             </div>
-                            <pre className={`text-xs overflow-auto max-h-64 ${getThemeClasses('bg-white text-black', 'bg-gray-950 text-gray-200')} p-2 rounded`}>{event.raw_json}</pre>
+                            <PrettyJSONView jsonString={event.raw_json} maxHeightClass="max-h-64" />
                           </div>
                         )}
                       </div>
@@ -2048,9 +2077,7 @@ function App() {
                                           Copy
                                         </button>
                                       </div>
-                                      <pre className={`text-xs p-2 rounded overflow-auto max-h-40 break-all whitespace-pre-wrap ${getPanelBgClass()} ${getTextClass()}`}>
-                                        {JSON.stringify(JSON.parse(event.raw_json), null, 2)}
-                                      </pre>
+                                      <PrettyJSONView jsonString={event.raw_json} maxHeightClass="max-h-40" />
                                     </div>
                                 )}
                               </div>
@@ -2197,9 +2224,7 @@ function App() {
                                             Copy
                                           </button>
                                         </div>
-                                        <pre className={`text-xs p-2 rounded overflow-auto max-h-40 break-all whitespace-pre-wrap ${getPanelBgClass()} ${getTextClass()}`}>
-                                          {JSON.stringify(JSON.parse(event.raw_json), null, 2)}
-                                        </pre>
+                                        <PrettyJSONView jsonString={event.raw_json} maxHeightClass="max-h-40" />
                                       </div>
                                   )}
                                 </div>
