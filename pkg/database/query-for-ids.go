@@ -7,6 +7,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/database/indexes/types"
+	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/interfaces/store"
 )
@@ -59,7 +60,58 @@ func (d *D) QueryForIds(c context.Context, f *filter.F) (
 			idPkTs = append(idPkTs, idpk)
 		}
 	}
-
+	
+	// If search is combined with Authors/Kinds/Tags, require events to match ALL of those present fields in addition to the word match.
+	if len(f.Search) > 0 && ((f.Authors != nil && f.Authors.Len() > 0) || (f.Kinds != nil && f.Kinds.Len() > 0) || (f.Tags != nil && f.Tags.Len() > 0)) {
+		// Build serial list for fetching full events
+		serials := make([]*types.Uint40, 0, len(idPkTs))
+		for _, v := range idPkTs {
+			s := new(types.Uint40)
+			s.Set(v.Ser)
+			serials = append(serials, s)
+		}
+		var evs map[uint64]*event.E
+		if evs, err = d.FetchEventsBySerials(serials); chk.E(err) {
+			return
+		}
+		filtered := make([]*store.IdPkTs, 0, len(idPkTs))
+		for _, v := range idPkTs {
+			ev, ok := evs[v.Ser]
+			if !ok || ev == nil {
+				continue
+			}
+			matchesAll := true
+			if f.Authors != nil && f.Authors.Len() > 0 && !f.Authors.Contains(ev.Pubkey) {
+				matchesAll = false
+			}
+			if matchesAll && f.Kinds != nil && f.Kinds.Len() > 0 && !f.Kinds.Contains(ev.Kind) {
+				matchesAll = false
+			}
+			if matchesAll && f.Tags != nil && f.Tags.Len() > 0 {
+				// Require the event to satisfy all tag filters as in MatchesIgnoringTimestampConstraints
+				tagOK := true
+				for _, t := range *f.Tags {
+					if t.Len() < 2 {
+						continue
+					}
+					key := t.Key()
+					values := t.T[1:]
+					if !ev.Tags.ContainsAny(key, values) {
+						tagOK = false
+						break
+					}
+				}
+				if !tagOK {
+					matchesAll = false
+				}
+			}
+			if matchesAll {
+				filtered = append(filtered, v)
+			}
+		}
+		idPkTs = filtered
+	}
+	
 	if len(f.Search) == 0 {
 		// No search query: sort by timestamp in reverse chronological order
 		sort.Slice(
