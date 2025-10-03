@@ -64,7 +64,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		l.ctx, 30*time.Second,
 	)
 	defer queryCancel()
-	
+
 	// Collect all events from all filters
 	var allEvents event.S
 	for _, f := range *env.Filters {

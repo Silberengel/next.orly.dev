@@ -3,6 +3,8 @@ package app
 import (
 	"net/http"
 	"strings"
+
+	"lol.mleku.dev/log"
 )
 
 // GetRemoteFromReq retrieves the originating IP address of the client from
@@ -66,4 +68,29 @@ func GetRemoteFromReq(r *http.Request) (rr string) {
 		}
 	}
 	return
+}
+
+// LogProxyInfo logs comprehensive proxy information for debugging
+func LogProxyInfo(r *http.Request, prefix string) {
+	proxyHeaders := map[string]string{
+		"X-Forwarded-For":   r.Header.Get("X-Forwarded-For"),
+		"X-Real-IP":         r.Header.Get("X-Real-IP"),
+		"X-Forwarded-Proto": r.Header.Get("X-Forwarded-Proto"),
+		"X-Forwarded-Host":  r.Header.Get("X-Forwarded-Host"),
+		"X-Forwarded-Port":  r.Header.Get("X-Forwarded-Port"),
+		"Forwarded":         r.Header.Get("Forwarded"),
+		"Host":              r.Header.Get("Host"),
+		"User-Agent":        r.Header.Get("User-Agent"),
+	}
+
+	var info []string
+	for header, value := range proxyHeaders {
+		if value != "" {
+			info = append(info, header+":"+value)
+		}
+	}
+
+	if len(info) > 0 {
+		log.T.F("%s proxy info: %s", prefix, strings.Join(info, " "))
+	}
 }
