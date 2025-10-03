@@ -303,11 +303,11 @@ The spider operates in two phases:
 
 === configuration
 
-Enable the spider by setting the spider mode to "follow":
+Enable the spider by setting the spider mode to "follows":
 
 [source,bash]
 ----
-export ORLY_SPIDER_MODE=follow
+export ORLY_SPIDER_MODE=follows
 export ORLY_SPIDER_FREQUENCY=1h
 ----
 
@@ -322,7 +322,7 @@ Configuration options:
 ----
 # Enable both follows ACL and spider sync
 export ORLY_ACL_MODE=follows
-export ORLY_SPIDER_MODE=follow
+export ORLY_SPIDER_MODE=follows
 export ORLY_SPIDER_FREQUENCY=30m
 export ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
 

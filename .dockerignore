@@ -13,6 +13,8 @@ cmd/benchmark/reports/
 
 # Go build cache and binaries
 **/bin/
-**/dist/
 **/build/
 **/*.out
+
+# Allow web dist directory (needed for embedding)
+!app/web/dist/

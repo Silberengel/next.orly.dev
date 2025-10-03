@@ -40,22 +40,34 @@ type Server struct {
 	// Challenge storage for HTTP UI authentication
 	challengeMutex sync.RWMutex
 	challenges     map[string][]byte
-	
+
 	paymentProcessor *PaymentProcessor
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Set CORS headers for all responses
+	// Set comprehensive CORS headers for proxy compatibility
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set(
-		"Access-Control-Allow-Headers", "Content-Type, Authorization",
-	)
+	w.Header().Set("Access-Control-Allow-Headers",
+		"Origin, X-Requested-With, Content-Type, Accept, Authorization, "+
+			"X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, X-Real-IP, "+
+			"Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, "+
+			"Sec-WebSocket-Protocol, Sec-WebSocket-Extensions")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+
+	// Add proxy-friendly headers
+	w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
 
 	// Handle preflight OPTIONS requests
 	if r.Method == "OPTIONS" {
 		w.WriteHeader(http.StatusOK)
 		return
+	}
+
+	// Log proxy information for debugging (only for WebSocket requests to avoid spam)
+	if r.Header.Get("Upgrade") == "websocket" {
+		LogProxyInfo(r, "HTTP request")
 	}
 
 	// If this is a websocket request, only intercept the relay root path.
@@ -83,13 +95,30 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ServiceURL(req *http.Request) (st string) {
+	// Get host from various proxy headers
 	host := req.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = req.Header.Get("Host")
+	}
 	if host == "" {
 		host = req.Host
 	}
+
+	// Get protocol from various proxy headers
 	proto := req.Header.Get("X-Forwarded-Proto")
 	if proto == "" {
-		if host == "localhost" {
+		proto = req.Header.Get("X-Forwarded-Scheme")
+	}
+	if proto == "" {
+		// Check if we're behind a proxy by looking for common proxy headers
+		hasProxyHeaders := req.Header.Get("X-Forwarded-For") != "" ||
+			req.Header.Get("X-Real-IP") != "" ||
+			req.Header.Get("Forwarded") != ""
+
+		if hasProxyHeaders {
+			// If we have proxy headers, assume HTTPS/WSS
+			proto = "wss"
+		} else if host == "localhost" {
 			proto = "ws"
 		} else if strings.Contains(host, ":") {
 			// has a port number

@@ -38,7 +38,9 @@ const (
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	remote := GetRemoteFromReq(r)
-	log.T.F("handling websocket connection from %s", remote)
+
+	// Log comprehensive proxy information for debugging
+	LogProxyInfo(r, "WebSocket connection from "+remote)
 	if len(s.Config.IPWhitelist) > 0 {
 		for _, ip := range s.Config.IPWhitelist {
 			log.T.F("checking IP whitelist: %s", ip)
@@ -55,9 +57,14 @@ whitelist:
 	defer cancel()
 	var err error
 	var conn *websocket.Conn
-	if conn, err = websocket.Accept(
-		w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}},
-	); chk.E(err) {
+	// Configure WebSocket accept options for proxy compatibility
+	acceptOptions := &websocket.AcceptOptions{
+		OriginPatterns: []string{"*"}, // Allow all origins for proxy compatibility
+		// Don't check origin when behind a proxy - let the proxy handle it
+		InsecureSkipVerify: true,
+	}
+
+	if conn, err = websocket.Accept(w, r, acceptOptions); chk.E(err) {
 		log.E.F("websocket accept failed from %s: %v", remote, err)
 		return
 	}

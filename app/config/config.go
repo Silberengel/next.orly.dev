@@ -40,7 +40,7 @@ type C struct {
 	Admins              []string      `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
 	Owners              []string      `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`
 	ACLMode             string        `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
-	SpiderMode          string        `env:"ORLY_SPIDER_MODE" usage:"spider mode: none,follow" default:"none"`
+	SpiderMode          string        `env:"ORLY_SPIDER_MODE" usage:"spider mode: none,follows" default:"none"`
 	SpiderFrequency     time.Duration `env:"ORLY_SPIDER_FREQUENCY" usage:"spider frequency in seconds" default:"1h"`
 	NWCUri              string        `env:"ORLY_NWC_URI" usage:"NWC (Nostr Wallet Connect) connection string for Lightning payments"`
 	SubscriptionEnabled bool          `env:"ORLY_SUBSCRIPTION_ENABLED" default:"false" usage:"enable subscription-based access control requiring payment for non-directory events"`
@@ -225,15 +225,14 @@ func EnvKV(cfg any) (m KVSlice) {
 		k := t.Field(i).Tag.Get("env")
 		v := reflect.ValueOf(cfg).Field(i).Interface()
 		var val string
-		switch v.(type) {
+		switch v := v.(type) {
 		case string:
-			val = v.(string)
+			val = v
 		case int, bool, time.Duration:
 			val = fmt.Sprint(v)
 		case []string:
-			arr := v.([]string)
-			if len(arr) > 0 {
-				val = strings.Join(arr, ",")
+			if len(v) > 0 {
+				val = strings.Join(v, ",")
 			}
 		}
 		// this can happen with embedded structs
@@ -305,5 +304,4 @@ func PrintHelp(cfg *C, printer io.Writer) {
 	fmt.Fprintf(printer, "\ncurrent configuration:\n\n")
 	PrintEnv(cfg, printer)
 	fmt.Fprintln(printer)
-	return
 }

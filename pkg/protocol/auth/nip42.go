@@ -91,12 +91,22 @@ func Validate(evt *event.E, challenge []byte, relayURL string) (
 		err = errorf.E("error parsing relay url: %s", err)
 		return
 	}
+	// Allow both ws:// and wss:// schemes when behind a reverse proxy
+	// This handles cases where the relay expects ws:// but receives wss:// from clients
+	// connecting through HTTPS proxies
 	if expected.Scheme != found.Scheme {
-		err = errorf.E(
-			"HTTP Scheme incorrect: expected '%s' got '%s",
-			expected.Scheme, found.Scheme,
-		)
-		return
+		// Check if this is a ws/wss scheme mismatch (acceptable behind proxy)
+		if (expected.Scheme == "ws" && found.Scheme == "wss") ||
+			(expected.Scheme == "wss" && found.Scheme == "ws") {
+			// This is acceptable when behind a reverse proxy
+			// The client will always send wss:// when connecting through HTTPS
+		} else {
+			err = errorf.E(
+				"HTTP Scheme incorrect: expected '%s' got '%s",
+				expected.Scheme, found.Scheme,
+			)
+			return
+		}
 	}
 	if expected.Host != found.Host {
 		err = errorf.E(

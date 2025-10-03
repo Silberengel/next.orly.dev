@@ -1,11 +1,12 @@
 # Docker Compose for Stella's Nostr Relay
 # Owner: npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx
 
-version: '3.8'
-
 services:
   stella-relay:
-    image: silberengel/orly-relay:latest 
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: silberengel/next-orly:latest 
     container_name: stella-nostr-relay
     restart: unless-stopped
     ports:
@@ -19,21 +20,20 @@ services:
       - ORLY_LISTEN=0.0.0.0
       - ORLY_PORT=7777
       - ORLY_LOG_LEVEL=info
-      - ORLY_MAX_CONNECTIONS=1000
+      - ORLY_DB_LOG_LEVEL=error
       - ORLY_OWNERS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx
-      - ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z
+      - ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx
       
-      # Performance Settings (based on v0.4.8 optimizations)
-      - ORLY_CONCURRENT_WORKERS=0  # 0 = auto-detect CPU cores
-      - ORLY_BATCH_SIZE=1000
-      - ORLY_CACHE_SIZE=10000
+      # ACL and Spider Configuration
+      - ORLY_ACL_MODE=follows
+      - ORLY_SPIDER_MODE=follows
       
-      # Database Settings
-      - BADGER_LOG_LEVEL=ERROR
-      - BADGER_SYNC_WRITES=false  # Better performance, slightly less durability
+      # Subscription Settings (optional)
+      - ORLY_SUBSCRIPTION_ENABLED=false
+      - ORLY_MONTHLY_PRICE_SATS=0
       
-      # Security Settings
-      - ORLY_REQUIRE_AUTH=false
+      # Performance Settings
+      - ORLY_MAX_CONNECTIONS=1000
       - ORLY_MAX_EVENT_SIZE=65536
       - ORLY_MAX_SUBSCRIPTIONS=20
       

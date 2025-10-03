@@ -1,28 +1,25 @@
 [Unit]
-Description=Stella's Orly Nostr Relay
+Description=Stella's Orly Nostr Relay (Docker Compose)
 Documentation=https://github.com/Silberengel/next.orly.dev
-After=network-online.target
+After=network-online.target docker.service
 Wants=network-online.target
+Requires=docker.service
 
 [Service]
-Type=simple
+Type=oneshot
+RemainAfterExit=yes
 User=madmin
 Group=madmin
 WorkingDirectory=/home/madmin/Projects/GitCitadel/next.orly.dev
-ExecStart=docker compose up stella-relay
-ExecStop=docker compose down
-Restart=always
-RestartSec=10
-TimeoutStartSec=60
-TimeoutStopSec=30
 
-# Environment variables
-Environment=ORLY_DATA_DIR=/home/madmin/.local/share/orly-relay
-Environment=ORLY_LISTEN=127.0.0.1
-Environment=ORLY_PORT=7777
-Environment=ORLY_LOG_LEVEL=info
-Environment=ORLY_OWNERS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx
-Environment=ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z
+# Start the relay using docker compose
+ExecStart=/usr/bin/docker compose up -d stella-relay
+
+# Stop the relay
+ExecStop=/usr/bin/docker compose down
+
+# Reload configuration (restart containers)
+ExecReload=/usr/bin/docker compose restart stella-relay
 
 # Security settings
 NoNewPrivileges=true
@@ -34,6 +31,12 @@ ReadWritePaths=/home/madmin/Projects/GitCitadel/next.orly.dev/data
 # Resource limits
 LimitNOFILE=65536
 LimitNPROC=4096
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=60
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
