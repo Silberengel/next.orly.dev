@@ -158,6 +158,8 @@ func (f *Follows) adminRelays() (urls []string) {
 	copy(admins, f.admins)
 	f.followsMx.RUnlock()
 	seen := make(map[string]struct{})
+
+	// First, try to get relay URLs from admin kind 10002 events
 	for _, adm := range admins {
 		fl := &filter.F{
 			Authors: tag.NewFromAny(adm),
@@ -194,6 +196,29 @@ func (f *Follows) adminRelays() (urls []string) {
 			}
 		}
 	}
+
+	// If no admin relays found, use bootstrap relays as fallback
+	if len(urls) == 0 {
+		log.I.F("no admin relays found in DB, checking bootstrap relays")
+		if len(f.cfg.BootstrapRelays) > 0 {
+			log.I.F("using bootstrap relays: %v", f.cfg.BootstrapRelays)
+			for _, relay := range f.cfg.BootstrapRelays {
+				n := string(normalize.URL(relay))
+				if n == "" {
+					log.W.F("invalid bootstrap relay URL: %s", relay)
+					continue
+				}
+				if _, ok := seen[n]; ok {
+					continue
+				}
+				seen[n] = struct{}{}
+				urls = append(urls, n)
+			}
+		} else {
+			log.W.F("no bootstrap relays configured")
+		}
+	}
+
 	return
 }
 
@@ -211,7 +236,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 	urls := f.adminRelays()
 	log.I.S(urls)
 	if len(urls) == 0 {
-		log.W.F("follows syncer: no admin relays found in DB (kind 10002)")
+		log.W.F("follows syncer: no admin relays found in DB (kind 10002) and no bootstrap relays configured")
 		return
 	}
 	log.T.F(
@@ -256,6 +281,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				ff := &filter.S{}
 				f1 := &filter.F{
 					Authors: tag.NewFromBytesSlice(authors...),
+					Kinds:   kind.NewS(kind.New(kind.RelayListMetadata.K)),
 					Limit:   values.ToUintPointer(0),
 				}
 				*ff = append(*ff, f1)
@@ -365,7 +391,7 @@ func (f *Follows) Syncer() {
 func (f *Follows) GetFollowedPubkeys() [][]byte {
 	f.followsMx.RLock()
 	defer f.followsMx.RUnlock()
-	
+
 	followedPubkeys := make([][]byte, len(f.follows))
 	copy(followedPubkeys, f.follows)
 	return followedPubkeys

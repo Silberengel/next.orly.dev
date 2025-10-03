@@ -28,6 +28,9 @@ services:
       - ORLY_ACL_MODE=follows
       - ORLY_SPIDER_MODE=follows
       
+      # Bootstrap relay URLs for initial sync
+      - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.damus.io,wss://nostr.wine,wss://relay.nostr.band,wss://freelay.sovbit.host
+      
       # Subscription Settings (optional)
       - ORLY_SUBSCRIPTION_ENABLED=false
       - ORLY_MONTHLY_PRICE_SATS=0
