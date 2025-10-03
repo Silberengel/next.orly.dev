@@ -24,8 +24,9 @@ docker run -d \
   -p 127.0.0.1:7777:7777 \
   -v /data/orly-relay:/data \
   -e ORLY_OWNERS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx \
-  -e ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z \
-  -e ORLY_RELAY_URL=wss://your-domain.com \
+  -e ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z,npub1m4ny6hjqzepn4rxknuq94c2gpqzr29ufkkw7ttcxyak7v43n6vvsajc2jl \
+  -e ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io \
+  -e ORLY_RELAY_URL=wss://orly-relay.imwald.eu \
   -e ORLY_ACL_MODE=follows \
   -e ORLY_SPIDER_MODE=follows \
   -e ORLY_SPIDER_FREQUENCY=1h \

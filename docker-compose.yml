@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: silberengel/next-orly:latest 
-    container_name: orly-nostr-relay
+    container_name: orly-relay
     restart: unless-stopped
     ports:
       - "127.0.0.1:7777:7777"
