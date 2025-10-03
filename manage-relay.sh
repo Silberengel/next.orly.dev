@@ -9,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
 
 # Configuration from docker-compose.yml
-RELAY_SERVICE="stella-relay"
-CONTAINER_NAME="stella-nostr-relay"
+RELAY_SERVICE="orly-relay"
+CONTAINER_NAME="orly-nostr-relay"
 RELAY_URL="ws://127.0.0.1:7777"
 HTTP_URL="http://127.0.0.1:7777"
 RELAY_DATA_DIR="/home/madmin/.local/share/orly-relay"
@@ -21,7 +21,7 @@ cd "$PROJECT_DIR"
 case "${1:-}" in
     "start")
         echo "🚀 Starting Stella's Orly Relay..."
-        docker compose up -d stella-relay
+        docker compose up -d orly-relay
         echo "✅ Relay started!"
         ;;
     "stop")
@@ -31,16 +31,16 @@ case "${1:-}" in
         ;;
     "restart")
         echo "🔄 Restarting Stella's Orly Relay..."
-        docker compose restart stella-relay
+        docker compose restart orly-relay
         echo "✅ Relay restarted!"
         ;;
     "status")
         echo "📊 Stella's Orly Relay Status:"
-        docker compose ps stella-relay
+        docker compose ps orly-relay
         ;;
     "logs")
         echo "📜 Stella's Orly Relay Logs:"
-        docker compose logs -f stella-relay
+        docker compose logs -f orly-relay
         ;;
     "test")
         echo "🧪 Testing relay connection..."
@@ -77,7 +77,7 @@ case "${1:-}" in
         echo "🐳 Docker Information:"
         echo "   Compose File: $PROJECT_DIR/docker-compose.yml"
         echo "   Container Status:"
-        docker compose ps stella-relay 2>/dev/null || echo "   Not running"
+        docker compose ps orly-relay 2>/dev/null || echo "   Not running"
         echo ""
         echo "💡 Configuration:"
         echo "   All settings are defined in docker-compose.yml"
@@ -85,26 +85,26 @@ case "${1:-}" in
         ;;
     "docker-logs")
         echo "🐳 Docker Container Logs:"
-        docker compose logs -f stella-relay 2>/dev/null || echo "❌ Container not found or not running"
+        docker compose logs -f orly-relay 2>/dev/null || echo "❌ Container not found or not running"
         ;;
     "docker-status")
         echo "🐳 Docker Container Status:"
-        docker compose ps stella-relay
+        docker compose ps orly-relay
         ;;
     "docker-restart")
         echo "🔄 Restarting Docker Container..."
-        docker compose restart stella-relay
+        docker compose restart orly-relay
         echo "✅ Container restarted!"
         ;;
     "docker-update")
         echo "🔄 Updating and restarting Docker Container..."
-        docker compose pull stella-relay
-        docker compose up -d stella-relay
+        docker compose pull orly-relay
+        docker compose up -d orly-relay
         echo "✅ Container updated and restarted!"
         ;;
     "docker-build")
         echo "🔨 Building Docker Container..."
-        docker compose build stella-relay
+        docker compose build orly-relay
         echo "✅ Container built!"
         ;;
     "docker-down")

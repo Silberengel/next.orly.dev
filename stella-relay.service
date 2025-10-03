@@ -13,13 +13,13 @@ Group=madmin
 WorkingDirectory=/home/madmin/Projects/GitCitadel/next.orly.dev
 
 # Start the relay using docker compose
-ExecStart=/usr/bin/docker compose up -d stella-relay
+ExecStart=/usr/bin/docker compose up -d orly-relay
 
 # Stop the relay
 ExecStop=/usr/bin/docker compose down
 
 # Reload configuration (restart containers)
-ExecReload=/usr/bin/docker compose restart stella-relay
+ExecReload=/usr/bin/docker compose restart orly-relay
 
 # Security settings
 NoNewPrivileges=true

@@ -9,7 +9,7 @@
 docker-compose up -d
 
 # View logs
-docker-compose logs -f stella-relay
+docker-compose logs -f orly-relay
 
 # Stop the relay
 docker-compose down
@@ -136,7 +136,7 @@ go run ./cmd/stresstest -relay ws://localhost:7777
 ```bash
 # Container debugging
 docker ps | grep relay
-docker logs stella-relay
+docker logs orly-relay
 curl -I http://127.0.0.1:7777  # Should return HTTP 426
 
 # WebSocket testing
@@ -153,7 +153,7 @@ grep ProxyPass /etc/apache2/plesk.conf.d/vhosts/domain.conf
 
 ```bash
 # View relay logs
-docker-compose logs -f stella-relay
+docker-compose logs -f orly-relay
 
 # View nginx logs (if using proxy)
 docker-compose logs -f nginx
