@@ -40,6 +40,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		relayinfo.RelayInformationDocument,
 		relayinfo.GenericTagQueries,
 		// relayinfo.NostrMarketplace,
+		relayinfo.CountingResults,
 		relayinfo.EventTreatment,
 		relayinfo.CommandResults,
 		relayinfo.ParameterizedReplaceableEvents,
@@ -57,6 +58,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			relayinfo.RelayInformationDocument,
 			relayinfo.GenericTagQueries,
 			// relayinfo.NostrMarketplace,
+			relayinfo.CountingResults,
 			relayinfo.EventTreatment,
 			relayinfo.CommandResults,
 			relayinfo.ParameterizedReplaceableEvents,
@@ -67,7 +69,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 	sort.Sort(supportedNIPs)
-	log.T.Ln("supported NIPs", supportedNIPs)
+	log.I.Ln("supported NIPs", supportedNIPs)
 	// Construct description with dashboard URL
 	dashboardURL := s.DashboardURL(r)
 	description := version.Description + " dashboard: " + dashboardURL
