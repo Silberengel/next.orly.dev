@@ -203,7 +203,7 @@ func (s *S) GetTagElement(i int) (t *T) {
 //
 // Iterates through each tag in the collection and converts its byte elements
 // to strings, preserving the tag structure in the resulting nested slice.
-func (s *S) ToSliceOfSliceOfStrings() (ss [][]string, err error) {
+func (s *S) ToSliceOfSliceOfStrings() (ss [][]string) {
 	for _, v := range *s {
 		ss = append(ss, v.ToSliceOfStrings())
 	}
