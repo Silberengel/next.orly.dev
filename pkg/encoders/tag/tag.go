@@ -156,3 +156,10 @@ func (t *T) Relay() (key []byte) {
 	}
 	return
 }
+
+func (t *T) ToSliceOfStrings() (s []string) {
+	for _, v := range t.T {
+		s = append(s, string(v))
+	}
+	return
+}
