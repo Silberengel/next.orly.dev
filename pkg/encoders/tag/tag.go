@@ -157,6 +157,17 @@ func (t *T) Relay() (key []byte) {
 	return
 }
 
+// ToSliceOfStrings returns the tag's bytes slices as a slice of strings. This
+// method provides a convenient way to access the tag's contents in string format.
+//
+// # Return Values
+//
+// - s ([]string): A slice containing all tag elements converted to strings.
+//
+// # Expected Behaviour
+//
+// Returns an empty slice if the tag is empty, otherwise returns a new slice with
+// each byte slice element converted to a string.
 func (t *T) ToSliceOfStrings() (s []string) {
 	for _, v := range t.T {
 		s = append(s, string(v))

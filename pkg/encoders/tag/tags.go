@@ -188,3 +188,24 @@ func (s *S) GetTagElement(i int) (t *T) {
 	t = (*s)[i]
 	return
 }
+
+// ToSliceOfSliceOfStrings converts the tag collection into a two-dimensional
+// slice of strings, maintaining the structure of tags and their elements.
+//
+// # Return Values
+//
+//   - ss ([][]string): A slice of string slices where each inner slice represents
+//     a tag's elements converted from bytes to strings.
+//
+// - err (error): Currently unused but maintained for interface consistency.
+//
+// # Expected Behaviour
+//
+// Iterates through each tag in the collection and converts its byte elements
+// to strings, preserving the tag structure in the resulting nested slice.
+func (s *S) ToSliceOfSliceOfStrings() (ss [][]string, err error) {
+	for _, v := range *s {
+		ss = append(ss, v.ToSliceOfStrings())
+	}
+	return
+}
