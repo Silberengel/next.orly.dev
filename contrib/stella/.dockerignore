@@ -2,7 +2,7 @@
 # Fixes: failed to solve: error from sender: open cmd/benchmark/data/postgres: permission denied
 
 # Benchmark data and reports (mounted at runtime via volumes)
-cmd/benchmark/data/
+../../cmd/benchmark/data/
 cmd/benchmark/reports/
 
 # VCS and OS cruft

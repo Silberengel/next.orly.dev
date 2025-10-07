@@ -19,11 +19,11 @@ RUN apk add --no-cache libsecp256k1-dev
 WORKDIR /build
 
 # Copy go modules first (for better caching)
-COPY go.mod go.sum ./
+COPY ../../go.mod go.sum ./
 RUN go mod download
 
 # Copy source code
-COPY . .
+COPY ../.. .
 
 # Build the relay with optimizations from v0.4.8
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-w -s" -o relay .

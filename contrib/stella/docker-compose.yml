@@ -4,7 +4,7 @@
 services:
   orly-relay:
     build:
-      context: .
+      context:    ../..
       dockerfile: Dockerfile
     image: silberengel/next-orly:latest 
     container_name: orly-relay
