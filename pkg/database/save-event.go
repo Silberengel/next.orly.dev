@@ -19,6 +19,13 @@ import (
 	"next.orly.dev/pkg/encoders/tag"
 )
 
+var (
+	// ErrOlderThanExisting is returned when a candidate event is older than an existing replaceable/addressable event.
+	ErrOlderThanExisting = errors.New("older than existing event")
+	// ErrMissingDTag is returned when a parameterized replaceable event lacks the required 'd' tag.
+	ErrMissingDTag = errors.New("event is missing a d tag identifier")
+)
+
 func (d *D) GetSerialsFromFilter(f *filter.F) (
 	sers types.Uint40s, err error,
 ) {
@@ -34,6 +41,65 @@ func (d *D) GetSerialsFromFilter(f *filter.F) (
 		sers = append(sers, s...)
 	}
 	return
+}
+
+// WouldReplaceEvent checks if the provided event would replace existing events
+// based on Nostr's replaceable or parameterized replaceable semantics. It
+// returns true along with the serials of events that should be replaced if the
+// candidate is newer-or-equal. If an existing event is newer, it returns
+// (false, serials, ErrOlderThanExisting). If no conflicts exist, it returns
+// (false, nil, nil).
+func (d *D) WouldReplaceEvent(ev *event.E) (bool, types.Uint40s, error) {
+	// Only relevant for replaceable or parameterized replaceable kinds
+	if !(kind.IsReplaceable(ev.Kind) || kind.IsParameterizedReplaceable(ev.Kind)) {
+		return false, nil, nil
+	}
+
+	var f *filter.F
+	if kind.IsReplaceable(ev.Kind) {
+		f = &filter.F{
+			Authors: tag.NewFromBytesSlice(ev.Pubkey),
+			Kinds:   kind.NewS(kind.New(ev.Kind)),
+		}
+	} else {
+		// parameterized replaceable requires 'd' tag
+		dTag := ev.Tags.GetFirst([]byte("d"))
+		if dTag == nil {
+			return false, nil, ErrMissingDTag
+		}
+		f = &filter.F{
+			Authors: tag.NewFromBytesSlice(ev.Pubkey),
+			Kinds:   kind.NewS(kind.New(ev.Kind)),
+			Tags: tag.NewS(
+				tag.NewFromAny("d", dTag.Value()),
+			),
+		}
+	}
+
+	sers, err := d.GetSerialsFromFilter(f)
+	if chk.E(err) {
+		return false, nil, err
+	}
+	if len(sers) == 0 {
+		return false, nil, nil
+	}
+
+	// Determine if any existing event is newer than the candidate
+	shouldReplace := true
+	for _, s := range sers {
+		oldEv, ferr := d.FetchEventBySerial(s)
+		if chk.E(ferr) {
+			continue
+		}
+		if ev.CreatedAt < oldEv.CreatedAt {
+			shouldReplace = false
+			break
+		}
+	}
+	if shouldReplace {
+		return true, sers, nil
+	}
+	return false, sers, ErrOlderThanExisting
 }
 
 // SaveEvent saves an event to the database, generating all the necessary indexes.
@@ -68,117 +134,37 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		err = fmt.Errorf("blocked: %s", err.Error())
 		return
 	}
-	// check for replacement
-	if kind.IsReplaceable(ev.Kind) {
-		// find the events and check timestamps before deleting
-		f := &filter.F{
-			Authors: tag.NewFromBytesSlice(ev.Pubkey),
-			Kinds:   kind.NewS(kind.New(ev.Kind)),
-		}
+	// check for replacement (separated check vs deletion)
+	if kind.IsReplaceable(ev.Kind) || kind.IsParameterizedReplaceable(ev.Kind) {
+		var wouldReplace bool
 		var sers types.Uint40s
-		if sers, err = d.GetSerialsFromFilter(f); chk.E(err) {
+		var werr error
+		if wouldReplace, sers, werr = d.WouldReplaceEvent(ev); werr != nil {
+			if errors.Is(werr, ErrOlderThanExisting) {
+				if kind.IsReplaceable(ev.Kind) {
+					err = errors.New("blocked: event is older than existing replaceable event")
+				} else {
+					err = errors.New("blocked: event is older than existing addressable event")
+				}
+				return
+			}
+			if errors.Is(werr, ErrMissingDTag) {
+				// keep behavior consistent with previous implementation
+				err = ErrMissingDTag
+				return
+			}
+			// any other error
 			return
 		}
-		// if found, check timestamps before deleting
-		if len(sers) > 0 {
-			var shouldReplace bool = true
+		if wouldReplace {
 			for _, s := range sers {
 				var oldEv *event.E
 				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
 					continue
 				}
-				// Only replace if the new event is newer or same timestamp
-				if ev.CreatedAt < oldEv.CreatedAt {
-					// log.I.F(
-					// 	"SaveEvent: rejecting older replaceable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
-					// 	hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
-					// 	oldEv.CreatedAt,
-					// )
-					shouldReplace = false
-					break
-				}
-			}
-			if shouldReplace {
-				for _, s := range sers {
-					var oldEv *event.E
-					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
-						continue
-					}
-					// log.I.F(
-					// 	"SaveEvent: replacing older replaceable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
-					// 	hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
-					// 	ev.CreatedAt,
-					// )
-					if err = d.DeleteEventBySerial(
-						c, s, oldEv,
-					); chk.E(err) {
-						continue
-					}
-				}
-			} else {
-				// Don't save the older event - return an error
-				err = errors.New("blocked: event is older than existing replaceable event")
-				return
-			}
-		}
-	} else if kind.IsParameterizedReplaceable(ev.Kind) {
-		// find the events and check timestamps before deleting
-		dTag := ev.Tags.GetFirst([]byte("d"))
-		if dTag == nil {
-			err = errors.New("event is missing a d tag identifier")
-			return
-		}
-		f := &filter.F{
-			Authors: tag.NewFromBytesSlice(ev.Pubkey),
-			Kinds:   kind.NewS(kind.New(ev.Kind)),
-			Tags: tag.NewS(
-				tag.NewFromAny("d", dTag.Value()),
-			),
-		}
-		var sers types.Uint40s
-		if sers, err = d.GetSerialsFromFilter(f); chk.E(err) {
-			return
-		}
-		// if found, check timestamps before deleting
-		if len(sers) > 0 {
-			var shouldReplace bool = true
-			for _, s := range sers {
-				var oldEv *event.E
-				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
+				if err = d.DeleteEventBySerial(c, s, oldEv); chk.E(err) {
 					continue
 				}
-				// Only replace if the new event is newer or same timestamp
-				if ev.CreatedAt < oldEv.CreatedAt {
-					// log.I.F(
-					// 	"SaveEvent: rejecting older addressable event ID=%s (created_at=%d) - existing event ID=%s (created_at=%d)",
-					// 	hex.Enc(ev.ID), ev.CreatedAt, hex.Enc(oldEv.ID),
-					// 	oldEv.CreatedAt,
-					// )
-					shouldReplace = false
-					break
-				}
-			}
-			if shouldReplace {
-				for _, s := range sers {
-					var oldEv *event.E
-					if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
-						continue
-					}
-					// log.I.F(
-					// 	"SaveEvent: replacing older addressable event ID=%s (created_at=%d) with newer event ID=%s (created_at=%d)",
-					// 	hex.Enc(oldEv.ID), oldEv.CreatedAt, hex.Enc(ev.ID),
-					// 	ev.CreatedAt,
-					// )
-					if err = d.DeleteEventBySerial(
-						c, s, oldEv,
-					); chk.E(err) {
-						continue
-					}
-				}
-			} else {
-				// Don't save the older event - return an error
-				err = errors.New("blocked: event is older than existing addressable event")
-				return
 			}
 		}
 	}
