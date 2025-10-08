@@ -20,7 +20,7 @@ const (
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
 	DefaultWriteTimeout   = 3 * time.Second
-	DefaultMaxMessageSize = 1 * units.Mb
+	DefaultMaxMessageSize = 100 * units.Mb
 
 	// CloseMessage denotes a close control message. The optional message
 	// payload contains a numeric code and text. Use the FormatCloseMessage
@@ -62,6 +62,8 @@ whitelist:
 		OriginPatterns: []string{"*"}, // Allow all origins for proxy compatibility
 		// Don't check origin when behind a proxy - let the proxy handle it
 		InsecureSkipVerify: true,
+		// Try to set a higher compression threshold to allow larger messages
+		CompressionMode: websocket.CompressionDisabled,
 	}
 
 	if conn, err = websocket.Accept(w, r, acceptOptions); chk.E(err) {
@@ -69,7 +71,10 @@ whitelist:
 		return
 	}
 	log.T.F("websocket accepted from %s path=%s", remote, r.URL.String())
+
+	// Set read limit immediately after connection is established
 	conn.SetReadLimit(DefaultMaxMessageSize)
+	log.D.F("set read limit to %d bytes (%d MB) for %s", DefaultMaxMessageSize, DefaultMaxMessageSize/units.Mb, remote)
 	defer conn.CloseNow()
 	listener := &Listener{
 		ctx:       ctx,
@@ -145,6 +150,14 @@ whitelist:
 				log.T.F("connection from %s closed: %v", remote, err)
 				return
 			}
+			// Handle message too big errors specifically
+			if strings.Contains(err.Error(), "MessageTooBig") ||
+				strings.Contains(err.Error(), "read limited at") {
+				log.D.F("client %s hit message size limit: %v", remote, err)
+				// Don't log this as an error since it's a client-side limit
+				// Just close the connection gracefully
+				return
+			}
 			status := websocket.CloseStatus(err)
 			switch status {
 			case websocket.StatusNormalClosure,
@@ -155,6 +168,8 @@ whitelist:
 				log.T.F(
 					"connection from %s closed with status: %v", remote, status,
 				)
+			case websocket.StatusMessageTooBig:
+				log.D.F("client %s sent message too big: %v", remote, err)
 			default:
 				log.E.F("unexpected close error from %s: %v", remote, err)
 			}
@@ -189,6 +204,10 @@ whitelist:
 			}
 			writeCancel()
 			continue
+		}
+		// Log message size for debugging
+		if len(msg) > 1000 { // Only log for larger messages
+			log.D.F("received large message from %s: %d bytes", remote, len(msg))
 		}
 		// log.T.F("received message from %s: %s", remote, string(msg))
 		listener.HandleMessage(msg, remote)
