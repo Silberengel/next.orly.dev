@@ -111,6 +111,29 @@ func (s *Server) ServiceURL(req *http.Request) (url string) {
 	return proto + "://" + host
 }
 
+func (s *Server) WebSocketURL(req *http.Request) (url string) {
+	proto := req.Header.Get("X-Forwarded-Proto")
+	if proto == "" {
+		if req.TLS != nil {
+			proto = "wss"
+		} else {
+			proto = "ws"
+		}
+	} else {
+		// Convert HTTP scheme to WebSocket scheme
+		if proto == "https" {
+			proto = "wss"
+		} else if proto == "http" {
+			proto = "ws"
+		}
+	}
+	host := req.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = req.Host
+	}
+	return proto + "://" + host
+}
+
 func (s *Server) DashboardURL(req *http.Request) (url string) {
 	return s.ServiceURL(req) + "/"
 }
@@ -277,7 +300,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	delete(s.challenges, challengeHex)
 	s.challengeMutex.Unlock()
 
-	relayURL := s.ServiceURL(r)
+	relayURL := s.WebSocketURL(r)
 
 	// Validate the authentication event with the correct challenge
 	// The challenge in the event tag is hex-encoded, so we need to pass the hex string as bytes
