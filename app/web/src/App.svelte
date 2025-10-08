@@ -482,10 +482,9 @@
                         {userProfile?.name || userPubkey.slice(0, 8) + '...'}
                     </span>
                 </button>
-                <button class="logout-btn" on:click={handleLogout}>🚪</button>
             </div>
         {:else}
-            <button class="login-btn" on:click={openLoginModal}>📥</button>
+            <button class="login-btn" on:click={openLoginModal}>Log in</button>
         {/if}
     </div>
 </header>
@@ -535,7 +534,7 @@
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to access export functionality.</p>
-                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
                     </div>
                 {/if}
             </div>
@@ -558,7 +557,7 @@
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to access import functionality.</p>
-                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
                     </div>
                 {/if}
             </div>
@@ -590,7 +589,7 @@
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to view your events.</p>
-                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
                     </div>
                 {/if}
             </div>
@@ -626,7 +625,7 @@
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to view events.</p>
-                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
                     </div>
                 {/if}
             </div>
@@ -657,6 +656,8 @@
                             {#if userProfile.banner}
                                 <img src={userProfile.banner} alt="Profile banner" class="profile-banner" />
                             {/if}
+                            <!-- Logout button floating in top-right corner of banner -->
+                            <button class="logout-btn floating" on:click={handleLogout}>Log out</button>
                             <!-- Avatar overlaps the bottom edge of the banner by 50% -->
                             {#if userProfile.picture}
                                 <img src={userProfile.picture} alt="User avatar" class="profile-avatar overlap" />
@@ -861,26 +862,25 @@
     }
 
     .login-btn {
-        border: 0 none;
-        border-radius: 0;
-        display: flex;
-        align-items: center;
-        background-color: var(--primary);
+        padding: 0.5em 1em;
+        border: none;
+        border-radius: 6px;
+        background-color: #4CAF50;
+        color: white;
         cursor: pointer;
-        color: var(--text-color);
-        height: 3em;
-        width: auto;
-        min-width: 3em;
-        flex-shrink: 0;
-        line-height: 1;
+        font-size: 1rem;
+        font-weight: 500;
         transition: background-color 0.2s;
+        display: inline-flex;
+        align-items: center;
         justify-content: center;
-        padding: 1em 1em 1em 1em;
-        margin: 0;
+        vertical-align: middle;
+        margin: 0 auto;
+        padding:0.5em 1em;
     }
 
     .login-btn:hover {
-        background-color: #0056b3;
+        background-color: #45a049;
     }
 
     /* App Container */
@@ -1014,23 +1014,32 @@
     
     
     .logout-btn {
-        padding: 0;
+        padding: 0.5rem 1rem;
         border: none;
-        border-radius: 0;
+        border-radius: 6px;
         background-color: var(--warning);
         color: white;
         cursor: pointer;
-        flex-shrink: 0;
-        height: 3em;
-        width: 3em;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 0.5rem;
     }
-    
-    /*.logout-btn:hover {*/
-    /*    background: ;*/
-    /*}*/
+
+    .logout-btn:hover {
+        background-color: #e53935;
+    }
+
+    .logout-btn.floating {
+        position: absolute;
+        top: 0.5em;
+        right: 0.5em;
+        z-index: 10;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
     
     /* User Profile Button */
     .user-profile-btn {
@@ -1138,6 +1147,7 @@
     .profile-section {
         margin-bottom: 2rem;
     }
+
 
     .profile-hero {
         position: relative;
@@ -1281,7 +1291,7 @@
         margin-bottom: 1.5rem;
     }
 
-    .export-section h3, .import-section h3, .events-section h3 {
+    .export-section h3, .import-section h3 {
         margin: 0 0 1rem 0;
         color: var(--text-color);
         font-size: 1.2rem;
