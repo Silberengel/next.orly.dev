@@ -1,30 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Nostr Relay</title>
-    
-  <link rel="stylesheet" crossorigin href="./index-q4cwd1fy.css"><script type="module" crossorigin src="./index-kk1m7jg4.js"></script></head>
-  <body>
-    <script>
-      // Apply system theme preference immediately to avoid flash of wrong theme
-      function applyTheme(isDark) {
-        document.body.classList.remove('bg-white', 'bg-gray-900');
-        document.body.classList.add(isDark ? 'bg-gray-900' : 'bg-white');
-      }
-      
-      // Set initial theme
-      applyTheme(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      
-      // Listen for theme changes
-      if (window.matchMedia) {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
-          applyTheme(e.matches);
-        });
-      }
-    </script>
-    <div id="root"></div>
-    
-  </body>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Next Orly</title>
+		<link rel="icon" href="/favicon.png" type="image/png" />
+		<link rel="stylesheet" href="/bundle.css" />
+	</head>
+	<body>
+		<div id="app"></div>
+		<script src="/bundle.js"></script>
+	</body>
 </html>

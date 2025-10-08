@@ -29,13 +29,20 @@ import (
 )
 
 func (l *Listener) HandleReq(msg []byte) (err error) {
-	log.D.F("HandleReq: START processing from %s", l.remote)
+	log.D.F("handling REQ: %s", msg)
+	log.T.F("HandleReq: START processing from %s", l.remote)
 	// var rem []byte
 	env := reqenvelope.New()
 	if _, err = env.Unmarshal(msg); chk.E(err) {
 		return normalize.Error.Errorf(err.Error())
 	}
-	log.D.C(func() string { return fmt.Sprintf("REQ sub=%s filters=%d", env.Subscription, len(*env.Filters)) })
+	log.T.C(
+		func() string {
+			return fmt.Sprintf(
+				"REQ sub=%s filters=%d", env.Subscription, len(*env.Filters),
+			)
+		},
+	)
 	// send a challenge to the client to auth if an ACL is active
 	if acl.Registry.Active.Load() != "none" {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
@@ -100,9 +107,15 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			if f.Until != nil {
 				until = f.Until.Int()
 			}
-			log.D.C(func() string {
-				return fmt.Sprintf("REQ %s filter: kinds.len=%d authors.len=%d ids.len=%d d=%q limit=%v since=%v until=%v", env.Subscription, kindsLen, authorsLen, idsLen, dtag, lim, since, until)
-			})
+			log.T.C(
+				func() string {
+					return fmt.Sprintf(
+						"REQ %s filter: kinds.len=%d authors.len=%d ids.len=%d d=%q limit=%v since=%v until=%v",
+						env.Subscription, kindsLen, authorsLen, idsLen, dtag,
+						lim, since, until,
+					)
+				},
+			)
 		}
 		if f != nil && pointers.Present(f.Limit) {
 			if *f.Limit == 0 {
@@ -229,7 +242,7 @@ privCheck:
 	events = tmp
 	seen := make(map[string]struct{})
 	for _, ev := range events {
-		log.D.C(
+		log.T.C(
 			func() string {
 				return fmt.Sprintf(
 					"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
@@ -256,7 +269,7 @@ privCheck:
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
-	log.D.F("sending EOSE to %s", l.remote)
+	log.T.F("sending EOSE to %s", l.remote)
 	if err = eoseenvelope.NewFrom(env.Subscription).
 		Write(l); chk.E(err) {
 		return
@@ -264,7 +277,7 @@ privCheck:
 	// if the query was for just Ids, we know there can't be any more results,
 	// so cancel the subscription.
 	cancel := true
-	log.D.F(
+	log.T.F(
 		"REQ %s: computing cancel/subscription; events_sent=%d",
 		env.Subscription, len(events),
 	)
@@ -318,6 +331,6 @@ privCheck:
 	} else {
 		// suppress server-sent CLOSED; client will close subscription if desired
 	}
-	log.D.F("HandleReq: COMPLETED processing from %s", l.remote)
+	log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
 	return
 }

@@ -18,6 +18,7 @@ import (
 )
 
 func (l *Listener) HandleEvent(msg []byte) (err error) {
+	log.D.F("handling event: %s", msg)
 	// decode the envelope
 	env := eventenvelope.NewSubmission()
 	if msg, err = env.Unmarshal(msg); chk.E(err) {

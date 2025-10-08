@@ -236,7 +236,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 		return
 	}
 	urls := f.adminRelays()
-	log.I.S(urls)
+	// log.I.S(urls)
 	if len(urls) == 0 {
 		log.W.F("follows syncer: no admin relays found in DB (kind 10002) and no bootstrap relays configured")
 		return
@@ -274,11 +274,16 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 					log.W.F("follows syncer: dial %s failed: %v", u, err)
 
 					// Handle different types of errors
-					if strings.Contains(err.Error(), "response status code 101 but got 403") {
+					if strings.Contains(
+						err.Error(), "response status code 101 but got 403",
+					) {
 						// 403 means the relay is not accepting connections from us
 						// Forbidden is the meaning, usually used to indicate either the IP or user is blocked
 						// But we should still retry after a longer delay
-						log.W.F("follows syncer: relay %s returned 403, will retry after longer delay", u)
+						log.W.F(
+							"follows syncer: relay %s returned 403, will retry after longer delay",
+							u,
+						)
 						timer := time.NewTimer(5 * time.Minute) // Wait 5 minutes before retrying 403 errors
 						select {
 						case <-ctx.Done():
@@ -286,12 +291,20 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 						case <-timer.C:
 						}
 						continue
-					} else if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "connection refused") {
+					} else if strings.Contains(
+						err.Error(), "timeout",
+					) || strings.Contains(err.Error(), "connection refused") {
 						// Network issues, retry with normal backoff
-						log.W.F("follows syncer: network issue with %s, retrying in %v", u, backoff)
+						log.W.F(
+							"follows syncer: network issue with %s, retrying in %v",
+							u, backoff,
+						)
 					} else {
 						// Other errors, retry with normal backoff
-						log.W.F("follows syncer: connection error with %s, retrying in %v", u, backoff)
+						log.W.F(
+							"follows syncer: connection error with %s, retrying in %v",
+							u, backoff,
+						)
 					}
 
 					timer := time.NewTimer(backoff)
@@ -306,7 +319,7 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 					continue
 				}
 				backoff = time.Second
-				log.I.F("follows syncer: successfully connected to %s", u)
+				log.T.F("follows syncer: successfully connected to %s", u)
 
 				// send REQ for kind 3 (follow lists), kind 10002 (relay lists), and all events from follows
 				ff := &filter.S{}
@@ -332,11 +345,16 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				if err = c.Write(
 					ctx, websocket.MessageText, req.Marshal(nil),
 				); chk.E(err) {
-					log.W.F("follows syncer: failed to send REQ to %s: %v", u, err)
+					log.W.F(
+						"follows syncer: failed to send REQ to %s: %v", u, err,
+					)
 					_ = c.Close(websocket.StatusInternalError, "write failed")
 					continue
 				}
-				log.I.F("follows syncer: sent REQ to %s for kind 3, 10002, and all events (last 30 days) from followed users", u)
+				log.T.F(
+					"follows syncer: sent REQ to %s for kind 3, 10002, and all events (last 30 days) from followed users",
+					u,
+				)
 				// read loop
 				for {
 					select {
@@ -368,17 +386,24 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 						// Process events based on kind
 						switch res.Event.Kind {
 						case kind.FollowList.K:
-							log.I.F("follows syncer: received kind 3 (follow list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u)
+							log.T.F(
+								"follows syncer: received kind 3 (follow list) event from %s on relay %s",
+								hex.EncodeToString(res.Event.Pubkey), u,
+							)
 							// Extract followed pubkeys from 'p' tags in kind 3 events
 							f.extractFollowedPubkeys(res.Event)
 						case kind.RelayListMetadata.K:
-							log.I.F("follows syncer: received kind 10002 (relay list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u)
+							log.T.F(
+								"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
+								hex.EncodeToString(res.Event.Pubkey), u,
+							)
 						default:
 							// Log all other events from followed users
-							log.I.F("follows syncer: received kind %d event from %s on relay %s",
-								res.Event.Kind, hex.EncodeToString(res.Event.Pubkey), u)
+							log.T.F(
+								"follows syncer: received kind %d event from %s on relay %s",
+								res.Event.Kind,
+								hex.EncodeToString(res.Event.Pubkey), u,
+							)
 						}
 
 						if _, _, err = f.D.SaveEvent(
@@ -488,7 +513,10 @@ func (f *Follows) AddFollow(pub []byte) {
 	b := make([]byte, len(pub))
 	copy(b, pub)
 	f.follows = append(f.follows, b)
-	log.I.F("follows syncer: added new followed pubkey: %s", hex.EncodeToString(pub))
+	log.I.F(
+		"follows syncer: added new followed pubkey: %s",
+		hex.EncodeToString(pub),
+	)
 	// notify syncer if initialized
 	if f.updated != nil {
 		select {

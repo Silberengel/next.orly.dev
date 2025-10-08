@@ -1,30 +1,11 @@
-# Dependencies
-node_modules
-.pnp
-.pnp.js
-
-# Bun
-.bunfig.toml
-bun.lockb
-
-# Build directories
-build
-
-# Cache and logs
-.cache
-.temp
-.log
-*.log
-
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Editor directories and files
-.idea
-.vscode
-*.swp
-*.swo
+node_modules/
+dist/
+.vite/
+.tanstack/
+.idea/
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+/.idea/

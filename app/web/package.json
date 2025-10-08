@@ -1,19 +1,24 @@
 {
-  "name": "orly-web",
-  "version": "0.1.0",
+  "name": "svelte-app",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --hot --port 5173 public/dev.html",
-    "build": "rm -rf dist && bun build ./public/index.html --outdir ./dist --minify --splitting && cp -r public/tailwind.min.css dist/",
-    "preview": "bun x serve dist"
-  },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-json-pretty": "^2.2.0"
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "start": "sirv public --no-clear"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "@rollup/plugin-commonjs": "^24.0.0",
+    "@rollup/plugin-node-resolve": "^15.0.0",
+    "@rollup/plugin-terser": "^0.4.0",
+    "rollup": "^3.15.0",
+    "rollup-plugin-css-only": "^4.3.0",
+    "rollup-plugin-livereload": "^2.0.0",
+    "rollup-plugin-svelte": "^7.1.2",
+    "svelte": "^3.55.0"
+  },
+  "dependencies": {
+    "sirv-cli": "^2.0.0"
   }
 }

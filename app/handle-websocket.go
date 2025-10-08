@@ -244,7 +244,7 @@ func (s *Server) Pinger(
 
 			pingCancel()
 		case <-ctx.Done():
-			log.D.F("pinger context cancelled after %d pings", pingCount)
+			log.T.F("pinger context cancelled after %d pings", pingCount)
 			return
 		}
 	}
