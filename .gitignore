@@ -99,6 +99,7 @@ cmd/benchmark/data
 !/app/web/dist/*
 !/app/web/dist/**
 !bun.lock
+!*.svelte
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
