@@ -40,6 +40,7 @@ type Follows struct {
 	pubs       *publish.S
 	followsMx  sync.RWMutex
 	admins     [][]byte
+	owners     [][]byte
 	follows    [][]byte
 	updated    chan struct{}
 	subsCancel context.CancelFunc
@@ -68,6 +69,16 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 	if f.cfg == nil || f.D == nil {
 		err = errorf.E("both config and database must be set")
 		return
+	}
+	// add owners list
+	for _, owner := range f.cfg.Owners {
+		var own []byte
+		if o, e := bech32encoding.NpubOrHexToPublicKeyBinary(owner); chk.E(e) {
+			continue
+		} else {
+			own = o
+		}
+		f.owners = append(f.owners, own)
 	}
 	// find admin follow lists
 	f.followsMx.Lock()
@@ -129,11 +140,13 @@ func (f *Follows) Configure(cfg ...any) (err error) {
 }
 
 func (f *Follows) GetAccessLevel(pub []byte, address string) (level string) {
-	if f.cfg == nil {
-		return "write"
-	}
 	f.followsMx.RLock()
 	defer f.followsMx.RUnlock()
+	for _, v := range f.owners {
+		if utils.FastEqual(v, pub) {
+			return "owner"
+		}
+	}
 	for _, v := range f.admins {
 		if utils.FastEqual(v, pub) {
 			return "admin"
@@ -143,6 +156,9 @@ func (f *Follows) GetAccessLevel(pub []byte, address string) (level string) {
 		if utils.FastEqual(v, pub) {
 			return "write"
 		}
+	}
+	if f.cfg == nil {
+		return "write"
 	}
 	return "read"
 }

@@ -2,14 +2,13 @@
     import LoginModal from './LoginModal.svelte';
     import { initializeNostrClient, fetchUserProfile } from './nostr.js';
     
-    export let name;
-
     let isDarkTheme = false;
     let showLoginModal = false;
     let isLoggedIn = false;
     let userPubkey = '';
     let authMethod = '';
     let userProfile = null;
+    let userRole = '';
     let showSettingsDrawer = false;
     let selectedTab = 'export';
     let isSearchMode = false;
@@ -45,6 +44,8 @@
             isLoggedIn = true;
             userPubkey = storedPubkey;
             authMethod = storedAuthMethod;
+            // Fetch user role for already logged in users
+            fetchUserRole();
         }
     }
 
@@ -92,6 +93,9 @@
         } catch (error) {
             console.error('Failed to load profile:', error);
         }
+        
+        // Fetch user role/permissions
+        await fetchUserRole();
     }
     
     function handleLogout() {
@@ -99,6 +103,7 @@
         userPubkey = '';
         authMethod = '';
         userProfile = null;
+        userRole = '';
         showSettingsDrawer = false;
         
         // Clear stored authentication
@@ -187,6 +192,28 @@
             console.error('Failed to auto-load profile:', error);
         }
     }
+
+    async function fetchUserRole() {
+        if (!isLoggedIn || !userPubkey) {
+            userRole = '';
+            return;
+        }
+        
+        try {
+            const response = await fetch(`/api/permissions/${userPubkey}`);
+            if (response.ok) {
+                const data = await response.json();
+                userRole = data.permission || '';
+                console.log('User role loaded:', userRole);
+            } else {
+                console.error('Failed to fetch user role:', response.status);
+                userRole = '';
+            }
+        } catch (error) {
+            console.error('Error fetching user role:', error);
+            userRole = '';
+        }
+    }
 </script>
 
 <!-- Header -->
@@ -201,12 +228,16 @@
                     bind:value={searchQuery}
                     on:keydown={handleSearchKeydown}
                     placeholder="Search..."
-                    autofocus
                 />
             </div>
         {:else}
             <div class="header-title">
-                <span class="app-title">ORLY?</span>
+                <span class="app-title">
+                    ORLY? dashboard
+                    {#if isLoggedIn && userRole}
+                        <span class="permission-badge">{userRole}</span>
+                    {/if}
+                </span>
             </div>
         {/if}
         <button class="search-btn" on:click={toggleSearchMode}>
@@ -258,7 +289,7 @@
 
     <!-- Main Content -->
     <main class="main-content">
-        <h1>Hello {name}!</h1>
+        <p>Log in to access your user dashboard</p>
     </main>
 </div>
 
@@ -394,6 +425,20 @@
         font-size: 1em;
         font-weight: 600;
         color: var(--text-color);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .permission-badge {
+        font-size: 0.7em;
+        font-weight: 500;
+        padding: 0.2em 0.5em;
+        border-radius: 0.3em;
+        background-color: var(--primary);
+        color: white;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
 
     .search-input-container {
@@ -581,14 +626,6 @@
         color: var(--text-color);
     }
 
-    .main-content h1 {
-        color: #ff3e00;
-        text-transform: uppercase;
-        font-size: 4em;
-        font-weight: 100;
-        text-align: center;
-    }
-
     @media (max-width: 640px) {
         .header-content {
             padding: 0;
@@ -603,9 +640,6 @@
             padding: 1rem;
         }
 
-        .main-content h1 {
-            font-size: 2.5em;
-        }
     }
     
     /* User Info Styles */

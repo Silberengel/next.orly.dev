@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	None = "none"
 	// Read means read only
 	Read = "read"
 	// Write means read and write
@@ -14,9 +15,6 @@ const (
 	Admin = "admin"
 	// Owner means read, write, import/export, arbitrary delete and wipe
 	Owner = "owner"
-	// Group applies to communities and other groups; the content afterwards a
-	// set of comma separated <permission>:<pubkey> pairs designating permissions to groups.
-	Group = "group:"
 )
 
 type I interface {
