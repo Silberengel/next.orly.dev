@@ -17,3 +17,9 @@ func GetReactAppFS() http.FileSystem {
 	}
 	return http.FS(webDist)
 }
+
+// ServeEmbeddedWeb serves the embedded web application
+func ServeEmbeddedWeb(w http.ResponseWriter, r *http.Request) {
+	// Serve the embedded web app
+	http.FileServer(GetReactAppFS()).ServeHTTP(w, r)
+}

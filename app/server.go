@@ -22,6 +22,7 @@ import (
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/protocol/auth"
+	"next.orly.dev/pkg/protocol/httpauth"
 	"next.orly.dev/pkg/protocol/publish"
 )
 
@@ -94,61 +95,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-func (s *Server) ServiceURL(req *http.Request) (st string) {
-	// Get host from various proxy headers
-	host := req.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = req.Header.Get("Host")
-	}
-	if host == "" {
-		host = req.Host
-	}
-
-	// Get protocol from various proxy headers
+func (s *Server) ServiceURL(req *http.Request) (url string) {
 	proto := req.Header.Get("X-Forwarded-Proto")
 	if proto == "" {
-		proto = req.Header.Get("X-Forwarded-Scheme")
-	}
-	if proto == "" {
-		// Check if we're behind a proxy by looking for common proxy headers
-		hasProxyHeaders := req.Header.Get("X-Forwarded-For") != "" ||
-			req.Header.Get("X-Real-IP") != "" ||
-			req.Header.Get("Forwarded") != ""
-
-		if hasProxyHeaders {
-			// If we have proxy headers, assume HTTPS/WSS
-			proto = "wss"
-		} else if host == "localhost" {
-			proto = "ws"
-		} else if strings.Contains(host, ":") {
-			// has a port number
-			proto = "ws"
-		} else if _, err := strconv.Atoi(
-			strings.ReplaceAll(
-				host, ".",
-				"",
-			),
-		); chk.E(err) {
-			// it's a naked IP
-			proto = "ws"
+		if req.TLS != nil {
+			proto = "https"
 		} else {
-			proto = "wss"
+			proto = "http"
 		}
-	} else if proto == "https" {
-		proto = "wss"
-	} else if proto == "http" {
-		proto = "ws"
+	}
+	host := req.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = req.Host
 	}
 	return proto + "://" + host
 }
 
-// DashboardURL constructs HTTPS URL for the dashboard based on the HTTP request
-func (s *Server) DashboardURL(req *http.Request) string {
-	host := req.Header.Get("X-Forwarded-Host")
-	if host == "" {
-		host = req.Host
-	}
-	return "https://" + host
+func (s *Server) DashboardURL(req *http.Request) (url string) {
+	return s.ServiceURL(req) + "/"
 }
 
 // UserInterface sets up a basic Nostr NDK interface that allows users to log into the relay user interface
@@ -202,6 +166,7 @@ func (s *Server) UserInterface() {
 	// Export endpoints
 	s.mux.HandleFunc("/api/export", s.handleExport)
 	s.mux.HandleFunc("/api/export/mine", s.handleExportMine)
+	s.mux.HandleFunc("/export", s.handleExportAll)
 	// Events endpoints
 	s.mux.HandleFunc("/api/events/mine", s.handleEventsMine)
 	// Import endpoint (admin only)
@@ -211,40 +176,58 @@ func (s *Server) UserInterface() {
 // handleLoginInterface serves the main user interface for login
 func (s *Server) handleLoginInterface(w http.ResponseWriter, r *http.Request) {
 	// In dev mode with proxy configured, forward to dev server
-	if s.Config != nil && s.Config.WebDisableEmbedded && s.devProxy != nil {
+	if s.devProxy != nil {
 		s.devProxy.ServeHTTP(w, r)
 		return
 	}
-	// If embedded UI is disabled but no proxy configured, return a helpful message
-	if s.Config != nil && s.Config.WebDisableEmbedded {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte("Web UI disabled (ORLY_WEB_DISABLE=true). Run the web app in standalone dev mode (e.g., npm run dev) or set ORLY_WEB_DEV_PROXY_URL to proxy through this server."))
-		return
-	}
-	// Default: serve embedded React app
-	fileServer := http.FileServer(GetReactAppFS())
-	fileServer.ServeHTTP(w, r)
+
+	// Serve embedded web interface
+	ServeEmbeddedWeb(w, r)
 }
 
-// handleAuthChallenge generates and returns an authentication challenge
+// handleAuthChallenge generates a new authentication challenge
 func (s *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Generate a proper challenge using the auth package
+	w.Header().Set("Content-Type", "application/json")
+
+	// Generate a new challenge
 	challenge := auth.GenerateChallenge()
 	challengeHex := hex.Enc(challenge)
 
-	// Store the challenge using the hex value as the key for easy lookup
+	// Store the challenge with expiration (5 minutes)
 	s.challengeMutex.Lock()
+	if s.challenges == nil {
+		s.challenges = make(map[string][]byte)
+	}
 	s.challenges[challengeHex] = challenge
 	s.challengeMutex.Unlock()
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"challenge": "` + challengeHex + `"}`))
+	// Clean up expired challenges
+	go func() {
+		time.Sleep(5 * time.Minute)
+		s.challengeMutex.Lock()
+		delete(s.challenges, challengeHex)
+		s.challengeMutex.Unlock()
+	}()
+
+	// Return the challenge
+	response := struct {
+		Challenge string `json:"challenge"`
+	}{
+		Challenge: challengeHex,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		http.Error(w, "Error generating challenge", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
 }
 
 // handleAuthLogin processes authentication requests
@@ -318,10 +301,11 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   60 * 60 * 24 * 30, // 30 days
 	}
 	http.SetCookie(w, cookie)
-	w.Write([]byte(`{"success": true, "pubkey": "` + hex.Enc(evt.Pubkey) + `", "message": "Authentication successful"}`))
+
+	w.Write([]byte(`{"success": true}`))
 }
 
-// handleAuthStatus returns the current authentication status
+// handleAuthStatus checks if the user is authenticated
 func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -329,35 +313,63 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+
 	// Check for auth cookie
-	if c, err := r.Cookie("orly_auth"); err == nil && c.Value != "" {
-		// Validate pubkey format (hex)
-		if _, err := hex.Dec(c.Value); !chk.E(err) {
-			w.Write([]byte(`{"authenticated": true, "pubkey": "` + c.Value + `"}`))
-			return
-		}
+	c, err := r.Cookie("orly_auth")
+	if err != nil || c.Value == "" {
+		w.Write([]byte(`{"authenticated": false}`))
+		return
 	}
-	w.Write([]byte(`{"authenticated": false}`))
+
+	// Validate the pubkey format
+	pubkey, err := hex.Dec(c.Value)
+	if chk.E(err) {
+		w.Write([]byte(`{"authenticated": false}`))
+		return
+	}
+
+	// Get user permissions
+	permission := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+
+	response := struct {
+		Authenticated bool   `json:"authenticated"`
+		Pubkey        string `json:"pubkey"`
+		Permission    string `json:"permission"`
+	}{
+		Authenticated: true,
+		Pubkey:        c.Value,
+		Permission:    permission,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		w.Write([]byte(`{"authenticated": false}`))
+		return
+	}
+
+	w.Write(jsonData)
 }
 
-// handleAuthLogout clears the auth cookie
+// handleAuthLogout clears the authentication cookie
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Expire the cookie
-	http.SetCookie(
-		w, &http.Cookie{
-			Name:     "orly_auth",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		},
-	)
+
 	w.Header().Set("Content-Type", "application/json")
+
+	// Clear the auth cookie
+	cookie := &http.Cookie{
+		Name:     "orly_auth",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1, // Expire immediately
+	}
+	http.SetCookie(w, cookie)
+
 	w.Write([]byte(`{"success": true}`))
 }
 
@@ -407,28 +419,28 @@ func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
-// handleExport streams all events as JSONL (NDJSON). Admins only.
+// handleExport streams all events as JSONL (NDJSON) using NIP-98 authentication. Admins only.
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Require auth cookie
-	c, err := r.Cookie("orly_auth")
-	if err != nil || c.Value == "" {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
 		return
 	}
-	requesterPubHex := c.Value
-	requesterPub, err := hex.Dec(requesterPubHex)
-	if chk.E(err) {
-		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
-		return
-	}
-	// Check permissions
-	if acl.Registry.GetAccessLevel(requesterPub, r.RemoteAddr) != "admin" {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+
+	// Check permissions - require write, admin, or owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "write" && accessLevel != "admin" && accessLevel != "owner" {
+		http.Error(w, "Write, admin, or owner permission required", http.StatusForbidden)
 		return
 	}
 
@@ -454,22 +466,21 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	s.D.Export(s.Ctx, w, pks...)
 }
 
-// handleExportMine streams only the authenticated user's events as JSONL (NDJSON).
+// handleExportMine streams only the authenticated user's events as JSONL (NDJSON) using NIP-98 authentication.
 func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Require auth cookie
-	c, err := r.Cookie("orly_auth")
-	if err != nil || c.Value == "" {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-	pubkey, err := hex.Dec(c.Value)
-	if chk.E(err) {
-		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
 		return
 	}
 
@@ -483,72 +494,60 @@ func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
 	s.D.Export(s.Ctx, w, pubkey)
 }
 
-// handleImport receives a JSONL/NDJSON file or body and enqueues an async import. Admins only.
-func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+// handleExportAll streams all events as JSONL (NDJSON) using NIP-98 authentication. Owner only.
+func (s *Server) handleExportAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Require auth cookie
-	c, err := r.Cookie("orly_auth")
-	if err != nil || c.Value == "" {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-	requesterPub, err := hex.Dec(c.Value)
-	if chk.E(err) {
-		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
-		return
-	}
-	// Admins only
-	if acl.Registry.GetAccessLevel(requesterPub, r.RemoteAddr) != "admin" {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
 		return
 	}
 
-	ct := r.Header.Get("Content-Type")
-	if strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); chk.E(err) { // 32MB memory, rest to temp files
-			http.Error(w, "Failed to parse form", http.StatusBadRequest)
-			return
-		}
-		file, _, err := r.FormFile("file")
-		if chk.E(err) {
-			http.Error(w, "Missing file", http.StatusBadRequest)
-			return
-		}
-		defer file.Close()
-		s.D.Import(file)
-	} else {
-		if r.Body == nil {
-			http.Error(w, "Empty request body", http.StatusBadRequest)
-			return
-		}
-		s.D.Import(r.Body)
+	// Check if user has owner permission
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusAccepted)
-	w.Write([]byte(`{"success": true, "message": "Import started"}`))
+	// Set response headers for file download
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	filename := "all-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+
+	// Disable write timeouts for this operation
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+
+	// Stream export of all events
+	s.D.Export(s.Ctx, w)
 }
 
-// handleEventsMine returns the authenticated user's events in JSON format with pagination
+// handleEventsMine returns the authenticated user's events in JSON format with pagination using NIP-98 authentication.
 func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// Require auth cookie
-	c, err := r.Cookie("orly_auth")
-	if err != nil || c.Value == "" {
-		http.Error(w, "Not authenticated", http.StatusUnauthorized)
-		return
-	}
-	pubkey, err := hex.Dec(c.Value)
-	if chk.E(err) {
-		http.Error(w, "Invalid auth cookie", http.StatusUnauthorized)
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
 		return
 	}
 
@@ -582,64 +581,93 @@ func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("DEBUG: QueryEvents returned %d events", len(events))
 
-	// If no events found, let's also check if there are any events at all in the database
-	if len(events) == 0 {
-		// Create a filter to get any events (no authors filter)
-		allEventsFilter := &filter.F{}
-		allEvents, err := s.D.QueryEvents(s.Ctx, allEventsFilter)
-		if err == nil {
-			log.Printf("DEBUG: Total events in database: %d", len(allEvents))
-		} else {
-			log.Printf("DEBUG: Failed to query all events: %v", err)
-		}
-	}
-
-	// Events are already sorted by QueryEvents in reverse chronological order
-
-	// Apply offset and limit manually since QueryEvents doesn't support offset
+	// Apply pagination
 	totalEvents := len(events)
-	start := offset
-	if start > totalEvents {
-		start = totalEvents
-	}
-	end := start + limit
-	if end > totalEvents {
-		end = totalEvents
-	}
-
-	paginatedEvents := events[start:end]
-
-	// Convert events to JSON response format
-	type EventResponse struct {
-		ID        string `json:"id"`
-		Kind      int    `json:"kind"`
-		CreatedAt int64  `json:"created_at"`
-		Content   string `json:"content"`
-		RawJSON   string `json:"raw_json"`
-	}
-
-	response := struct {
-		Events []EventResponse `json:"events"`
-		Total  int             `json:"total"`
-		Offset int             `json:"offset"`
-		Limit  int             `json:"limit"`
-	}{
-		Events: make([]EventResponse, len(paginatedEvents)),
-		Total:  totalEvents,
-		Offset: offset,
-		Limit:  limit,
-	}
-
-	for i, ev := range paginatedEvents {
-		response.Events[i] = EventResponse{
-			ID:        hex.Enc(ev.ID),
-			Kind:      int(ev.Kind),
-			CreatedAt: int64(ev.CreatedAt),
-			Content:   string(ev.Content),
-			RawJSON:   string(ev.Serialize()),
+	if offset >= totalEvents {
+		events = event.S{} // Empty slice
+	} else {
+		end := offset + limit
+		if end > totalEvents {
+			end = totalEvents
 		}
+		events = events[offset:end]
+	}
+
+	// Set content type and write JSON response
+	w.Header().Set("Content-Type", "application/json")
+
+	// Format response as proper JSON
+	response := struct {
+		Events []*event.E `json:"events"`
+		Total  int        `json:"total"`
+		Limit  int        `json:"limit"`
+		Offset int        `json:"offset"`
+	}{
+		Events: events,
+		Total:  totalEvents,
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	// Marshal and write the response
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		http.Error(
+			w, "Error generating response", http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Write(jsonData)
+}
+
+// handleImport receives a JSONL/NDJSON file or body and enqueues an async import using NIP-98 authentication. Admins only.
+func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require admin or owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "admin" && accessLevel != "owner" {
+		http.Error(w, "Admin or owner permission required", http.StatusForbidden)
+		return
+	}
+
+	ct := r.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); chk.E(err) { // 32MB memory, rest to temp files
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if chk.E(err) {
+			http.Error(w, "Missing file", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		s.D.Import(file)
+	} else {
+		if r.Body == nil {
+			http.Error(w, "Empty request body", http.StatusBadRequest)
+			return
+		}
+		s.D.Import(r.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusAccepted)
+	w.Write([]byte(`{"success": true, "message": "Import started"}`))
 }

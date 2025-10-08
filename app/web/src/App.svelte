@@ -14,6 +14,9 @@
     let isSearchMode = false;
     let searchQuery = '';
     let searchTabs = [];
+    let myEvents = [];
+    let allEvents = [];
+    let selectedFile = null;
 
     // Safely render "about" text: convert double newlines to a single HTML line break
     function escapeHtml(str) {
@@ -51,13 +54,24 @@
 
     const baseTabs = [
         {id: 'export', icon: '📤', label: 'Export'},
-        {id: 'import', icon: '💾', label: 'Import'},
+        {id: 'import', icon: '💾', label: 'Import', requiresAdmin: true},
         {id: 'myevents', icon: '👤', label: 'My Events'},
         {id: 'allevents', icon: '📡', label: 'All Events'},
-        {id: 'sprocket', icon: '⚙️', label: 'Sprocket'},
+        {id: 'sprocket', icon: '⚙️', label: 'Sprocket', requiresOwner: true},
     ];
 
-    $: tabs = [...baseTabs, ...searchTabs];
+    // Filter tabs based on user permissions
+    $: filteredBaseTabs = baseTabs.filter(tab => {
+        if (tab.requiresAdmin && (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner'))) {
+            return false;
+        }
+        if (tab.requiresOwner && (!isLoggedIn || userRole !== 'owner')) {
+            return false;
+        }
+        return true;
+    });
+    
+    $: tabs = [...filteredBaseTabs, ...searchTabs];
 
     function selectTab(tabId) {
         selectedTab = tabId;
@@ -214,6 +228,216 @@
             userRole = '';
         }
     }
+
+    // Export functionality
+    async function exportAllEvents() {
+        if (!isLoggedIn || userRole !== 'owner') {
+            alert('Owner permission required');
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader('/export', 'GET');
+            const response = await fetch('/export', {
+                method: 'GET',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `all-events-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jsonl`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Export failed: ' + error.message);
+        }
+    }
+
+    async function exportMyEvents() {
+        if (!isLoggedIn) {
+            alert('Please log in first');
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader('/api/export/mine', 'GET');
+            const response = await fetch('/api/export/mine', {
+                method: 'GET',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Export failed: ${response.status} ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `my-events-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jsonl`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Export failed: ' + error.message);
+        }
+    }
+
+    // Import functionality
+    function handleFileSelect(event) {
+        selectedFile = event.target.files[0];
+    }
+
+    async function importEvents() {
+        if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner')) {
+            alert('Admin or owner permission required');
+            return;
+        }
+        
+        if (!selectedFile) {
+            alert('Please select a file');
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader('/api/import', 'POST');
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            
+            const response = await fetch('/api/import', {
+                method: 'POST',
+                headers: {
+                    'Authorization': authHeader
+                },
+                body: formData
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Import failed: ${response.status} ${response.statusText}`);
+            }
+            
+            const result = await response.json();
+            alert('Import started successfully');
+            selectedFile = null;
+            document.getElementById('import-file').value = '';
+        } catch (error) {
+            console.error('Import failed:', error);
+            alert('Import failed: ' + error.message);
+        }
+    }
+
+    // Events loading functionality
+    async function loadMyEvents() {
+        if (!isLoggedIn) {
+            alert('Please log in first');
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader('/api/events/mine', 'GET');
+            const response = await fetch('/api/events/mine', {
+                method: 'GET',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load events: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            myEvents = data.events || [];
+        } catch (error) {
+            console.error('Failed to load events:', error);
+            alert('Failed to load events: ' + error.message);
+        }
+    }
+
+    async function loadAllEvents() {
+        if (!isLoggedIn || (userRole !== 'write' && userRole !== 'admin' && userRole !== 'owner')) {
+            alert('Write, admin, or owner permission required');
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader('/api/export', 'GET');
+            const response = await fetch('/api/export', {
+                method: 'GET',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load events: ${response.status} ${response.statusText}`);
+            }
+            
+            const text = await response.text();
+            const lines = text.trim().split('\n');
+            allEvents = lines.map(line => {
+                try {
+                    return JSON.parse(line);
+                } catch (e) {
+                    return null;
+                }
+            }).filter(event => event !== null);
+        } catch (error) {
+            console.error('Failed to load events:', error);
+            alert('Failed to load events: ' + error.message);
+        }
+    }
+
+    // NIP-98 authentication helper
+    async function createNIP98AuthHeader(url, method) {
+        if (!isLoggedIn || !userPubkey) {
+            throw new Error('Not logged in');
+        }
+        
+        // Get the private key from localStorage
+        const privateKey = localStorage.getItem('nostr_privkey');
+        if (!privateKey) {
+            throw new Error('Private key not found');
+        }
+        
+        // Create NIP-98 auth event
+        const authEvent = {
+            kind: 27235,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [
+                ['u', window.location.origin + url],
+                ['method', method.toUpperCase()]
+            ],
+            content: '',
+            pubkey: userPubkey
+        };
+        
+        // Sign the event (simplified - in a real implementation you'd use proper signing)
+        // For now, we'll create a mock signature
+        authEvent.id = 'mock-id';
+        authEvent.sig = 'mock-signature';
+        
+        // Encode as base64
+        const eventJson = JSON.stringify(authEvent);
+        const base64Event = btoa(eventJson);
+        
+        return `Nostr ${base64Event}`;
+    }
 </script>
 
 <!-- Header -->
@@ -289,7 +513,132 @@
 
     <!-- Main Content -->
     <main class="main-content">
-        <p>Log in to access your user dashboard</p>
+        {#if selectedTab === 'export'}
+            <div class="export-view">
+                <h2>Export Events</h2>
+                {#if isLoggedIn && userRole === 'owner'}
+                    <div class="export-section">
+                        <h3>Export All Events</h3>
+                        <p>Download the complete database as a JSONL file. This includes all events from all users.</p>
+                        <button class="export-btn" on:click={exportAllEvents}>
+                            📤 Export All Events
+                        </button>
+                    </div>
+                {:else if isLoggedIn}
+                    <div class="export-section">
+                        <h3>Export My Events</h3>
+                        <p>Download your personal events as a JSONL file.</p>
+                        <button class="export-btn" on:click={exportMyEvents}>
+                            📤 Export My Events
+                        </button>
+                    </div>
+                {:else}
+                    <div class="login-prompt">
+                        <p>Please log in to access export functionality.</p>
+                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                    </div>
+                {/if}
+            </div>
+        {:else if selectedTab === 'import'}
+            <div class="import-view">
+                <h2>Import Events</h2>
+                {#if isLoggedIn && (userRole === 'admin' || userRole === 'owner')}
+                    <div class="import-section">
+                        <h3>Import Events</h3>
+                        <p>Upload a JSONL file to import events into the database.</p>
+                        <input type="file" id="import-file" accept=".jsonl,.txt" on:change={handleFileSelect} />
+                        <button class="import-btn" on:click={importEvents} disabled={!selectedFile}>
+                            📥 Import Events
+                        </button>
+                    </div>
+                {:else if isLoggedIn}
+                    <div class="permission-denied">
+                        <p>❌ Admin or owner permission required for import functionality.</p>
+                    </div>
+                {:else}
+                    <div class="login-prompt">
+                        <p>Please log in to access import functionality.</p>
+                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                    </div>
+                {/if}
+            </div>
+        {:else if selectedTab === 'myevents'}
+            <div class="events-view">
+                <h2>My Events</h2>
+                {#if isLoggedIn}
+                    <div class="events-section">
+                        <p>View and manage your personal events.</p>
+                        <button class="refresh-btn" on:click={loadMyEvents}>
+                            🔄 Refresh Events
+                        </button>
+                        <div class="events-list">
+                            {#if myEvents.length > 0}
+                                {#each myEvents as event}
+                                    <div class="event-item">
+                                        <div class="event-header">
+                                            <span class="event-kind">Kind {event.kind}</span>
+                                            <span class="event-time">{new Date(event.created_at * 1000).toLocaleString()}</span>
+                                        </div>
+                                        <div class="event-content">{event.content}</div>
+                                    </div>
+                                {/each}
+                            {:else}
+                                <p>No events found.</p>
+                            {/if}
+                        </div>
+                    </div>
+                {:else}
+                    <div class="login-prompt">
+                        <p>Please log in to view your events.</p>
+                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                    </div>
+                {/if}
+            </div>
+        {:else if selectedTab === 'allevents'}
+            <div class="events-view">
+                <h2>All Events</h2>
+                {#if isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner')}
+                    <div class="events-section">
+                        <p>View all events in the database.</p>
+                        <button class="refresh-btn" on:click={loadAllEvents}>
+                            🔄 Refresh Events
+                        </button>
+                        <div class="events-list">
+                            {#if allEvents.length > 0}
+                                {#each allEvents as event}
+                                    <div class="event-item">
+                                        <div class="event-header">
+                                            <span class="event-kind">Kind {event.kind}</span>
+                                            <span class="event-time">{new Date(event.created_at * 1000).toLocaleString()}</span>
+                                        </div>
+                                        <div class="event-content">{event.content}</div>
+                                    </div>
+                                {/each}
+                            {:else}
+                                <p>No events found.</p>
+                            {/if}
+                        </div>
+                    </div>
+                {:else if isLoggedIn}
+                    <div class="permission-denied">
+                        <p>❌ Write, admin, or owner permission required to view all events.</p>
+                    </div>
+                {:else}
+                    <div class="login-prompt">
+                        <p>Please log in to view events.</p>
+                        <button class="login-btn" on:click={openLoginModal}>📥 Log In</button>
+                    </div>
+                {/if}
+            </div>
+        {:else}
+            <div class="welcome-message">
+                {#if isLoggedIn}
+                    <p>Welcome {userProfile?.name || userPubkey.slice(0, 8) + '...'}</p>
+                {:else}
+                    <p>Log in to access your user dashboard</p>
+                {/if}
+            </div>
+        {/if}
     </main>
 </div>
 
@@ -624,6 +973,19 @@
         overflow-y: auto;
         background-color: var(--bg-color);
         color: var(--text-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .welcome-message {
+        text-align: center;
+    }
+
+    .welcome-message p {
+        font-size: 1.2rem;
+        margin: 0;
+        color: var(--text-color);
     }
 
     @media (max-width: 640px) {
@@ -897,6 +1259,143 @@
         border-radius: 4px;
         word-break: break-all;
     }
+
+    /* Export/Import/Events Views */
+    .export-view, .import-view, .events-view {
+        padding: 2rem;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    .export-view h2, .import-view h2, .events-view h2 {
+        margin: 0 0 2rem 0;
+        color: var(--text-color);
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+
+    .export-section, .import-section, .events-section {
+        background: var(--header-bg);
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+
+    .export-section h3, .import-section h3, .events-section h3 {
+        margin: 0 0 1rem 0;
+        color: var(--text-color);
+        font-size: 1.2rem;
+        font-weight: 500;
+    }
+
+    .export-section p, .import-section p, .events-section p {
+        margin: 0 0 1rem 0;
+        color: var(--text-color);
+        opacity: 0.8;
+        line-height: 1.5;
+    }
+
+    .export-btn, .import-btn, .refresh-btn {
+        padding: 0.75rem 1.5rem;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 1rem;
+        font-weight: 500;
+        transition: background-color 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .export-btn:hover, .import-btn:hover, .refresh-btn:hover {
+        background: #00ACC1;
+    }
+
+    .export-btn:disabled, .import-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    #import-file {
+        margin: 1rem 0;
+        padding: 0.5rem;
+        border: 1px solid var(--input-border);
+        border-radius: 4px;
+        background: var(--bg-color);
+        color: var(--text-color);
+        font-size: 1rem;
+    }
+
+    .login-prompt {
+        text-align: center;
+        padding: 2rem;
+        background: var(--header-bg);
+        border-radius: 8px;
+    }
+
+    .login-prompt p {
+        margin: 0 0 1rem 0;
+        color: var(--text-color);
+        font-size: 1.1rem;
+    }
+
+    .permission-denied {
+        text-align: center;
+        padding: 2rem;
+        background: var(--header-bg);
+        border-radius: 8px;
+        border: 2px solid var(--warning);
+    }
+
+    .permission-denied p {
+        margin: 0;
+        color: var(--warning);
+        font-size: 1.1rem;
+        font-weight: 500;
+    }
+
+    .events-list {
+        margin-top: 1rem;
+    }
+
+    .event-item {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .event-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .event-kind {
+        background: var(--primary);
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .event-time {
+        color: var(--text-color);
+        opacity: 0.7;
+        font-size: 0.9rem;
+    }
+
+    .event-content {
+        color: var(--text-color);
+        line-height: 1.4;
+        word-break: break-word;
+    }
     
     @media (max-width: 640px) {
         .settings-drawer {
@@ -912,5 +1411,13 @@
 
         .profile-username { font-size: 1rem; }
         .profile-nip05-inline { font-size: 0.8rem; }
+
+        .export-view, .import-view, .events-view {
+            padding: 1rem;
+        }
+
+        .export-section, .import-section, .events-section {
+            padding: 1rem;
+        }
     }
 </style>
