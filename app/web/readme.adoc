@@ -1,0 +1,3 @@
+= nostrly.app
+
+a simple, material design nostr kind 1 nostr note client
