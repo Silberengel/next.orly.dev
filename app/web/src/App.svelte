@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents } from './nostr.js';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -18,6 +18,161 @@
     let myEvents = [];
     let allEvents = [];
     let selectedFile = null;
+    let expandedEvents = new Set();
+    let isLoadingEvents = false;
+    let hasMoreEvents = true;
+    let eventsPerPage = 100;
+    let oldestEventTimestamp = null; // For timestamp-based pagination
+    
+    // My Events pagination state
+    let isLoadingMyEvents = false;
+    let hasMoreMyEvents = true;
+    let oldestMyEventTimestamp = null; // For timestamp-based pagination
+    
+    // Shared event cache system
+    let eventCache = new Map(); // pubkey -> events[]
+    let cacheTimestamps = new Map(); // pubkey -> timestamp
+    let globalEventsCache = []; // All events cache
+    let globalCacheTimestamp = 0;
+    const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    // Kind name mapping based on repository kind definitions
+    const kindNames = {
+        0: "ProfileMetadata",
+        1: "TextNote", 
+        2: "RecommendRelay",
+        3: "FollowList",
+        4: "EncryptedDirectMessage",
+        5: "EventDeletion",
+        6: "Repost",
+        7: "Reaction",
+        8: "BadgeAward",
+        13: "Seal",
+        14: "PrivateDirectMessage",
+        15: "ReadReceipt",
+        16: "GenericRepost",
+        40: "ChannelCreation",
+        41: "ChannelMetadata",
+        42: "ChannelMessage",
+        43: "ChannelHideMessage",
+        44: "ChannelMuteUser",
+        1021: "Bid",
+        1022: "BidConfirmation",
+        1040: "OpenTimestamps",
+        1059: "GiftWrap",
+        1060: "GiftWrapWithKind4",
+        1063: "FileMetadata",
+        1311: "LiveChatMessage",
+        1517: "BitcoinBlock",
+        1808: "LiveStream",
+        1971: "ProblemTracker",
+        1984: "Reporting",
+        1985: "Label",
+        4550: "CommunityPostApproval",
+        5000: "JobRequestStart",
+        5999: "JobRequestEnd",
+        6000: "JobResultStart",
+        6999: "JobResultEnd",
+        7000: "JobFeedback",
+        9041: "ZapGoal",
+        9734: "ZapRequest",
+        9735: "Zap",
+        9882: "Highlights",
+        10000: "BlockList",
+        10001: "PinList",
+        10002: "RelayListMetadata",
+        10003: "BookmarkList",
+        10004: "CommunitiesList",
+        10005: "PublicChatsList",
+        10006: "BlockedRelaysList",
+        10007: "SearchRelaysList",
+        10015: "InterestsList",
+        10030: "UserEmojiList",
+        10050: "DMRelaysList",
+        10096: "FileStorageServerList",
+        13004: "JWTBinding",
+        13194: "NWCWalletServiceInfo",
+        19999: "ReplaceableEnd",
+        20000: "EphemeralStart",
+        21000: "LightningPubRPC",
+        22242: "ClientAuthentication",
+        23194: "WalletRequest",
+        23195: "WalletResponse",
+        23196: "WalletNotificationNip4",
+        23197: "WalletNotification",
+        24133: "NostrConnect",
+        27235: "HTTPAuth",
+        29999: "EphemeralEnd",
+        30000: "FollowSets",
+        30001: "GenericLists",
+        30002: "RelaySets",
+        30003: "BookmarkSets",
+        30004: "CurationSets",
+        30008: "ProfileBadges",
+        30009: "BadgeDefinition",
+        30015: "InterestSets",
+        30017: "StallDefinition",
+        30018: "ProductDefinition",
+        30019: "MarketplaceUIUX",
+        30020: "ProductSoldAsAuction",
+        30023: "LongFormContent",
+        30024: "DraftLongFormContent",
+        30030: "EmojiSets"
+    };
+
+    function getKindName(kind) {
+        return kindNames[kind] || `Kind ${kind}`;
+    }
+
+    function truncatePubkey(pubkey) {
+        return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
+    }
+
+    function truncateContent(content, maxLength = 100) {
+        if (!content) return '';
+        return content.length > maxLength ? content.slice(0, maxLength) + '...' : content;
+    }
+
+    function toggleEventExpansion(eventId) {
+        if (expandedEvents.has(eventId)) {
+            expandedEvents.delete(eventId);
+        } else {
+            expandedEvents.add(eventId);
+        }
+        expandedEvents = expandedEvents; // Trigger reactivity
+    }
+
+    async function deleteEvent(eventId) {
+        if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner')) {
+            alert('Admin or owner permission required');
+            return;
+        }
+        
+        if (!confirm('Are you sure you want to delete this event?')) {
+            return;
+        }
+        
+        try {
+            const authHeader = await createNIP98AuthHeader(`/api/events/${eventId}`, 'DELETE');
+            const response = await fetch(`/api/events/${eventId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': authHeader
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Delete failed: ${response.status} ${response.statusText}`);
+            }
+            
+            // Remove from local list
+            allEvents = allEvents.filter(event => event.id !== eventId);
+            alert('Event deleted successfully');
+        } catch (error) {
+            console.error('Delete failed:', error);
+            alert('Delete failed: ' + error.message);
+        }
+    }
 
     // Safely render "about" text: convert double newlines to a single HTML line break
     function escapeHtml(str) {
@@ -57,6 +212,124 @@
             // Fetch user role for already logged in users
             fetchUserRole();
         }
+        
+        // Load persistent app state
+        loadPersistentState();
+    }
+
+    function savePersistentState() {
+        if (typeof localStorage === 'undefined') return;
+        
+        const state = {
+            selectedTab,
+            expandedEvents: Array.from(expandedEvents),
+            eventCache: Object.fromEntries(eventCache),
+            cacheTimestamps: Object.fromEntries(cacheTimestamps),
+            globalEventsCache,
+            globalCacheTimestamp,
+            hasMoreEvents,
+            oldestEventTimestamp,
+            hasMoreMyEvents,
+            oldestMyEventTimestamp
+        };
+        
+        localStorage.setItem('app_state', JSON.stringify(state));
+    }
+
+    function loadPersistentState() {
+        if (typeof localStorage === 'undefined') return;
+        
+        try {
+            const savedState = localStorage.getItem('app_state');
+            if (savedState) {
+                const state = JSON.parse(savedState);
+                
+                // Restore tab state
+                if (state.selectedTab && baseTabs.some(tab => tab.id === state.selectedTab)) {
+                    selectedTab = state.selectedTab;
+                }
+                
+                // Restore expanded events
+                if (state.expandedEvents) {
+                    expandedEvents = new Set(state.expandedEvents);
+                }
+                
+                // Restore cache data
+                if (state.eventCache) {
+                    eventCache = new Map(Object.entries(state.eventCache));
+                }
+                
+                if (state.cacheTimestamps) {
+                    cacheTimestamps = new Map(Object.entries(state.cacheTimestamps));
+                }
+                
+                if (state.globalEventsCache) {
+                    globalEventsCache = state.globalEventsCache;
+                }
+                
+                if (state.globalCacheTimestamp) {
+                    globalCacheTimestamp = state.globalCacheTimestamp;
+                }
+                
+                if (state.hasMoreEvents !== undefined) {
+                    hasMoreEvents = state.hasMoreEvents;
+                }
+                
+                if (state.oldestEventTimestamp) {
+                    oldestEventTimestamp = state.oldestEventTimestamp;
+                }
+                
+                if (state.hasMoreMyEvents !== undefined) {
+                    hasMoreMyEvents = state.hasMoreMyEvents;
+                }
+                
+                if (state.oldestMyEventTimestamp) {
+                    oldestMyEventTimestamp = state.oldestMyEventTimestamp;
+                }
+                
+                // Restore events from cache
+                restoreEventsFromCache();
+            }
+        } catch (error) {
+            console.error('Failed to load persistent state:', error);
+        }
+    }
+
+    function restoreEventsFromCache() {
+        // Restore global events cache
+        if (globalEventsCache.length > 0 && isCacheValid(globalCacheTimestamp)) {
+            allEvents = globalEventsCache;
+        }
+        
+        // Restore user's events from cache
+        if (userPubkey && eventCache.has(userPubkey) && isCacheValid(cacheTimestamps.get(userPubkey))) {
+            myEvents = eventCache.get(userPubkey);
+        }
+    }
+
+    function isCacheValid(timestamp) {
+        if (!timestamp) return false;
+        return Date.now() - timestamp < CACHE_DURATION;
+    }
+
+    function updateCache(pubkey, events) {
+        eventCache.set(pubkey, events);
+        cacheTimestamps.set(pubkey, Date.now());
+        savePersistentState();
+    }
+
+    function updateGlobalCache(events) {
+        globalEventsCache = events;
+        globalCacheTimestamp = Date.now();
+        savePersistentState();
+    }
+
+    function clearCache() {
+        eventCache.clear();
+        cacheTimestamps.clear();
+        globalEventsCache = [];
+        globalCacheTimestamp = 0;
+        savePersistentState();
     }
 
     const baseTabs = [
@@ -82,6 +355,7 @@
 
     function selectTab(tabId) {
         selectedTab = tabId;
+        savePersistentState();
     }
 
     function toggleTheme() {
@@ -128,6 +402,13 @@
         userRole = '';
         userSigner = null;
         showSettingsDrawer = false;
+        
+        // Clear events
+        myEvents = [];
+        allEvents = [];
+        
+        // Clear cache
+        clearCache();
         
         // Clear stored authentication
         if (typeof localStorage !== 'undefined') {
@@ -344,65 +625,156 @@
     }
 
     // Events loading functionality
-    async function loadMyEvents() {
+    async function loadMyEvents(reset = false) {
         if (!isLoggedIn) {
             alert('Please log in first');
             return;
         }
         
+        if (isLoadingMyEvents) return;
+        
+        // Check cache first for initial load
+        if (reset && eventCache.has(userPubkey) && isCacheValid(cacheTimestamps.get(userPubkey))) {
+            myEvents = eventCache.get(userPubkey);
+            // Set oldest timestamp from cached events
+            if (myEvents.length > 0) {
+                oldestMyEventTimestamp = Math.min(...myEvents.map(e => e.created_at));
+            }
+            return;
+        }
+        
+        isLoadingMyEvents = true;
+        
         try {
-            const authHeader = await createNIP98AuthHeader('/api/events/mine', 'GET');
-            const response = await fetch('/api/events/mine', {
-                method: 'GET',
-                headers: {
-                    'Authorization': authHeader
-                }
+            // Use WebSocket REQ to fetch user events with timestamp-based pagination
+            const events = await fetchUserEvents(userPubkey, {
+                limit: eventsPerPage,
+                until: reset ? null : oldestMyEventTimestamp
             });
             
-            if (!response.ok) {
-                throw new Error(`Failed to load events: ${response.status} ${response.statusText}`);
+            if (reset) {
+                myEvents = events;
+                // Update cache
+                updateCache(userPubkey, events);
+            } else {
+                myEvents = [...myEvents, ...events];
+                // Update cache with all events
+                updateCache(userPubkey, myEvents);
             }
             
-            const data = await response.json();
-            myEvents = data.events || [];
+            // Update oldest timestamp for next pagination
+            if (events.length > 0) {
+                const oldestInBatch = Math.min(...events.map(e => e.created_at));
+                if (!oldestMyEventTimestamp || oldestInBatch < oldestMyEventTimestamp) {
+                    oldestMyEventTimestamp = oldestInBatch;
+                }
+            }
+            
+            hasMoreMyEvents = events.length === eventsPerPage;
+            
         } catch (error) {
             console.error('Failed to load events:', error);
             alert('Failed to load events: ' + error.message);
+        } finally {
+            isLoadingMyEvents = false;
         }
     }
 
-    async function loadAllEvents() {
+    async function loadMoreMyEvents() {
+        if (!isLoadingMyEvents && hasMoreMyEvents) {
+            await loadMyEvents(false);
+        }
+    }
+
+    function handleMyEventsScroll(event) {
+        const { scrollTop, scrollHeight, clientHeight } = event.target;
+        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+        
+        // Load more when 50% of content is out of view below
+        if (scrollPercentage > 0.5 && !isLoadingMyEvents && hasMoreMyEvents) {
+            loadMoreMyEvents();
+        }
+    }
+
+    async function loadAllEvents(reset = false) {
         if (!isLoggedIn || (userRole !== 'write' && userRole !== 'admin' && userRole !== 'owner')) {
             alert('Write, admin, or owner permission required');
             return;
         }
         
+        if (isLoadingEvents) return;
+        
+        // Check cache first for initial load
+        if (reset && globalEventsCache.length > 0 && isCacheValid(globalCacheTimestamp)) {
+            allEvents = globalEventsCache;
+            // Set oldest timestamp from cached events
+            if (allEvents.length > 0) {
+                oldestEventTimestamp = Math.min(...allEvents.map(e => e.created_at));
+            }
+            return;
+        }
+        
+        isLoadingEvents = true;
+        
         try {
-            const authHeader = await createNIP98AuthHeader('/api/export', 'GET');
-            const response = await fetch('/api/export', {
-                method: 'GET',
-                headers: {
-                    'Authorization': authHeader
-                }
+            // Use WebSocket REQ to fetch events with timestamp-based pagination
+            const events = await fetchAllEvents({
+                limit: eventsPerPage,
+                until: reset ? null : oldestEventTimestamp
             });
             
-            if (!response.ok) {
-                throw new Error(`Failed to load events: ${response.status} ${response.statusText}`);
+            if (reset) {
+                allEvents = events;
+                // Update global cache
+                updateGlobalCache(events);
+            } else {
+                allEvents = [...allEvents, ...events];
+                // Update global cache with all events
+                updateGlobalCache(allEvents);
             }
             
-            const text = await response.text();
-            const lines = text.trim().split('\n');
-            allEvents = lines.map(line => {
-                try {
-                    return JSON.parse(line);
-                } catch (e) {
-                    return null;
+            // Update oldest timestamp for next pagination
+            if (events.length > 0) {
+                const oldestInBatch = Math.min(...events.map(e => e.created_at));
+                if (!oldestEventTimestamp || oldestInBatch < oldestEventTimestamp) {
+                    oldestEventTimestamp = oldestInBatch;
                 }
-            }).filter(event => event !== null);
+            }
+            
+            hasMoreEvents = events.length === eventsPerPage;
+            
         } catch (error) {
             console.error('Failed to load events:', error);
             alert('Failed to load events: ' + error.message);
+        } finally {
+            isLoadingEvents = false;
         }
+    }
+
+    async function loadMoreEvents() {
+        if (!isLoadingEvents && hasMoreEvents) {
+            await loadAllEvents(false);
+        }
+    }
+
+    function handleScroll(event) {
+        const { scrollTop, scrollHeight, clientHeight } = event.target;
+        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+        
+        // Load more when 50% of content is out of view below
+        if (scrollPercentage > 0.5 && !isLoadingEvents && hasMoreEvents) {
+            loadMoreEvents();
+        }
+    }
+
+    // Load initial events when allevents tab is selected
+    $: if (selectedTab === 'allevents' && isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner') && allEvents.length === 0) {
+        loadAllEvents(true);
+    }
+
+    // Load user events when myevents tab is selected
+    $: if (selectedTab === 'myevents' && isLoggedIn && userPubkey && myEvents.length === 0) {
+        loadMyEvents(true);
     }
 
     // NIP-98 authentication helper
@@ -573,29 +945,64 @@
                 {/if}
             </div>
         {:else if selectedTab === 'myevents'}
-            <div class="events-view">
-                <h2>My Events</h2>
+            <div class="allevents-container">
                 {#if isLoggedIn}
-                    <div class="events-section">
-                        <p>View and manage your personal events.</p>
-                        <button class="refresh-btn" on:click={loadMyEvents}>
+                    <div class="allevents-header">
+                        <button class="refresh-btn" on:click={() => loadMyEvents(true)} disabled={isLoadingMyEvents}>
                             🔄 Refresh Events
                         </button>
-                        <div class="events-list">
-                            {#if myEvents.length > 0}
-                                {#each myEvents as event}
-                                    <div class="event-item">
-                                        <div class="event-header">
-                                            <span class="event-kind">Kind {event.kind}</span>
-                                            <span class="event-time">{new Date(event.created_at * 1000).toLocaleString()}</span>
+                    </div>
+                    <div class="allevents-list" on:scroll={handleMyEventsScroll}>
+                        {#if myEvents.length > 0}
+                            {#each myEvents as event}
+                                <div class="allevents-event-item" class:expanded={expandedEvents.has(event.id)}>
+                                    <div class="allevents-event-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
+                                        <div class="allevents-event-avatar">
+                                            <div class="avatar-placeholder">👤</div>
                                         </div>
-                                        <div class="event-content">{event.content}</div>
+                                        <div class="allevents-event-info">
+                                            <div class="allevents-event-author">
+                                                {truncatePubkey(event.pubkey)}
+                                            </div>
+                                            <div class="allevents-event-kind">
+                                                <span class="kind-number">{event.kind}</span>
+                                                <span class="kind-name">{getKindName(event.kind)}</span>
+                                            </div>
+                                        </div>
+                                        <div class="allevents-event-content">
+                                            {truncateContent(event.content)}
+                                        </div>
+                                        {#if userRole === 'admin' || userRole === 'owner'}
+                                            <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
+                                                🗑️
+                                            </button>
+                                        {/if}
                                     </div>
-                                {/each}
-                            {:else}
+                                    {#if expandedEvents.has(event.id)}
+                                        <div class="allevents-event-details">
+                                            <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
+                        {:else if !isLoadingMyEvents}
+                            <div class="no-events">
                                 <p>No events found.</p>
-                            {/if}
-                        </div>
+                            </div>
+                        {/if}
+                        
+                        {#if isLoadingMyEvents}
+                            <div class="loading-events">
+                                <div class="loading-spinner"></div>
+                                <p>Loading events...</p>
+                            </div>
+                        {/if}
+                        
+                        {#if !hasMoreMyEvents && myEvents.length > 0}
+                            <div class="end-of-events">
+                                <p>No more events to load.</p>
+                            </div>
+                        {/if}
                     </div>
                 {:else}
                     <div class="login-prompt">
@@ -605,29 +1012,64 @@
                 {/if}
             </div>
         {:else if selectedTab === 'allevents'}
-            <div class="events-view">
-                <h2>All Events</h2>
+            <div class="allevents-container">
                 {#if isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner')}
-                    <div class="events-section">
-                        <p>View all events in the database.</p>
-                        <button class="refresh-btn" on:click={loadAllEvents}>
+                    <div class="allevents-header">
+                        <button class="refresh-btn" on:click={() => loadAllEvents(true)} disabled={isLoadingEvents}>
                             🔄 Refresh Events
                         </button>
-                        <div class="events-list">
-                            {#if allEvents.length > 0}
-                                {#each allEvents as event}
-                                    <div class="event-item">
-                                        <div class="event-header">
-                                            <span class="event-kind">Kind {event.kind}</span>
-                                            <span class="event-time">{new Date(event.created_at * 1000).toLocaleString()}</span>
+                    </div>
+                    <div class="allevents-list" on:scroll={handleScroll}>
+                        {#if allEvents.length > 0}
+                            {#each allEvents as event}
+                                <div class="allevents-event-item" class:expanded={expandedEvents.has(event.id)}>
+                                    <div class="allevents-event-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
+                                        <div class="allevents-event-avatar">
+                                            <div class="avatar-placeholder">👤</div>
                                         </div>
-                                        <div class="event-content">{event.content}</div>
+                                        <div class="allevents-event-info">
+                                            <div class="allevents-event-author">
+                                                {truncatePubkey(event.pubkey)}
+                                            </div>
+                                            <div class="allevents-event-kind">
+                                                <span class="kind-number">{event.kind}</span>
+                                                <span class="kind-name">{getKindName(event.kind)}</span>
+                                            </div>
+                                        </div>
+                                        <div class="allevents-event-content">
+                                            {truncateContent(event.content)}
+                                        </div>
+                                        {#if userRole === 'admin' || userRole === 'owner'}
+                                            <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
+                                                🗑️
+                                            </button>
+                                        {/if}
                                     </div>
-                                {/each}
-                            {:else}
+                                    {#if expandedEvents.has(event.id)}
+                                        <div class="allevents-event-details">
+                                            <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
+                        {:else if !isLoadingEvents}
+                            <div class="no-events">
                                 <p>No events found.</p>
-                            {/if}
-                        </div>
+                            </div>
+                        {/if}
+                        
+                        {#if isLoadingEvents}
+                            <div class="loading-events">
+                                <div class="loading-spinner"></div>
+                                <p>Loading events...</p>
+                            </div>
+                        {/if}
+                        
+                        {#if !hasMoreEvents && allEvents.length > 0}
+                            <div class="end-of-events">
+                                <p>No more events to load.</p>
+                            </div>
+                        {/if}
                     </div>
                 {:else if isLoggedIn}
                     <div class="permission-denied">
@@ -1281,21 +1723,21 @@
         word-break: break-all;
     }
 
-    /* Export/Import/Events Views */
-    .export-view, .import-view, .events-view {
+    /* Export/Import Views */
+    .export-view, .import-view {
         padding: 2rem;
         max-width: 800px;
         margin: 0 auto;
     }
 
-    .export-view h2, .import-view h2, .events-view h2 {
+    .export-view h2, .import-view h2 {
         margin: 0 0 2rem 0;
         color: var(--text-color);
         font-size: 1.5rem;
         font-weight: 600;
     }
 
-    .export-section, .import-section, .events-section {
+    .export-section, .import-section {
         background: var(--header-bg);
         padding: 1.5rem;
         border-radius: 8px;
@@ -1309,7 +1751,7 @@
         font-weight: 500;
     }
 
-    .export-section p, .import-section p, .events-section p {
+    .export-section p, .import-section p {
         margin: 0 0 1rem 0;
         color: var(--text-color);
         opacity: 0.8;
@@ -1378,44 +1820,210 @@
         font-weight: 500;
     }
 
-    .events-list {
-        margin-top: 1rem;
-    }
 
-    .event-item {
+    /* All Events Container */
+    .allevents-container {
+        position: fixed;
+        top: 3em;
+        left: 200px;
+        right: 0;
+        bottom: 0;
         background: var(--bg-color);
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        padding: 1rem;
-        margin-bottom: 1rem;
-    }
-
-    .event-header {
+        color: var(--text-color);
         display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
+        flex-direction: column;
+        overflow: hidden;
     }
 
-    .event-kind {
+    .allevents-header {
+        padding: 1rem;
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+    }
+
+    .allevents-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+    }
+
+    .allevents-event-item {
+        border-bottom: 1px solid var(--border-color);
+        transition: background-color 0.2s;
+    }
+
+    .allevents-event-item:hover {
+        background: var(--button-hover-bg);
+    }
+
+    .allevents-event-item.expanded {
+        background: var(--button-hover-bg);
+    }
+
+    .allevents-event-row {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        gap: 0.75rem;
+        min-height: 3rem;
+    }
+
+    .allevents-event-avatar {
+        flex-shrink: 0;
+        width: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .avatar-placeholder {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        background: var(--button-bg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.8rem;
+    }
+
+    .allevents-event-info {
+        flex-shrink: 0;
+        width: 12rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .allevents-event-author {
+        font-family: monospace;
+        font-size: 0.8rem;
+        color: var(--text-color);
+        opacity: 0.8;
+    }
+
+    .allevents-event-kind {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .kind-number {
         background: var(--primary);
         color: white;
-        padding: 0.25rem 0.5rem;
-        border-radius: 4px;
-        font-size: 0.8rem;
+        padding: 0.125rem 0.375rem;
+        border-radius: 0.25rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        font-family: monospace;
+    }
+
+    .kind-name {
+        font-size: 0.75rem;
+        color: var(--text-color);
+        opacity: 0.7;
         font-weight: 500;
     }
 
-    .event-time {
+    .allevents-event-content {
+        flex: 1;
         color: var(--text-color);
-        opacity: 0.7;
+        font-size: 0.9rem;
+        line-height: 1.3;
+        word-break: break-word;
+        padding: 0 0.5rem;
+    }
+
+    .delete-btn {
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+        transition: background-color 0.2s;
         font-size: 0.9rem;
     }
 
-    .event-content {
-        color: var(--text-color);
+    .delete-btn:hover {
+        background: var(--warning);
+        color: white;
+    }
+
+    .allevents-event-details {
+        border-top: 1px solid var(--border-color);
+        background: var(--header-bg);
+        padding: 1rem;
+    }
+
+    .event-json {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 0.25rem;
+        padding: 1rem;
+        margin: 0;
+        font-family: 'Courier New', monospace;
+        font-size: 0.8rem;
         line-height: 1.4;
+        color: var(--text-color);
+        white-space: pre-wrap;
         word-break: break-word;
+        overflow-x: auto;
+    }
+
+    .no-events {
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .no-events p {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    .loading-events {
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .loading-spinner {
+        width: 2rem;
+        height: 2rem;
+        border: 3px solid var(--border-color);
+        border-top: 3px solid var(--primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem auto;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .loading-events p {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    .end-of-events {
+        padding: 1rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.5;
+        font-size: 0.8rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .end-of-events p {
+        margin: 0;
     }
     
     @media (max-width: 640px) {
@@ -1433,12 +2041,32 @@
         .profile-username { font-size: 1rem; }
         .profile-nip05-inline { font-size: 0.8rem; }
 
-        .export-view, .import-view, .events-view {
+        .export-view, .import-view {
             padding: 1rem;
         }
 
-        .export-section, .import-section, .events-section {
+        .export-section, .import-section {
             padding: 1rem;
+        }
+
+        .allevents-container {
+            left: 160px;
+        }
+
+        .allevents-event-info {
+            width: 8rem;
+        }
+
+        .allevents-event-author {
+            font-size: 0.7rem;
+        }
+
+        .kind-name {
+            font-size: 0.7rem;
+        }
+
+        .allevents-event-content {
+            font-size: 0.8rem;
         }
     }
 </style>

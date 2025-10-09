@@ -94,6 +94,12 @@ class NostrClient {
       console.log(
         `End of stored events for subscription ${subscriptionId} from ${relayUrl}`,
       );
+      // Dispatch EOSE event for fetchEvents function
+      if (this.subscriptions.has(subscriptionId)) {
+        window.dispatchEvent(new CustomEvent('nostr-eose', {
+          detail: { subscriptionId, relayUrl }
+        }));
+      }
     } else if (type === "NOTICE") {
       console.warn(`Notice from ${relayUrl}:`, subscriptionId);
     } else {
@@ -351,6 +357,164 @@ export async function fetchUserProfile(pubkey) {
       );
     }, 2000);
   });
+}
+
+// Fetch events using WebSocket REQ envelopes
+export async function fetchEvents(filters, options = {}) {
+  return new Promise(async (resolve, reject) => {
+    console.log(`Starting event fetch with filters:`, filters);
+
+    let resolved = false;
+    let events = [];
+    let debounceTimer = null;
+    let overallTimer = null;
+    let subscriptionId = null;
+    let eoseReceived = false;
+
+    const {
+      timeout = 30000,
+      debounceDelay = 1000,
+      limit = null
+    } = options;
+
+    function cleanup() {
+      if (subscriptionId) {
+        try {
+          nostrClient.unsubscribe(subscriptionId);
+        } catch {}
+      }
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (overallTimer) clearTimeout(overallTimer);
+    }
+
+    // Set overall timeout
+    overallTimer = setTimeout(() => {
+      if (!resolved) {
+        console.log("Event fetch timeout reached");
+        if (events.length > 0) {
+          resolve(events);
+        } else {
+          reject(new Error("Event fetch timeout"));
+        }
+        resolved = true;
+      }
+      cleanup();
+    }, timeout);
+
+    // Subscribe to events
+    setTimeout(() => {
+      console.log("Starting event subscription...");
+      
+      // Add limit to filters if specified
+      const requestFilters = { ...filters };
+      if (limit) {
+        requestFilters.limit = limit;
+      }
+
+      subscriptionId = nostrClient.subscribe(
+        requestFilters,
+        (event) => {
+          if (!event) return;
+          console.log("Event received:", event);
+          
+          // Check if we already have this event (deduplication)
+          const existingEvent = events.find(e => e.id === event.id);
+          if (!existingEvent) {
+            events.push(event);
+          }
+
+          // If we have a limit and reached it, resolve immediately
+          if (limit && events.length >= limit) {
+            if (!resolved) {
+              resolve(events.slice(0, limit));
+              resolved = true;
+            }
+            cleanup();
+            return;
+          }
+
+          // Debounce to wait for more events
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            if (eoseReceived && !resolved) {
+              resolve(events);
+              resolved = true;
+              cleanup();
+            }
+          }, debounceDelay);
+        },
+      );
+
+      // Listen for EOSE events
+      const handleEOSE = (event) => {
+        if (event.detail.subscriptionId === subscriptionId) {
+          console.log("EOSE received for subscription", subscriptionId);
+          eoseReceived = true;
+          
+          // If we haven't resolved yet and have events, resolve now
+          if (!resolved && events.length > 0) {
+            resolve(events);
+            resolved = true;
+            cleanup();
+          }
+        }
+      };
+
+      // Add EOSE listener
+      window.addEventListener('nostr-eose', handleEOSE);
+
+      // Cleanup EOSE listener
+      const originalCleanup = cleanup;
+      cleanup = () => {
+        window.removeEventListener('nostr-eose', handleEOSE);
+        originalCleanup();
+      };
+    }, 1000);
+  });
+}
+
+// Fetch all events with timestamp-based pagination
+export async function fetchAllEvents(options = {}) {
+  const {
+    limit = 10,
+    since = null,
+    until = null
+  } = options;
+
+  const filters = {};
+  
+  if (since) filters.since = since;
+  if (until) filters.until = until;
+  
+  const events = await fetchEvents(filters, { 
+    limit: limit,
+    timeout: 30000 
+  });
+  
+  return events;
+}
+
+// Fetch user's events with timestamp-based pagination
+export async function fetchUserEvents(pubkey, options = {}) {
+  const {
+    limit = 10,
+    since = null,
+    until = null
+  } = options;
+
+  const filters = {
+    authors: [pubkey]
+  };
+  
+  if (since) filters.since = since;
+  if (until) filters.until = until;
+  
+  const events = await fetchEvents(filters, { 
+    limit: limit,
+    timeout: 30000 
+  });
+  
+  return events;
 }
 
 // Initialize client connection
