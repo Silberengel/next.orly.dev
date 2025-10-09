@@ -227,6 +227,67 @@ export ORLY_APP_NAME="ORLY"
 The sprocket script should be placed at:
 `~/.config/{ORLY_APP_NAME}/sprocket.sh`
 
+For example, with default `ORLY_APP_NAME="ORLY"`:
+`~/.config/ORLY/sprocket.sh`
+
+Backup files are automatically created when updating sprocket scripts via the web UI, with timestamps like:
+`~/.config/ORLY/sprocket.sh.20240101120000`
+
+=== manual sprocket updates
+
+For manual sprocket script updates, you can use the stop/write/restart method:
+
+1. **Stop the relay**:
+   ```bash
+   # Send SIGINT to gracefully stop
+   kill -INT <relay_pid>
+   ```
+
+2. **Write new sprocket script**:
+   ```bash
+   # Create/update the sprocket script
+   cat > ~/.config/ORLY/sprocket.sh << 'EOF'
+   #!/bin/bash
+   while read -r line; do
+       if [[ -n "$line" ]]; then
+           event_id=$(echo "$line" | jq -r '.id')
+           echo "{\"id\":\"$event_id\",\"action\":\"accept\",\"msg\":\"\"}"
+       fi
+   done
+   EOF
+   
+   # Make it executable
+   chmod +x ~/.config/ORLY/sprocket.sh
+   ```
+
+3. **Restart the relay**:
+   ```bash
+   ./orly
+   ```
+
+The relay will automatically detect the new sprocket script and start it. If the script fails, sprocket will be disabled and all events rejected until the script is fixed.
+
+=== failure handling
+
+When sprocket is enabled but fails to start or crashes:
+
+1. **Automatic Disable**: Sprocket is automatically disabled
+2. **Event Rejection**: All incoming events are rejected with error message
+3. **Periodic Recovery**: Every 30 seconds, the system checks if the sprocket script becomes available
+4. **Auto-Restart**: If the script is found, sprocket is automatically re-enabled and restarted
+
+This ensures that:
+- Relay continues running even when sprocket fails
+- No events are processed without proper sprocket filtering
+- Sprocket automatically recovers when the script is fixed
+- Clear error messages inform users about the sprocket status
+- Error messages include the exact file location for easy fixes
+
+When sprocket fails, the error message will show:
+`sprocket disabled due to failure - all events will be rejected (script location: ~/.config/ORLY/sprocket.sh)`
+
+This makes it easy to locate and fix the sprocket script file.
+
 === example script
 
 Here's a Python example that implements various filtering criteria:

@@ -37,6 +37,7 @@ type SprocketManager struct {
 	mutex         sync.RWMutex
 	isRunning     bool
 	enabled       bool
+	disabled      bool // true when sprocket is disabled due to failure
 	stdin         io.WriteCloser
 	stdout        io.ReadCloser
 	stderr        io.ReadCloser
@@ -56,21 +57,105 @@ func NewSprocketManager(ctx context.Context, appName string, enabled bool) *Spro
 		configDir:    configDir,
 		scriptPath:   scriptPath,
 		enabled:      enabled,
+		disabled:     false,
 		responseChan: make(chan SprocketResponse, 100), // Buffered channel for responses
 	}
 
 	// Start the sprocket script if it exists and is enabled
 	if enabled {
 		go sm.startSprocketIfExists()
+		// Start periodic check for sprocket script availability
+		go sm.periodicCheck()
 	}
 
 	return sm
 }
 
+// disableSprocket disables sprocket due to failure
+func (sm *SprocketManager) disableSprocket() {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if !sm.disabled {
+		sm.disabled = true
+		log.W.F("sprocket disabled due to failure - all events will be rejected (script location: %s)", sm.scriptPath)
+	}
+}
+
+// enableSprocket re-enables sprocket and attempts to start it
+func (sm *SprocketManager) enableSprocket() {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
+
+	if sm.disabled {
+		sm.disabled = false
+		log.I.F("sprocket re-enabled, attempting to start")
+
+		// Attempt to start sprocket in background
+		go func() {
+			if _, err := os.Stat(sm.scriptPath); err == nil {
+				if err := sm.StartSprocket(); err != nil {
+					log.E.F("failed to restart sprocket: %v", err)
+					sm.disableSprocket()
+				} else {
+					log.I.F("sprocket restarted successfully")
+				}
+			} else {
+				log.W.F("sprocket script still not found, keeping disabled")
+				sm.disableSprocket()
+			}
+		}()
+	}
+}
+
+// periodicCheck periodically checks if sprocket script becomes available
+func (sm *SprocketManager) periodicCheck() {
+	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-sm.ctx.Done():
+			return
+		case <-ticker.C:
+			sm.mutex.RLock()
+			disabled := sm.disabled
+			running := sm.isRunning
+			sm.mutex.RUnlock()
+
+			// Only check if sprocket is disabled or not running
+			if disabled || !running {
+				if _, err := os.Stat(sm.scriptPath); err == nil {
+					// Script is available, try to enable/restart
+					if disabled {
+						sm.enableSprocket()
+					} else if !running {
+						// Script exists but sprocket isn't running, try to start
+						go func() {
+							if err := sm.StartSprocket(); err != nil {
+								log.E.F("failed to restart sprocket: %v", err)
+								sm.disableSprocket()
+							} else {
+								log.I.F("sprocket restarted successfully")
+							}
+						}()
+					}
+				}
+			}
+		}
+	}
+}
+
 // startSprocketIfExists starts the sprocket script if the file exists
 func (sm *SprocketManager) startSprocketIfExists() {
 	if _, err := os.Stat(sm.scriptPath); err == nil {
-		sm.StartSprocket()
+		if err := sm.StartSprocket(); err != nil {
+			log.E.F("failed to start sprocket: %v", err)
+			sm.disableSprocket()
+		}
+	} else {
+		log.W.F("sprocket script not found at %s, disabling sprocket", sm.scriptPath)
+		sm.disableSprocket()
 	}
 }
 
@@ -473,6 +558,13 @@ func (sm *SprocketManager) IsRunning() bool {
 	return sm.isRunning
 }
 
+// IsDisabled returns whether sprocket is disabled due to failure
+func (sm *SprocketManager) IsDisabled() bool {
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
+	return sm.disabled
+}
+
 // monitorProcess monitors the sprocket process and cleans up when it exits
 func (sm *SprocketManager) monitorProcess() {
 	if sm.currentCmd == nil {
@@ -504,6 +596,9 @@ func (sm *SprocketManager) monitorProcess() {
 
 	if err != nil {
 		log.E.F("sprocket process exited with error: %v", err)
+		// Auto-disable sprocket on failure
+		sm.disabled = true
+		log.W.F("sprocket disabled due to process failure - all events will be rejected (script location: %s)", sm.scriptPath)
 	} else {
 		log.I.F("sprocket process exited normally")
 	}

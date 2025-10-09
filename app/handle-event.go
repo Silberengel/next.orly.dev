@@ -35,11 +35,22 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 
 	// Check if sprocket is enabled and process event through it
 	if l.sprocketManager != nil && l.sprocketManager.IsEnabled() {
-		if !l.sprocketManager.IsRunning() {
-			// Sprocket is enabled but not running - drop all messages
-			log.W.F("sprocket is enabled but not running, dropping event %0x", env.E.ID)
+		if l.sprocketManager.IsDisabled() {
+			// Sprocket is disabled due to failure - reject all events
+			log.W.F("sprocket is disabled, rejecting event %0x", env.E.ID)
 			if err = Ok.Error(
-				l, env, "sprocket policy not available",
+				l, env, "sprocket disabled - events rejected until sprocket is restored",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		if !l.sprocketManager.IsRunning() {
+			// Sprocket is enabled but not running - reject all events
+			log.W.F("sprocket is enabled but not running, rejecting event %0x", env.E.ID)
+			if err = Ok.Error(
+				l, env, "sprocket not running - events rejected until sprocket starts",
 			); chk.E(err) {
 				return
 			}
