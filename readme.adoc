@@ -49,7 +49,7 @@ To build with the embedded web interface:
 
 [source,bash]
 ----
-# Build the React web application
+# Build the Svelte web application
 cd app/web
 bun install
 bun run build
@@ -59,13 +59,25 @@ cd ../../
 go build -o orly
 ----
 
-You can automate this process with a build script:
+The recommended way to build and embed the web UI is using the provided script:
+
+[source,bash]
+----
+./scripts/update-embedded-web.sh
+----
+
+This script will:
+- Build the Svelte app in `app/web` to `app/web/dist` using Bun (preferred) or fall back to npm/yarn/pnpm
+- Run `go install` from the repository root so the binary picks up the new embedded assets
+- Automatically detect and use the best available JavaScript package manager
+
+For manual builds, you can also use:
 
 [source,bash]
 ----
 #!/bin/bash
 # build.sh
-echo "Building React app..."
+echo "Building Svelte app..."
 cd app/web
 bun install
 bun run build
@@ -78,6 +90,263 @@ echo "Build complete!"
 ----
 
 Make it executable with `chmod +x build.sh` and run with `./build.sh`.
+
+== web UI
+
+ORLY includes a modern web-based user interface built with link:https://svelte.dev/[Svelte] that provides comprehensive relay management capabilities.
+
+=== features
+
+The web UI offers:
+
+* **Authentication**: Secure login using Nostr key pairs with challenge-response authentication
+* **Event Management**: View, export, and import Nostr events with advanced filtering and search
+* **User Administration**: Manage user permissions and roles (admin/owner)
+* **Sprocket Management**: Configure and manage external event processing scripts
+* **Real-time Updates**: Live event streaming and status updates
+* **Dark/Light Theme**: Toggle between themes with persistent preferences
+* **Responsive Design**: Works on desktop and mobile devices
+
+=== authentication
+
+The web UI uses Nostr-native authentication:
+
+1. **Challenge Generation**: Server generates a cryptographic challenge
+2. **Signature Verification**: Client signs the challenge with their private key
+3. **Session Management**: Authenticated sessions with role-based permissions
+
+Supported authentication methods:
+- Direct private key input
+- Nostr extension integration
+- Hardware wallet support
+
+=== user roles
+
+* **Guest**: Read-only access to public events
+* **User**: Can publish events and manage their own content
+* **Admin**: Full relay management except sprocket configuration
+* **Owner**: Complete control including sprocket management and system configuration
+
+=== event management
+
+The interface provides comprehensive event management:
+
+* **Event Browser**: Paginated view of all events with filtering by kind, author, and content
+* **Export Functionality**: Export events in JSON format with configurable date ranges
+* **Import Capability**: Bulk import events (admin/owner only)
+* **Search**: Full-text search across event content and metadata
+* **Event Details**: Expandable view showing full event JSON and metadata
+
+=== sprocket integration
+
+The web UI includes a dedicated sprocket management interface:
+
+* **Status Monitoring**: Real-time status of sprocket scripts
+* **Script Upload**: Upload and manage sprocket scripts
+* **Version Control**: Track and manage multiple script versions
+* **Configuration**: Configure sprocket parameters and settings
+* **Logs**: View sprocket execution logs and errors
+
+=== development mode
+
+For development, the web UI supports hot-reloading:
+
+[source,bash]
+----
+# Enable development proxy
+export ORLY_WEB_DISABLE_EMBEDDED=true
+export ORLY_WEB_DEV_PROXY_URL=localhost:5000
+
+# Start relay
+./orly
+
+# In another terminal, start Svelte dev server
+cd app/web
+bun run dev
+----
+
+This allows for rapid development with automatic reloading of changes.
+
+== sprocket event sifter interface
+
+The sprocket system provides a powerful interface for external event processing scripts, allowing you to implement custom filtering, validation, and processing logic for Nostr events before they are stored in the relay.
+
+=== overview
+
+Sprocket scripts receive events via stdin and respond with JSONL (JSON Lines) format, enabling real-time event processing with three possible actions:
+
+* **accept**: Continue with normal event processing
+* **reject**: Return OK false to client with rejection message
+* **shadowReject**: Return OK true to client but abort processing (useful for spam filtering)
+
+=== how it works
+
+1. **Event Reception**: Events are sent to the sprocket script as JSON objects via stdin
+2. **Processing**: Script analyzes the event and applies custom logic
+3. **Response**: Script responds with JSONL containing the decision and optional message
+4. **Action**: Relay processes the response and either accepts, rejects, or shadow rejects the event
+
+=== script protocol
+
+==== input format
+
+Events are sent as JSON objects, one per line:
+
+```json
+{
+  "id": "event_id_here",
+  "kind": 1,
+  "content": "Hello, world!",
+  "pubkey": "author_pubkey",
+  "tags": [["t", "hashtag"], ["p", "reply_pubkey"]],
+  "created_at": 1640995200,
+  "sig": "signature_here"
+}
+```
+
+==== output format
+
+Scripts must respond with JSONL format:
+
+```json
+{"id": "event_id", "action": "accept", "msg": ""}
+{"id": "event_id", "action": "reject", "msg": "reason for rejection"}
+{"id": "event_id", "action": "shadowReject", "msg": ""}
+```
+
+=== configuration
+
+Enable sprocket processing:
+
+[source,bash]
+----
+export ORLY_SPROCKET_ENABLED=true
+export ORLY_APP_NAME="ORLY"
+----
+
+The sprocket script should be placed at:
+`~/.config/{ORLY_APP_NAME}/sprocket.sh`
+
+=== example script
+
+Here's a Python example that implements various filtering criteria:
+
+[source,python]
+----
+#!/usr/bin/env python3
+import json
+import sys
+
+def process_event(event_json):
+    event_id = event_json.get('id', '')
+    event_content = event_json.get('content', '')
+    event_kind = event_json.get('kind', 0)
+    
+    # Reject spam content
+    if 'spam' in event_content.lower():
+        return {
+            'id': event_id,
+            'action': 'reject',
+            'msg': 'Content contains spam'
+        }
+    
+    # Shadow reject test events
+    if event_kind == 9999:
+        return {
+            'id': event_id,
+            'action': 'shadowReject',
+            'msg': ''
+        }
+    
+    # Accept all other events
+    return {
+        'id': event_id,
+        'action': 'accept',
+        'msg': ''
+    }
+
+# Main processing loop
+for line in sys.stdin:
+    if line.strip():
+        try:
+            event = json.loads(line)
+            response = process_event(event)
+            print(json.dumps(response))
+            sys.stdout.flush()
+        except json.JSONDecodeError:
+            continue
+----
+
+=== bash example
+
+A simple bash script example:
+
+[source,bash]
+----
+#!/bin/bash
+while read -r line; do
+    if [[ -n "$line" ]]; then
+        # Extract event ID
+        event_id=$(echo "$line" | jq -r '.id')
+        
+        # Check for spam content
+        if echo "$line" | jq -r '.content' | grep -qi "spam"; then
+            echo "{\"id\":\"$event_id\",\"action\":\"reject\",\"msg\":\"Spam detected\"}"
+        else
+            echo "{\"id\":\"$event_id\",\"action\":\"accept\",\"msg\":\"\"}"
+        fi
+    fi
+done
+----
+
+=== testing
+
+Test your sprocket script directly:
+
+[source,bash]
+----
+# Test with sample event
+echo '{"id":"test","kind":1,"content":"spam test"}' | python3 sprocket.py
+
+# Expected output:
+# {"id": "test", "action": "reject", "msg": "Content contains spam"}
+----
+
+Run the comprehensive test suite:
+
+[source,bash]
+----
+./test-sprocket-complete.sh
+----
+
+=== web UI management
+
+The web UI provides a complete sprocket management interface:
+
+* **Status Monitoring**: View real-time sprocket status and health
+* **Script Upload**: Upload new sprocket scripts via the web interface
+* **Version Management**: Track and manage multiple script versions
+* **Configuration**: Configure sprocket parameters and settings
+* **Logs**: View execution logs and error messages
+* **Restart**: Restart sprocket scripts without relay restart
+
+=== use cases
+
+Common sprocket use cases include:
+
+* **Spam Filtering**: Detect and reject spam content
+* **Content Moderation**: Implement custom content policies
+* **Rate Limiting**: Control event publishing rates
+* **Event Validation**: Additional validation beyond Nostr protocol
+* **Analytics**: Log and analyze event patterns
+* **Integration**: Connect with external services and APIs
+
+=== performance considerations
+
+* Sprocket scripts run synchronously and can impact relay performance
+* Keep processing logic efficient and fast
+* Use appropriate timeouts to prevent blocking
+* Consider using shadow reject for non-critical filtering to maintain user experience
 
 == secp256k1 dependency
 
