@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Test script for sprocket functionality
+# This script demonstrates how to set up owner permissions and test sprocket
+
+echo "=== Sprocket Test Setup ==="
+echo ""
+echo "To test the sprocket functionality, you need to:"
+echo ""
+echo "1. Generate a test keypair (if you don't have one):"
+echo "   Use a Nostr client like Amethyst or Nostr Wallet Connect to generate an npub"
+echo ""
+echo "2. Set the ORLY_OWNERS environment variable:"
+echo "   export ORLY_OWNERS=\"npub1your-npub-here\""
+echo ""
+echo "3. Start the relay with owner permissions:"
+echo "   ORLY_OWNERS=\"npub1your-npub-here\" ./next.orly.dev"
+echo ""
+echo "4. Log in to the web interface using the corresponding private key"
+echo "5. Navigate to the Sprocket tab to access the script editor"
+echo ""
+echo "Example sprocket script:"
+echo "#!/bin/bash"
+echo "echo \"Sprocket is running!\""
+echo "while true; do"
+echo "    echo \"Sprocket heartbeat: \$(date)\""
+echo "    sleep 30"
+echo "done"
+echo ""
+echo "The sprocket script will be stored in ~/.config/ORLY/sprocket.sh"
+echo "and will be automatically started when the relay starts."

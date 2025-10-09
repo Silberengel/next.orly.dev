@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -43,6 +44,7 @@ type Server struct {
 	challenges     map[string][]byte
 
 	paymentProcessor *PaymentProcessor
+	sprocketManager  *SprocketManager
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -192,6 +194,13 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/events/mine", s.handleEventsMine)
 	// Import endpoint (admin only)
 	s.mux.HandleFunc("/api/import", s.handleImport)
+	// Sprocket endpoints (owner only)
+	s.mux.HandleFunc("/api/sprocket/status", s.handleSprocketStatus)
+	s.mux.HandleFunc("/api/sprocket/update", s.handleSprocketUpdate)
+	s.mux.HandleFunc("/api/sprocket/restart", s.handleSprocketRestart)
+	s.mux.HandleFunc("/api/sprocket/versions", s.handleSprocketVersions)
+	s.mux.HandleFunc("/api/sprocket/delete-version", s.handleSprocketDeleteVersion)
+	s.mux.HandleFunc("/api/sprocket/config", s.handleSprocketConfig)
 }
 
 // handleLoginInterface serves the main user interface for login
@@ -654,4 +663,238 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	w.Write([]byte(`{"success": true, "message": "Import started"}`))
+}
+
+// handleSprocketStatus returns the current status of the sprocket script
+func (s *Server) handleSprocketStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
+	}
+
+	status := s.sprocketManager.GetSprocketStatus()
+
+	w.Header().Set("Content-Type", "application/json")
+	jsonData, err := json.Marshal(status)
+	if chk.E(err) {
+		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
+}
+
+// handleSprocketUpdate updates the sprocket script and restarts it
+func (s *Server) handleSprocketUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
+	}
+
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if chk.E(err) {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	// Update the sprocket script
+	if err := s.sprocketManager.UpdateSprocket(string(body)); chk.E(err) {
+		http.Error(w, fmt.Sprintf("Failed to update sprocket: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true, "message": "Sprocket updated successfully"}`))
+}
+
+// handleSprocketRestart restarts the sprocket script
+func (s *Server) handleSprocketRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
+	}
+
+	// Restart the sprocket script
+	if err := s.sprocketManager.RestartSprocket(); chk.E(err) {
+		http.Error(w, fmt.Sprintf("Failed to restart sprocket: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true, "message": "Sprocket restarted successfully"}`))
+}
+
+// handleSprocketVersions returns all sprocket script versions
+func (s *Server) handleSprocketVersions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
+	}
+
+	versions, err := s.sprocketManager.GetSprocketVersions()
+	if chk.E(err) {
+		http.Error(w, fmt.Sprintf("Failed to get sprocket versions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	jsonData, err := json.Marshal(versions)
+	if chk.E(err) {
+		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
+}
+
+// handleSprocketDeleteVersion deletes a specific sprocket version
+func (s *Server) handleSprocketDeleteVersion(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if chk.E(err) || !valid {
+		errorMsg := "NIP-98 authentication validation failed"
+		if err != nil {
+			errorMsg = err.Error()
+		}
+		http.Error(w, errorMsg, http.StatusUnauthorized)
+		return
+	}
+
+	// Check permissions - require owner level
+	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
+	if accessLevel != "owner" {
+		http.Error(w, "Owner permission required", http.StatusForbidden)
+		return
+	}
+
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if chk.E(err) {
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
+	}
+
+	var request struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal(body, &request); chk.E(err) {
+		http.Error(w, "Invalid JSON in request body", http.StatusBadRequest)
+		return
+	}
+
+	if request.Filename == "" {
+		http.Error(w, "Filename is required", http.StatusBadRequest)
+		return
+	}
+
+	// Delete the sprocket version
+	if err := s.sprocketManager.DeleteSprocketVersion(request.Filename); chk.E(err) {
+		http.Error(w, fmt.Sprintf("Failed to delete sprocket version: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"success": true, "message": "Sprocket version deleted successfully"}`))
+}
+
+// handleSprocketConfig returns the sprocket configuration status
+func (s *Server) handleSprocketConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	response := struct {
+		Enabled bool `json:"enabled"`
+	}{
+		Enabled: s.Config.SprocketEnabled,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
 }

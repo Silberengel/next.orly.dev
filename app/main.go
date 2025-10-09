@@ -46,6 +46,9 @@ func Run(
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
 	}
+
+	// Initialize sprocket manager
+	l.sprocketManager = NewSprocketManager(ctx, cfg.AppName, cfg.SprocketEnabled)
 	// Initialize the user interface
 	l.UserInterface()
 

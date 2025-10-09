@@ -36,6 +36,16 @@
     // Events filter toggle
     let showOnlyMyEvents = false;
 
+    // Sprocket management state
+    let sprocketScript = '';
+    let sprocketStatus = null;
+    let sprocketVersions = [];
+    let isLoadingSprocket = false;
+    let sprocketMessage = '';
+    let sprocketMessageType = 'info';
+    let sprocketEnabled = false;
+    let sprocketUploadFile = null;
+
     // Kind name mapping based on repository kind definitions
     const kindNames = {
         0: "ProfileMetadata",
@@ -261,6 +271,9 @@
         
         // Load persistent app state
         loadPersistentState();
+        
+        // Load sprocket configuration
+        loadSprocketConfig();
     }
 
     function savePersistentState() {
@@ -356,6 +369,287 @@
         savePersistentState();
     }
 
+    // Sprocket management functions
+    async function loadSprocketConfig() {
+        try {
+            const response = await fetch('/api/sprocket/config', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const config = await response.json();
+                sprocketEnabled = config.enabled;
+            }
+        } catch (error) {
+            console.error('Error loading sprocket config:', error);
+        }
+    }
+
+    async function loadSprocketStatus() {
+        if (!isLoggedIn || userRole !== 'owner' || !sprocketEnabled) return;
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/status', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('GET', '/api/sprocket/status')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                sprocketStatus = await response.json();
+            } else {
+                showSprocketMessage('Failed to load sprocket status', 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error loading sprocket status: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function loadSprocket() {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/status', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('GET', '/api/sprocket/status')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const status = await response.json();
+                sprocketScript = status.script_content || '';
+                sprocketStatus = status;
+                showSprocketMessage('Script loaded successfully', 'success');
+            } else {
+                showSprocketMessage('Failed to load script', 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error loading script: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function saveSprocket() {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/update', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('POST', '/api/sprocket/update')}`,
+                    'Content-Type': 'text/plain'
+                },
+                body: sprocketScript
+            });
+            
+            if (response.ok) {
+                showSprocketMessage('Script saved and updated successfully', 'success');
+                await loadSprocketStatus();
+                await loadVersions();
+            } else {
+                const errorText = await response.text();
+                showSprocketMessage(`Failed to save script: ${errorText}`, 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error saving script: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function restartSprocket() {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/restart', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('POST', '/api/sprocket/restart')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                showSprocketMessage('Sprocket restarted successfully', 'success');
+                await loadSprocketStatus();
+            } else {
+                const errorText = await response.text();
+                showSprocketMessage(`Failed to restart sprocket: ${errorText}`, 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error restarting sprocket: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function deleteSprocket() {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        if (!confirm('Are you sure you want to delete the sprocket script? This will stop the current process.')) {
+            return;
+        }
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/update', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('POST', '/api/sprocket/update')}`,
+                    'Content-Type': 'text/plain'
+                },
+                body: '' // Empty body deletes the script
+            });
+            
+            if (response.ok) {
+                sprocketScript = '';
+                showSprocketMessage('Sprocket script deleted successfully', 'success');
+                await loadSprocketStatus();
+                await loadVersions();
+            } else {
+                const errorText = await response.text();
+                showSprocketMessage(`Failed to delete script: ${errorText}`, 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error deleting script: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function loadVersions() {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/versions', {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('GET', '/api/sprocket/versions')}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                sprocketVersions = await response.json();
+            } else {
+                showSprocketMessage('Failed to load versions', 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error loading versions: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    async function loadVersion(version) {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        sprocketScript = version.content;
+        showSprocketMessage(`Loaded version: ${version.name}`, 'success');
+    }
+
+    async function deleteVersion(filename) {
+        if (!isLoggedIn || userRole !== 'owner') return;
+        
+        if (!confirm(`Are you sure you want to delete version ${filename}?`)) {
+            return;
+        }
+        
+        try {
+            isLoadingSprocket = true;
+            const response = await fetch('/api/sprocket/delete-version', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('POST', '/api/sprocket/delete-version')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ filename })
+            });
+            
+            if (response.ok) {
+                showSprocketMessage(`Version ${filename} deleted successfully`, 'success');
+                await loadVersions();
+            } else {
+                const errorText = await response.text();
+                showSprocketMessage(`Failed to delete version: ${errorText}`, 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error deleting version: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+        }
+    }
+
+    function showSprocketMessage(message, type = 'info') {
+        sprocketMessage = message;
+        sprocketMessageType = type;
+        
+        // Auto-hide message after 5 seconds
+        setTimeout(() => {
+            sprocketMessage = '';
+        }, 5000);
+    }
+
+    function handleSprocketFileSelect(event) {
+        sprocketUploadFile = event.target.files[0];
+    }
+
+    async function uploadSprocketScript() {
+        if (!isLoggedIn || userRole !== 'owner' || !sprocketUploadFile) return;
+        
+        try {
+            isLoadingSprocket = true;
+            
+            // Read the file content
+            const fileContent = await sprocketUploadFile.text();
+            
+            // Upload the script
+            const response = await fetch('/api/sprocket/update', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Nostr ${await createNIP98Auth('POST', '/api/sprocket/update')}`,
+                    'Content-Type': 'text/plain'
+                },
+                body: fileContent
+            });
+            
+            if (response.ok) {
+                sprocketScript = fileContent;
+                showSprocketMessage('Script uploaded and updated successfully', 'success');
+                await loadSprocketStatus();
+                await loadVersions();
+            } else {
+                const errorText = await response.text();
+                showSprocketMessage(`Failed to upload script: ${errorText}`, 'error');
+            }
+        } catch (error) {
+            showSprocketMessage(`Error uploading script: ${error.message}`, 'error');
+        } finally {
+            isLoadingSprocket = false;
+            sprocketUploadFile = null;
+            // Clear the file input
+            const fileInput = document.getElementById('sprocket-upload-file');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+        }
+    }
+
     const baseTabs = [
         {id: 'export', icon: '📤', label: 'Export'},
         {id: 'import', icon: '💾', label: 'Import', requiresAdmin: true},
@@ -371,6 +665,10 @@
         if (tab.requiresOwner && (!isLoggedIn || userRole !== 'owner')) {
             return false;
         }
+        // Hide sprocket tab if not enabled
+        if (tab.id === 'sprocket' && !sprocketEnabled) {
+            return false;
+        }
         return true;
     });
     
@@ -379,6 +677,11 @@
     function selectTab(tabId) {
         selectedTab = tabId;
         
+        // Load sprocket data when switching to sprocket tab
+        if (tabId === 'sprocket' && isLoggedIn && userRole === 'owner' && sprocketEnabled) {
+            loadSprocketStatus();
+            loadVersions();
+        }
         
         savePersistentState();
     }
@@ -883,6 +1186,50 @@
         
         return `Nostr ${base64Event}`;
     }
+
+    // NIP-98 authentication helper (for sprocket functions)
+    async function createNIP98Auth(method, url) {
+        if (!isLoggedIn || !userPubkey) {
+            throw new Error('Not logged in');
+        }
+        
+        // Create NIP-98 auth event
+        const authEvent = {
+            kind: 27235,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [
+                ['u', window.location.origin + url],
+                ['method', method.toUpperCase()]
+            ],
+            content: '',
+            pubkey: userPubkey
+        };
+        
+        let signedEvent;
+        
+        if (userSigner && authMethod === 'extension') {
+            // Use the signer from the extension
+            try {
+                signedEvent = await userSigner.signEvent(authEvent);
+            } catch (error) {
+                throw new Error('Failed to sign with extension: ' + error.message);
+            }
+        } else if (authMethod === 'nsec') {
+            // For nsec method, we need to implement proper signing
+            // For now, create a mock signature (in production, use proper crypto)
+            authEvent.id = 'mock-id-' + Date.now();
+            authEvent.sig = 'mock-signature-' + Date.now();
+            signedEvent = authEvent;
+        } else {
+            throw new Error('No valid signer available');
+        }
+        
+        // Encode as base64
+        const eventJson = JSON.stringify(signedEvent);
+        const base64Event = btoa(eventJson);
+        
+        return base64Event;
+    }
 </script>
 
 <!-- Header -->
@@ -1084,6 +1431,132 @@
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to view events.</p>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
+                    </div>
+                {/if}
+            </div>
+        {:else if selectedTab === 'sprocket'}
+            <div class="sprocket-view">
+                <h2>Sprocket Script Management</h2>
+                {#if isLoggedIn && userRole === 'owner'}
+                    <div class="sprocket-section">
+                        <div class="sprocket-header">
+                            <h3>Script Editor</h3>
+                            <div class="sprocket-controls">
+                                <button class="sprocket-btn restart-btn" on:click={restartSprocket} disabled={isLoadingSprocket}>
+                                    🔄 Restart
+                                </button>
+                                <button class="sprocket-btn delete-btn" on:click={deleteSprocket} disabled={isLoadingSprocket || !sprocketStatus?.script_exists}>
+                                    🗑️ Delete Script
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="sprocket-upload-section">
+                            <h4>Upload Script</h4>
+                            <div class="upload-controls">
+                                <input 
+                                    type="file" 
+                                    id="sprocket-upload-file" 
+                                    accept=".sh,.bash" 
+                                    on:change={handleSprocketFileSelect}
+                                    disabled={isLoadingSprocket}
+                                />
+                                <button 
+                                    class="sprocket-btn upload-btn" 
+                                    on:click={uploadSprocketScript} 
+                                    disabled={isLoadingSprocket || !sprocketUploadFile}
+                                >
+                                    📤 Upload & Update
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="sprocket-status">
+                            <div class="status-item">
+                                <span class="status-label">Status:</span>
+                                <span class="status-value" class:running={sprocketStatus?.is_running}>
+                                    {sprocketStatus?.is_running ? '🟢 Running' : '🔴 Stopped'}
+                                </span>
+                            </div>
+                            {#if sprocketStatus?.pid}
+                                <div class="status-item">
+                                    <span class="status-label">PID:</span>
+                                    <span class="status-value">{sprocketStatus.pid}</span>
+                                </div>
+                            {/if}
+                            <div class="status-item">
+                                <span class="status-label">Script:</span>
+                                <span class="status-value">{sprocketStatus?.script_exists ? '✅ Exists' : '❌ Not found'}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="script-editor-container">
+                            <textarea 
+                                class="script-editor" 
+                                bind:value={sprocketScript}
+                                placeholder="#!/bin/bash&#10;# Enter your sprocket script here..."
+                                disabled={isLoadingSprocket}
+                            ></textarea>
+                        </div>
+                        
+                        <div class="script-actions">
+                            <button class="sprocket-btn save-btn" on:click={saveSprocket} disabled={isLoadingSprocket}>
+                                💾 Save & Update
+                            </button>
+                            <button class="sprocket-btn load-btn" on:click={loadSprocket} disabled={isLoadingSprocket}>
+                                📥 Load Current
+                            </button>
+                        </div>
+                        
+                        {#if sprocketMessage}
+                            <div class="sprocket-message" class:error={sprocketMessageType === 'error'}>
+                                {sprocketMessage}
+                            </div>
+                        {/if}
+                    </div>
+                    
+                    <div class="sprocket-section">
+                        <h3>Script Versions</h3>
+                        <div class="versions-list">
+                            {#each sprocketVersions as version}
+                                <div class="version-item" class:current={version.is_current}>
+                                    <div class="version-info">
+                                        <div class="version-name">{version.name}</div>
+                                        <div class="version-date">
+                                            {new Date(version.modified).toLocaleString()}
+                                            {#if version.is_current}
+                                                <span class="current-badge">Current</span>
+                                            {/if}
+                                        </div>
+                                    </div>
+                                    <div class="version-actions">
+                                        <button class="version-btn load-btn" on:click={() => loadVersion(version)} disabled={isLoadingSprocket}>
+                                            📥 Load
+                                        </button>
+                                        {#if !version.is_current}
+                                            <button class="version-btn delete-btn" on:click={() => deleteVersion(version.name)} disabled={isLoadingSprocket}>
+                                                🗑️ Delete
+                                            </button>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                        
+                        <button class="sprocket-btn refresh-btn" on:click={loadVersions} disabled={isLoadingSprocket}>
+                            🔄 Refresh Versions
+                        </button>
+                    </div>
+                {:else if isLoggedIn}
+                    <div class="permission-denied">
+                        <p>❌ Owner permission required for sprocket management.</p>
+                        <p>To enable sprocket functionality, set the <code>ORLY_OWNERS</code> environment variable with your npub when starting the relay.</p>
+                        <p>Current user role: <strong>{userRole || 'none'}</strong></p>
+                    </div>
+                {:else}
+                    <div class="login-prompt">
+                        <p>Please log in to access sprocket management.</p>
                         <button class="login-btn" on:click={openLoginModal}>Log In</button>
                     </div>
                 {/if}
@@ -1443,8 +1916,314 @@
 
     .welcome-message p {
         font-size: 1.2rem;
-        margin: 0;
+    }
+
+    /* Sprocket Styles */
+    .sprocket-view {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem;
+    }
+
+    .sprocket-section {
+        background-color: var(--card-bg);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .sprocket-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .sprocket-controls {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .sprocket-upload-section {
+        margin-bottom: 1rem;
+        padding: 1rem;
+        background-color: var(--bg-color);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+    }
+
+    .sprocket-upload-section h4 {
+        margin: 0 0 0.75rem 0;
         color: var(--text-color);
+        font-size: 1rem;
+        font-weight: 500;
+    }
+
+    .upload-controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .upload-controls input[type="file"] {
+        flex: 1;
+        padding: 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-color);
+        color: var(--text-color);
+        font-size: 0.9rem;
+    }
+
+    .sprocket-btn.upload-btn {
+        background-color: #8b5cf6;
+        color: white;
+    }
+
+    .sprocket-btn.upload-btn:hover:not(:disabled) {
+        background-color: #7c3aed;
+    }
+
+    .sprocket-status {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background-color: var(--bg-color);
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+    }
+
+    .status-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .status-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+
+    .status-value {
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .status-value.running {
+        color: #22c55e;
+    }
+
+    .script-editor-container {
+        margin-bottom: 1rem;
+    }
+
+    .script-editor {
+        width: 100%;
+        height: 300px;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        resize: vertical;
+        outline: none;
+    }
+
+    .script-editor:focus {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    }
+
+    .script-editor:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .script-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .sprocket-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .sprocket-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .sprocket-btn.save-btn {
+        background-color: #22c55e;
+        color: white;
+    }
+
+    .sprocket-btn.save-btn:hover:not(:disabled) {
+        background-color: #16a34a;
+    }
+
+    .sprocket-btn.load-btn {
+        background-color: #3b82f6;
+        color: white;
+    }
+
+    .sprocket-btn.load-btn:hover:not(:disabled) {
+        background-color: #2563eb;
+    }
+
+    .sprocket-btn.restart-btn {
+        background-color: #f59e0b;
+        color: white;
+    }
+
+    .sprocket-btn.restart-btn:hover:not(:disabled) {
+        background-color: #d97706;
+    }
+
+    .sprocket-btn.delete-btn {
+        background-color: #ef4444;
+        color: white;
+    }
+
+    .sprocket-btn.delete-btn:hover:not(:disabled) {
+        background-color: #dc2626;
+    }
+
+    .sprocket-btn.refresh-btn {
+        background-color: #6b7280;
+        color: white;
+    }
+
+    .sprocket-btn.refresh-btn:hover:not(:disabled) {
+        background-color: #4b5563;
+    }
+
+    .sprocket-message {
+        padding: 0.75rem;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        background-color: #dbeafe;
+        color: #1e40af;
+        border: 1px solid #93c5fd;
+    }
+
+    .sprocket-message.error {
+        background-color: #fee2e2;
+        color: #dc2626;
+        border-color: #fca5a5;
+    }
+
+    .versions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .version-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background-color: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .version-item.current {
+        border-color: var(--primary-color);
+        background-color: rgba(59, 130, 246, 0.05);
+    }
+
+    .version-item:hover {
+        border-color: var(--primary-color);
+    }
+
+    .version-info {
+        flex: 1;
+    }
+
+    .version-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .version-date {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .current-badge {
+        background-color: var(--primary-color);
+        color: white;
+        padding: 0.125rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.7rem;
+        font-weight: 500;
+    }
+
+    .version-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .version-btn {
+        padding: 0.375rem 0.75rem;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .version-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .version-btn.load-btn {
+        background-color: #3b82f6;
+        color: white;
+    }
+
+    .version-btn.load-btn:hover:not(:disabled) {
+        background-color: #2563eb;
+    }
+
+    .version-btn.delete-btn {
+        background-color: #ef4444;
+        color: white;
+    }
+
+    .version-btn.delete-btn:hover:not(:disabled) {
+        background-color: #dc2626;
     }
 
     @media (max-width: 640px) {

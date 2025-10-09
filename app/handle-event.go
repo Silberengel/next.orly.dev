@@ -32,6 +32,58 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	if len(msg) > 0 {
 		log.I.F("extra '%s'", msg)
 	}
+
+	// Check if sprocket is enabled and process event through it
+	if l.sprocketManager != nil && l.sprocketManager.IsEnabled() {
+		if !l.sprocketManager.IsRunning() {
+			// Sprocket is enabled but not running - drop all messages
+			log.W.F("sprocket is enabled but not running, dropping event %0x", env.E.ID)
+			if err = Ok.Error(
+				l, env, "sprocket policy not available",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		// Process event through sprocket
+		response, sprocketErr := l.sprocketManager.ProcessEvent(env.E)
+		if chk.E(sprocketErr) {
+			log.E.F("sprocket processing failed: %v", sprocketErr)
+			if err = Ok.Error(
+				l, env, "sprocket processing failed",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		// Handle sprocket response
+		switch response.Action {
+		case "accept":
+			// Continue with normal processing
+			log.D.F("sprocket accepted event %0x", env.E.ID)
+		case "reject":
+			// Return OK false with message
+			if err = okenvelope.NewFrom(
+				env.Id(), false,
+				reason.Error.F(response.Msg),
+			).Write(l); chk.E(err) {
+				return
+			}
+			return
+		case "shadowReject":
+			// Return OK true but abort processing
+			if err = Ok.Ok(l, env, ""); chk.E(err) {
+				return
+			}
+			log.D.F("sprocket shadow rejected event %0x", env.E.ID)
+			return
+		default:
+			log.W.F("unknown sprocket action: %s", response.Action)
+			// Default to accept for unknown actions
+		}
+	}
 	// check the event ID is correct
 	calculatedId := env.E.GetIDBytes()
 	if !utils.FastEqual(calculatedId, env.E.ID) {
