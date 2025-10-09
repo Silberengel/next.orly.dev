@@ -231,14 +231,14 @@
 
     // Export functionality
     async function exportAllEvents() {
-        if (!isLoggedIn || userRole !== 'owner') {
-            alert('Owner permission required');
+        if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner')) {
+            alert('Admin or owner permission required');
             return;
         }
         
         try {
-            const authHeader = await createNIP98AuthHeader('/export', 'GET');
-            const response = await fetch('/export', {
+            const authHeader = await createNIP98AuthHeader('/api/export', 'GET');
+            const response = await fetch('/api/export', {
                 method: 'GET',
                 headers: {
                     'Authorization': authHeader
@@ -515,15 +515,7 @@
         {#if selectedTab === 'export'}
             <div class="export-view">
                 <h2>Export Events</h2>
-                {#if isLoggedIn && userRole === 'owner'}
-                    <div class="export-section">
-                        <h3>Export All Events</h3>
-                        <p>Download the complete database as a JSONL file. This includes all events from all users.</p>
-                        <button class="export-btn" on:click={exportAllEvents}>
-                            📤 Export All Events
-                        </button>
-                    </div>
-                {:else if isLoggedIn}
+                {#if isLoggedIn}
                     <div class="export-section">
                         <h3>Export My Events</h3>
                         <p>Download your personal events as a JSONL file.</p>
@@ -531,6 +523,15 @@
                             📤 Export My Events
                         </button>
                     </div>
+                    {#if userRole === 'admin' || userRole === 'owner'}
+                        <div class="export-section">
+                            <h3>Export All Events</h3>
+                            <p>Download the complete database as a JSONL file. This includes all events from all users.</p>
+                            <button class="export-btn" on:click={exportAllEvents}>
+                                📤 Export All Events
+                            </button>
+                        </div>
+                    {/if}
                 {:else}
                     <div class="login-prompt">
                         <p>Please log in to access export functionality.</p>
