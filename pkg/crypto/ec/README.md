@@ -1,5 +1,4 @@
-realy.lol/pkg/ec
-=====
+# realy.lol/pkg/ec
 
 This is a full drop-in replacement for
 [github.com/btcsuite/btcd/btcec](https://github.com/btcsuite/btcd/tree/master/btcec)
@@ -20,7 +19,7 @@ message signing with the extra test vectors present and passing.
 
 The remainder of this document is from the original README.md.
 
-------------------------------------------------------------------------------
+---
 
 Package `ec` implements elliptic curve cryptography needed for working with
 Bitcoin. It is designed so that it may be used with the standard

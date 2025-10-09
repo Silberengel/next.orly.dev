@@ -95,9 +95,9 @@ Note that, because of the scheduling overhead, for small messages (< 1 MB) you
 will be better off using the regular SHA256 hashing (but those are typically not
 performance critical anyway). Some other tips to get the best performance:
 
-* Have many go routines doing SHA256 calculations in parallel.
-* Try to Write() messages in multiples of 64 bytes.
-* Try to keep the overall length of messages to a roughly similar size ie. 5
+- Have many go routines doing SHA256 calculations in parallel.
+- Try to Write() messages in multiples of 64 bytes.
+- Try to keep the overall length of messages to a roughly similar size ie. 5
   MB (this way all 16 ‘lanes’ in the AVX512 computations are contributing as
   much as possible).
 
@@ -128,7 +128,7 @@ Below is the speed in MB/s for a single core (ranked fast to slow) for blocks
 larger than 1 MB.
 
 | Processor                         | SIMD    | Speed (MB/s) |
-|-----------------------------------|---------|-------------:|
+| --------------------------------- | ------- | -----------: |
 | 3.0 GHz Intel Xeon Platinum 8124M | AVX512  |         3498 |
 | 3.7 GHz AMD Ryzen 7 2700X         | SHA Ext |         1979 |
 | 1.2 GHz ARM Cortex-A53            | ARM64   |          638 |
@@ -160,18 +160,18 @@ Below you can see a small excerpt highlighting one of the rounds as is done for
 the SHA256 calculation process (for full code
 see [sha256block_arm64.s](https://github.com/minio/sha256-simd/blob/master/sha256block_arm64.s)).
 
- ```
- sha256h    q2, q3, v9.4s
- sha256h2   q3, q4, v9.4s
- sha256su0  v5.4s, v6.4s
- rev32      v8.16b, v8.16b
- add        v9.4s, v7.4s, v18.4s
- mov        v4.16b, v2.16b
- sha256h    q2, q3, v10.4s
- sha256h2   q3, q4, v10.4s
- sha256su0  v6.4s, v7.4s
- sha256su1  v5.4s, v7.4s, v8.4s
- ```
+```
+sha256h    q2, q3, v9.4s
+sha256h2   q3, q4, v9.4s
+sha256su0  v5.4s, v6.4s
+rev32      v8.16b, v8.16b
+add        v9.4s, v7.4s, v18.4s
+mov        v4.16b, v2.16b
+sha256h    q2, q3, v10.4s
+sha256h2   q3, q4, v10.4s
+sha256su0  v6.4s, v7.4s
+sha256su1  v5.4s, v7.4s, v8.4s
+```
 
 ### Detailed benchmarks
 

@@ -25,7 +25,7 @@ it
 
 For ubuntu, you need these:
 
-    sudo apt -y install build-essential autoconf libtool  
+    sudo apt -y install build-essential autoconf libtool
 
 For other linux distributions, the process is the same but the dependencies are
 likely different. The main thing is it requires make, gcc/++, autoconf and

@@ -1,26 +1,28 @@
 # Service Worker Certificate Caching Fix
 
 ## 🚨 **Problem**
+
 When accessing Jumble from the ImWald landing page, the service worker serves a cached self-signed certificate instead of the new Let's Encrypt certificate.
 
 ## ⚡ **Solutions**
 
 ### **Option 1: Force Service Worker Update**
+
 Add this to your Jumble app's service worker or main JavaScript:
 
 ```javascript
 // Force service worker update and certificate refresh
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(function(registrations) {
-    for(let registration of registrations) {
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function (registrations) {
+    for (let registration of registrations) {
       registration.update(); // Force update
     }
   });
 }
 
 // Clear all caches on certificate update
-if ('caches' in window) {
-  caches.keys().then(function(names) {
+if ("caches" in window) {
+  caches.keys().then(function (names) {
     for (let name of names) {
       caches.delete(name);
     }
@@ -29,49 +31,52 @@ if ('caches' in window) {
 ```
 
 ### **Option 2: Update Service Worker Cache Strategy**
+
 In your service worker file, add cache busting for SSL-sensitive requests:
 
 ```javascript
 // In your service worker
-self.addEventListener('fetch', function(event) {
+self.addEventListener("fetch", function (event) {
   // Don't cache HTTPS requests that might have certificate issues
-  if (event.request.url.startsWith('https://') && 
-      event.request.url.includes('imwald.eu')) {
-    event.respondWith(
-      fetch(event.request, { cache: 'no-store' })
-    );
+  if (
+    event.request.url.startsWith("https://") &&
+    event.request.url.includes("imwald.eu")
+  ) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
-  
+
   // Your existing fetch handling...
 });
 ```
 
 ### **Option 3: Version Your Service Worker**
+
 Update your service worker with a new version number:
 
 ```javascript
 // At the top of your service worker
-const CACHE_VERSION = 'v2.0.1'; // Increment this when certificates change
+const CACHE_VERSION = "v2.0.1"; // Increment this when certificates change
 const CACHE_NAME = `jumble-cache-${CACHE_VERSION}`;
 
 // Clear old caches
-self.addEventListener('activate', function(event) {
+self.addEventListener("activate", function (event) {
   event.waitUntil(
-    caches.keys().then(function(cacheNames) {
+    caches.keys().then(function (cacheNames) {
       return Promise.all(
-        cacheNames.map(function(cacheName) {
+        cacheNames.map(function (cacheName) {
           if (cacheName !== CACHE_NAME) {
             return caches.delete(cacheName);
           }
-        })
+        }),
       );
-    })
+    }),
   );
 });
 ```
 
 ### **Option 4: Add Cache Headers**
+
 In your Plesk Apache config for Jumble, add:
 
 ```apache

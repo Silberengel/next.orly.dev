@@ -37,6 +37,7 @@ cp env.example .env
 ```
 
 Key settings:
+
 - `ORLY_OWNERS`: Owner npubs (comma-separated, full control)
 - `ORLY_ADMINS`: Admin npubs (comma-separated, deletion permissions)
 - `ORLY_PORT`: Port to listen on (default: 7777)
@@ -50,6 +51,7 @@ The relay data is stored in `./data` directory which is mounted as a volume.
 ### Performance Tuning
 
 Based on the v0.4.8 optimizations:
+
 - Concurrent event publishing using all CPU cores
 - Optimized BadgerDB access patterns
 - Configurable batch sizes and cache settings
@@ -105,12 +107,14 @@ go run ./cmd/stresstest -relay ws://localhost:7777
 ### Common Issues (Real-World Experience)
 
 #### **Container Issues:**
+
 1. **Port already in use**: Change `ORLY_PORT` in docker-compose.yml
 2. **Permission denied**: Ensure `./data` directory is writable
 3. **Container won't start**: Check logs with `docker logs container-name`
 
 #### **WebSocket Issues:**
-4. **HTTP 426 instead of WebSocket upgrade**: 
+
+4. **HTTP 426 instead of WebSocket upgrade**:
    - Use `ws://127.0.0.1:7777` in proxy config, not `http://`
    - Ensure `proxy_wstunnel` module is enabled
 5. **Connection refused in browser but works with websocat**:
@@ -119,6 +123,7 @@ go run ./cmd/stresstest -relay ws://localhost:7777
    - Add CORS headers to Apache/nginx config
 
 #### **Plesk-Specific Issues:**
+
 6. **Plesk not applying Apache directives**:
    - Check if config appears in `/etc/apache2/plesk.conf.d/vhosts/domain.conf`
    - Use direct Apache override if Plesk interface fails
@@ -127,6 +132,7 @@ go run ./cmd/stresstest -relay ws://localhost:7777
    - Remove conflicting Plesk configs if needed
 
 #### **SSL Certificate Issues:**
+
 8. **Self-signed certificate after Let's Encrypt**:
    - Plesk might not be using the correct certificate
    - Import Let's Encrypt certs into Plesk or use direct Apache config
@@ -166,23 +172,24 @@ sudo tail -f /var/log/apache2/domain-error.log
 ### Working Reverse Proxy Config
 
 **For Apache (direct config file):**
+
 ```apache
 <VirtualHost SERVER_IP:443>
     ServerName domain.com
     SSLEngine on
     SSLCertificateFile /etc/letsencrypt/live/domain.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/domain.com/privkey.pem
-    
+
     # Direct WebSocket proxy for Nostr relay
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyPass / ws://127.0.0.1:7777/
     ProxyPassReverse / ws://127.0.0.1:7777/
-    
+
     Header always set Access-Control-Allow-Origin "*"
 </VirtualHost>
 ```
 
 ---
 
-*Crafted for Stella's digital forest* 🌲
+_Crafted for Stella's digital forest_ 🌲

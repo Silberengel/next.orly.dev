@@ -230,19 +230,27 @@
     }
 
     // Export functionality
-    async function exportAllEvents() {
-        if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner')) {
-            alert('Admin or owner permission required');
+    async function exportEvents(pubkeys = []) {
+        if (!isLoggedIn) {
+            alert('Please log in first');
+            return;
+        }
+        
+        // Check permissions for exporting all events
+        if (pubkeys.length === 0 && userRole !== 'admin' && userRole !== 'owner') {
+            alert('Admin or owner permission required to export all events');
             return;
         }
         
         try {
-            const authHeader = await createNIP98AuthHeader('/api/export', 'GET');
+            const authHeader = await createNIP98AuthHeader('/api/export', 'POST');
             const response = await fetch('/api/export', {
-                method: 'GET',
+                method: 'POST',
                 headers: {
-                    'Authorization': authHeader
-                }
+                    'Authorization': authHeader,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ pubkeys })
             });
             
             if (!response.ok) {
@@ -253,7 +261,18 @@
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `all-events-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jsonl`;
+            
+            // Get filename from response headers or use default
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'events.jsonl';
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+                if (filenameMatch) {
+                    filename = filenameMatch[1];
+                }
+            }
+            
+            a.download = filename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -264,38 +283,12 @@
         }
     }
 
+    async function exportAllEvents() {
+        await exportEvents([]); // Empty array means export all events
+    }
+
     async function exportMyEvents() {
-        if (!isLoggedIn) {
-            alert('Please log in first');
-            return;
-        }
-        
-        try {
-            const authHeader = await createNIP98AuthHeader('/api/export/mine', 'GET');
-            const response = await fetch('/api/export/mine', {
-                method: 'GET',
-                headers: {
-                    'Authorization': authHeader
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Export failed: ${response.status} ${response.statusText}`);
-            }
-            
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `my-events-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.jsonl`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-        } catch (error) {
-            console.error('Export failed:', error);
-            alert('Export failed: ' + error.message);
-        }
+        await exportEvents([userPubkey]); // Export only current user's events
     }
 
     // Import functionality

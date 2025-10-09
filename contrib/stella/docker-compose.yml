@@ -4,9 +4,9 @@
 services:
   orly-relay:
     build:
-      context:    ../..
+      context: ../..
       dockerfile: Dockerfile
-    image: silberengel/next-orly:latest 
+    image: silberengel/next-orly:latest
     container_name: orly-relay
     restart: unless-stopped
     ports:
@@ -23,40 +23,40 @@ services:
       - ORLY_DB_LOG_LEVEL=error
       - ORLY_OWNERS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx
       - ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1m4ny6hjqzepn4rxknuq94c2gpqzr29ufkkw7ttcxyak7v43n6vvsajc2jl,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z
-      
+
       # ACL and Spider Configuration
       - ORLY_ACL_MODE=follows
       - ORLY_SPIDER_MODE=follows
-      
+
       # Bootstrap relay URLs for initial sync
       - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io
-      
+
       # Subscription Settings (optional)
       - ORLY_SUBSCRIPTION_ENABLED=false
       - ORLY_MONTHLY_PRICE_SATS=0
-      
+
       # Performance Settings
       - ORLY_MAX_CONNECTIONS=1000
       - ORLY_MAX_EVENT_SIZE=65536
       - ORLY_MAX_SUBSCRIPTIONS=20
-      
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7777"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    
+
     # Resource limits
     deploy:
       resources:
         limits:
           memory: 1G
-          cpus: '1.0'
+          cpus: "1.0"
         reservations:
           memory: 256M
-          cpus: '0.25'
-    
+          cpus: "0.25"
+
     # Logging configuration
     logging:
       driver: "json-file"
@@ -79,7 +79,7 @@ services:
     depends_on:
       - orly-relay
     profiles:
-      - proxy  # Only start with: docker-compose --profile proxy up
+      - proxy # Only start with: docker-compose --profile proxy up
 
 volumes:
   relay_data:

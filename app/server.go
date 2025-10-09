@@ -186,10 +186,8 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/auth/status", s.handleAuthStatus)
 	s.mux.HandleFunc("/api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("/api/permissions/", s.handlePermissions)
-	// Export endpoints
+	// Export endpoint
 	s.mux.HandleFunc("/api/export", s.handleExport)
-	s.mux.HandleFunc("/api/export/mine", s.handleExportMine)
-	s.mux.HandleFunc("/export", s.handleExportAll)
 	// Events endpoints
 	s.mux.HandleFunc("/api/events/mine", s.handleEventsMine)
 	// Import endpoint (admin only)
@@ -442,9 +440,10 @@ func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonData)
 }
 
-// handleExport streams all events as JSONL (NDJSON) using NIP-98 authentication. Admins only.
+// handleExport streams events as JSONL (NDJSON) using NIP-98 authentication.
+// Supports both GET (query params) and POST (JSON body) for pubkey filtering.
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
@@ -467,93 +466,55 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optional filtering by pubkey(s)
+	// Parse pubkeys from request
 	var pks [][]byte
-	q := r.URL.Query()
-	for _, pkHex := range q["pubkey"] {
-		if pkHex == "" {
-			continue
+
+	if r.Method == http.MethodPost {
+		// Parse JSON body for pubkeys
+		var requestBody struct {
+			Pubkeys []string `json:"pubkeys"`
 		}
-		if pk, err := hex.Dec(pkHex); !chk.E(err) {
-			pks = append(pks, pk)
+
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err == nil {
+			// If JSON parsing succeeds, use pubkeys from body
+			for _, pkHex := range requestBody.Pubkeys {
+				if pkHex == "" {
+					continue
+				}
+				if pk, err := hex.Dec(pkHex); !chk.E(err) {
+					pks = append(pks, pk)
+				}
+			}
+		}
+		// If JSON parsing fails, fall back to empty pubkeys (export all)
+	} else {
+		// GET method - parse query parameters
+		q := r.URL.Query()
+		for _, pkHex := range q["pubkey"] {
+			if pkHex == "" {
+				continue
+			}
+			if pk, err := hex.Dec(pkHex); !chk.E(err) {
+				pks = append(pks, pk)
+			}
 		}
 	}
 
+	// Determine filename based on whether filtering by pubkeys
+	var filename string
+	if len(pks) == 0 {
+		filename = "all-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	} else if len(pks) == 1 {
+		filename = "my-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	} else {
+		filename = "filtered-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
+	}
+
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	filename := "events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
-	w.Header().Set(
-		"Content-Disposition", "attachment; filename=\""+filename+"\"",
-	)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 
 	// Stream export
 	s.D.Export(s.Ctx, w, pks...)
-}
-
-// handleExportMine streams only the authenticated user's events as JSONL (NDJSON) using NIP-98 authentication.
-func (s *Server) handleExportMine(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Validate NIP-98 authentication
-	valid, pubkey, err := httpauth.CheckAuth(r)
-	if chk.E(err) || !valid {
-		errorMsg := "NIP-98 authentication validation failed"
-		if err != nil {
-			errorMsg = err.Error()
-		}
-		http.Error(w, errorMsg, http.StatusUnauthorized)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	filename := "my-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
-	w.Header().Set(
-		"Content-Disposition", "attachment; filename=\""+filename+"\"",
-	)
-
-	// Stream export for this user's pubkey only
-	s.D.Export(s.Ctx, w, pubkey)
-}
-
-// handleExportAll streams all events as JSONL (NDJSON) using NIP-98 authentication. Owner only.
-func (s *Server) handleExportAll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Validate NIP-98 authentication
-	valid, pubkey, err := httpauth.CheckAuth(r)
-	if chk.E(err) || !valid {
-		errorMsg := "NIP-98 authentication validation failed"
-		if err != nil {
-			errorMsg = err.Error()
-		}
-		http.Error(w, errorMsg, http.StatusUnauthorized)
-		return
-	}
-
-	// Check if user has owner permission
-	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
-	if accessLevel != "owner" {
-		http.Error(w, "Owner permission required", http.StatusForbidden)
-		return
-	}
-
-	// Set response headers for file download
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	filename := "all-events-" + time.Now().UTC().Format("20060102-150405Z") + ".jsonl"
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-
-	// Disable write timeouts for this operation
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-
-	// Stream export of all events
-	s.D.Export(s.Ctx, w)
 }
 
 // handleEventsMine returns the authenticated user's events in JSON format with pagination using NIP-98 authentication.

@@ -54,6 +54,7 @@ cd cmd/benchmark
 ```
 
 This will:
+
 - Clone all external relay repositories
 - Create Docker configurations for each relay
 - Set up configuration files
@@ -68,6 +69,7 @@ docker compose up --build
 ```
 
 The system will:
+
 - Build and start all relay containers
 - Wait for all relays to become healthy
 - Run benchmarks against each relay sequentially
@@ -89,15 +91,15 @@ ls reports/run_YYYYMMDD_HHMMSS/
 
 ### Docker Compose Services
 
-| Service | Port | Description |
-|---------|------|-------------|
-| next-orly | 8001 | This repository's BadgerDB relay |
-| khatru-sqlite | 8002 | Khatru with SQLite backend |
-| khatru-badger | 8003 | Khatru with Badger backend |
-| relayer-basic | 8004 | Basic relayer example |
-| strfry | 8005 | Strfry C++ LMDB relay |
-| nostr-rs-relay | 8006 | Rust SQLite relay |
-| benchmark-runner | - | Orchestrates tests and aggregates results |
+| Service          | Port | Description                               |
+| ---------------- | ---- | ----------------------------------------- |
+| next-orly        | 8001 | This repository's BadgerDB relay          |
+| khatru-sqlite    | 8002 | Khatru with SQLite backend                |
+| khatru-badger    | 8003 | Khatru with Badger backend                |
+| relayer-basic    | 8004 | Basic relayer example                     |
+| strfry           | 8005 | Strfry C++ LMDB relay                     |
+| nostr-rs-relay   | 8006 | Rust SQLite relay                         |
+| benchmark-runner | -    | Orchestrates tests and aggregates results |
 
 ### File Structure
 
@@ -130,16 +132,16 @@ The benchmark can be configured via environment variables in `docker-compose.yml
 
 ```yaml
 environment:
-  - BENCHMARK_EVENTS=10000      # Number of events per test
-  - BENCHMARK_WORKERS=8         # Concurrent workers
-  - BENCHMARK_DURATION=60s      # Test duration
-  - BENCHMARK_TARGETS=...       # Relay endpoints to test
+  - BENCHMARK_EVENTS=10000 # Number of events per test
+  - BENCHMARK_WORKERS=8 # Concurrent workers
+  - BENCHMARK_DURATION=60s # Test duration
+  - BENCHMARK_TARGETS=... # Relay endpoints to test
 ```
 
 ### Custom Configuration
 
 1. **Modify test parameters**: Edit environment variables in `docker-compose.yml`
-2. **Add new relays**: 
+2. **Add new relays**:
    - Add service to `docker-compose.yml`
    - Create appropriate Dockerfile
    - Update `BENCHMARK_TARGETS` environment variable
@@ -174,16 +176,19 @@ go build -o benchmark main.go
 ## Benchmark Results Interpretation
 
 ### Peak Throughput Test
+
 - **High events/sec**: Good write performance
 - **Low latency**: Efficient event processing
 - **High success rate**: Stable under load
 
-### Burst Pattern Test  
+### Burst Pattern Test
+
 - **Consistent performance**: Good handling of variable loads
 - **Low P95/P99 latency**: Predictable response times
 - **No errors during bursts**: Robust queuing/buffering
 
 ### Mixed Read/Write Test
+
 - **Balanced throughput**: Good concurrent operation handling
 - **Low read latency**: Efficient query processing
 - **Stable write performance**: Queries don't significantly impact writes
@@ -200,6 +205,7 @@ go build -o benchmark main.go
 ### Modifying Relay Configurations
 
 Each relay's Dockerfile and configuration can be customized:
+
 - **Resource limits**: Adjust memory/CPU limits in docker-compose.yml
 - **Database settings**: Modify configuration files in `configs/`
 - **Network settings**: Update port mappings and health checks

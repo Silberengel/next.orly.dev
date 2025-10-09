@@ -31,62 +31,32 @@
   ],
   "valid_test_cases": [
     {
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
+      "nonce_indices": [0, 1, 2],
       "aggnonce_index": 0,
       "msg_index": 0,
       "signer_index": 0,
       "expected": "012ABBCB52B3016AC03AD82395A1A415C48B93DEF78718E62A7A90052FE224FB"
     },
     {
-      "key_indices": [
-        1,
-        0,
-        2
-      ],
-      "nonce_indices": [
-        1,
-        0,
-        2
-      ],
+      "key_indices": [1, 0, 2],
+      "nonce_indices": [1, 0, 2],
       "aggnonce_index": 0,
       "msg_index": 0,
       "signer_index": 1,
       "expected": "9FF2F7AAA856150CC8819254218D3ADEEB0535269051897724F9DB3789513A52"
     },
     {
-      "key_indices": [
-        1,
-        2,
-        0
-      ],
-      "nonce_indices": [
-        1,
-        2,
-        0
-      ],
+      "key_indices": [1, 2, 0],
+      "nonce_indices": [1, 2, 0],
       "aggnonce_index": 0,
       "msg_index": 0,
       "signer_index": 2,
       "expected": "FA23C359F6FAC4E7796BB93BC9F0532A95468C539BA20FF86D7C76ED92227900"
     },
     {
-      "key_indices": [
-        0,
-        1
-      ],
-      "nonce_indices": [
-        0,
-        3
-      ],
+      "key_indices": [0, 1],
+      "nonce_indices": [0, 3],
       "aggnonce_index": 1,
       "msg_index": 0,
       "signer_index": 0,
@@ -96,10 +66,7 @@
   ],
   "sign_error_test_cases": [
     {
-      "key_indices": [
-        1,
-        2
-      ],
+      "key_indices": [1, 2],
       "aggnonce_index": 0,
       "msg_index": 0,
       "secnonce_index": 0,
@@ -110,11 +77,7 @@
       "comment": "The signers pubkey is not in the list of pubkeys"
     },
     {
-      "key_indices": [
-        1,
-        0,
-        3
-      ],
+      "key_indices": [1, 0, 3],
       "aggnonce_index": 0,
       "msg_index": 0,
       "secnonce_index": 0,
@@ -126,11 +89,7 @@
       "comment": "Signer 2 provided an invalid public key"
     },
     {
-      "key_indices": [
-        1,
-        2,
-        0
-      ],
+      "key_indices": [1, 2, 0],
       "aggnonce_index": 2,
       "msg_index": 0,
       "secnonce_index": 0,
@@ -142,11 +101,7 @@
       "comment": "Aggregate nonce is invalid due wrong tag, 0x04, in the first half"
     },
     {
-      "key_indices": [
-        1,
-        2,
-        0
-      ],
+      "key_indices": [1, 2, 0],
       "aggnonce_index": 3,
       "msg_index": 0,
       "secnonce_index": 0,
@@ -158,11 +113,7 @@
       "comment": "Aggregate nonce is invalid because the second half does not correspond to an X coordinate"
     },
     {
-      "key_indices": [
-        1,
-        2,
-        0
-      ],
+      "key_indices": [1, 2, 0],
       "aggnonce_index": 4,
       "msg_index": 0,
       "secnonce_index": 0,
@@ -174,11 +125,7 @@
       "comment": "Aggregate nonce is invalid because second half exceeds field size"
     },
     {
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
       "aggnonce_index": 0,
       "msg_index": 0,
       "signer_index": 0,
@@ -193,48 +140,24 @@
   "verify_fail_test_cases": [
     {
       "sig": "97AC833ADCB1AFA42EBF9E0725616F3C9A0D5B614F6FE283CEAAA37A8FFAF406",
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
+      "nonce_indices": [0, 1, 2],
       "msg_index": 0,
       "signer_index": 0,
       "comment": "Wrong signature (which is equal to the negation of valid signature)"
     },
     {
       "sig": "68537CC5234E505BD14061F8DA9E90C220A181855FD8BDB7F127BB12403B4D3B",
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
+      "nonce_indices": [0, 1, 2],
       "msg_index": 0,
       "signer_index": 1,
       "comment": "Wrong signer"
     },
     {
       "sig": "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141",
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
+      "nonce_indices": [0, 1, 2],
       "msg_index": 0,
       "signer_index": 0,
       "comment": "Signature exceeds group size"
@@ -243,16 +166,8 @@
   "verify_error_test_cases": [
     {
       "sig": "68537CC5234E505BD14061F8DA9E90C220A181855FD8BDB7F127BB12403B4D3B",
-      "key_indices": [
-        0,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        4,
-        1,
-        2
-      ],
+      "key_indices": [0, 1, 2],
+      "nonce_indices": [4, 1, 2],
       "msg_index": 0,
       "signer_index": 0,
       "error": {
@@ -264,16 +179,8 @@
     },
     {
       "sig": "68537CC5234E505BD14061F8DA9E90C220A181855FD8BDB7F127BB12403B4D3B",
-      "key_indices": [
-        3,
-        1,
-        2
-      ],
-      "nonce_indices": [
-        0,
-        1,
-        2
-      ],
+      "key_indices": [3, 1, 2],
+      "nonce_indices": [0, 1, 2],
       "msg_index": 0,
       "signer_index": 0,
       "error": {

@@ -4,6 +4,7 @@
 **Updated with real-world troubleshooting solutions and latest Orly relay improvements**
 
 ## 🎯 **What This Solves**
+
 - WebSocket connection failures (`NS_ERROR_WEBSOCKET_CONNECTION_REFUSED`)
 - Nostr relay connectivity issues (`HTTP 426` instead of WebSocket upgrade)
 - Docker container proxy configuration
@@ -16,6 +17,7 @@
 ## 🐳 **Step 1: Deploy Your Docker Application**
 
 ### **For Stella's Orly Relay (Latest Version with Proxy Improvements):**
+
 ```bash
 # Pull and run the relay with enhanced proxy support
 docker run -d \
@@ -39,6 +41,7 @@ curl -I http://127.0.0.1:7777
 ```
 
 ### **For Web Apps (like Jumble):**
+
 ```bash
 # Run with fixed port for easier proxy setup
 docker run -d \
@@ -61,34 +64,34 @@ curl -I http://127.0.0.1:3000
 ```apache
 <VirtualHost *:443>
     ServerName your-domain.com
-    
+
     # SSL Configuration (Let's Encrypt)
     SSLEngine on
     SSLCertificateFile /etc/letsencrypt/live/your-domain.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/your-domain.com/privkey.pem
-    
+
     # Enable required modules first:
     # sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers ssl
-    
+
     # Proxy settings
     ProxyPreserveHost On
     ProxyRequests Off
-    
+
     # WebSocket upgrade handling - CRITICAL for apps with WebSockets
     RewriteEngine On
     RewriteCond %{HTTP:Upgrade} websocket [NC]
     RewriteCond %{HTTP:Connection} upgrade [NC]
     RewriteRule ^/?(.*) "ws://127.0.0.1:PORT/$1" [P,L]
-    
+
     # Regular HTTP proxy
     ProxyPass / http://127.0.0.1:PORT/
     ProxyPassReverse / http://127.0.0.1:PORT/
-    
+
     # Headers for modern web apps
     Header always set X-Forwarded-Proto "https"
     Header always set X-Forwarded-Port "443"
     Header always set X-Forwarded-For %{REMOTE_ADDR}s
-    
+
     # Security headers
     Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains"
     Header always set X-Content-Type-Options nosniff
@@ -103,6 +106,7 @@ curl -I http://127.0.0.1:3000
 ```
 
 **Then enable it:**
+
 ```bash
 sudo a2ensite domain.conf
 sudo systemctl reload apache2
@@ -121,6 +125,7 @@ sudo systemctl reload apache2
 5. **In HTTPS section, add:**
 
 **For Nostr Relay (port 7777):**
+
 ```apache
 ProxyRequests Off
 ProxyPreserveHost On
@@ -142,23 +147,23 @@ sudo tee /etc/apache2/conf-available/relay-override.conf << 'EOF'
     ServerName your-domain.com
     ServerAlias www.your-domain.com
     ServerAlias ipv4.your-domain.com
-    
+
     SSLEngine on
     SSLCertificateFile /etc/letsencrypt/live/your-domain.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/your-domain.com/privkey.pem
-    
+
     DocumentRoot /var/www/relay
-    
+
     # For Nostr relay - proxy everything to WebSocket
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyPass / ws://127.0.0.1:7777/
     ProxyPassReverse / ws://127.0.0.1:7777/
-    
+
     # CORS headers
     Header always set Access-Control-Allow-Origin "*"
     Header always set Access-Control-Allow-Headers "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-    
+
     # Logging
     ErrorLog /var/log/apache2/relay-error.log
     CustomLog /var/log/apache2/relay-access.log combined
@@ -190,6 +195,7 @@ apache2ctl -M | grep -E "(proxy|rewrite)"
 ```
 
 #### **For Web Apps (port 3000 or 32768):**
+
 ```apache
 ProxyPreserveHost On
 ProxyRequests Off
@@ -221,22 +227,22 @@ sudo tee /etc/apache2/conf-available/relay-override.conf << 'EOF'
     ServerName your-domain.com
     ServerAlias www.your-domain.com
     ServerAlias ipv4.your-domain.com
-    
+
     SSLEngine on
     SSLCertificateFile /etc/letsencrypt/live/your-domain.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/your-domain.com/privkey.pem
-    
+
     DocumentRoot /var/www/relay
-    
+
     # For Nostr relay - proxy everything to WebSocket
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyPass / ws://127.0.0.1:7777/
     ProxyPassReverse / ws://127.0.0.1:7777/
-    
+
     # CORS headers
     Header always set Access-Control-Allow-Origin "*"
-    
+
     # Logging
     ErrorLog /var/log/apache2/relay-error.log
     CustomLog /var/log/apache2/relay-access.log combined
@@ -269,6 +275,7 @@ sudo systemctl restart apache2
 ## 🆕 **Step 4: Latest Orly Relay Improvements**
 
 ### **Enhanced Proxy Support**
+
 The latest Orly relay includes several proxy improvements:
 
 1. **Flexible WebSocket Scheme Handling**: Accepts both `ws://` and `wss://` schemes for authentication
@@ -277,6 +284,7 @@ The latest Orly relay includes several proxy improvements:
 4. **Proxy-Aware Logging**: Better debugging information for proxy setups
 
 ### **Key Environment Variables**
+
 ```bash
 # Essential for proxy setups
 ORLY_RELAY_URL=wss://your-domain.com  # Must match your public URL
@@ -286,6 +294,7 @@ ORLY_SUBSCRIPTION_ENABLED=false      # Disable payment requirements
 ```
 
 ### **Testing the Enhanced Relay**
+
 ```bash
 # Test local connectivity
 curl -I http://127.0.0.1:7777
@@ -338,32 +347,38 @@ After making changes:
 
 ## 🚨 **Real-World Troubleshooting Guide**
 
-*Based on actual deployment experience with Plesk and WebSocket issues*
+_Based on actual deployment experience with Plesk and WebSocket issues_
 
 ### **Critical Issues & Solutions:**
 
 #### **🔴 HTTP 503 Service Unavailable**
+
 - **Cause**: Docker container not running
 - **Check**: `docker ps | grep relay`
 - **Fix**: `docker start container-name`
 
 #### **🔴 HTTP 426 Instead of WebSocket Upgrade**
+
 - **Cause**: Apache using `http://` proxy instead of `ws://`
 - **Fix**: Use `ProxyPass / ws://127.0.0.1:7777/` (not `http://`)
 
 #### **🔴 Plesk Configuration Not Applied**
+
 - **Symptom**: Config not in `/etc/apache2/plesk.conf.d/vhosts/domain.conf`
 - **Solution**: Use Direct Apache Override method (bypass Plesk interface)
 
 #### **🔴 Virtual Host Conflicts**
+
 - **Check**: `apache2ctl -S | grep domain.com`
 - **Fix**: Remove Plesk config: `sudo rm /etc/apache2/plesk.conf.d/vhosts/domain.conf`
 
 #### **🔴 Nginx Intercepting (Plesk)**
+
 - **Symptom**: Response shows `Server: nginx`
 - **Fix**: Disable nginx in Plesk settings
 
 ### **Debug Commands:**
+
 ```bash
 # Essential debugging
 docker ps | grep relay                   # Container running?
@@ -383,9 +398,11 @@ docker logs relay-name | grep -i "websocket connection"
 ## 🚨 **Latest Troubleshooting Solutions**
 
 ### **WebSocket Scheme Validation Errors**
+
 **Problem**: `"HTTP Scheme incorrect: expected 'ws' got 'wss'"`
 
 **Solution**: Use the latest Orly relay image with enhanced proxy support:
+
 ```bash
 # Pull the latest image with proxy improvements
 docker pull silberengel/next-orly:latest
@@ -396,17 +413,21 @@ docker stop orly-relay && docker rm orly-relay
 ```
 
 ### **Malformed Client Data Errors**
+
 **Problem**: `"invalid hex array size, got 2 expect 64"`
 
 **Solution**: These are client-side issues, not server problems. The latest relay handles them gracefully:
+
 - The relay now sends helpful error messages to clients
 - Malformed requests are logged but don't crash the relay
 - Normal operations continue despite client errors
 
 ### **Follows ACL Not Working**
+
 **Problem**: Only owners can write, admins can't write
 
 **Solution**: Ensure proper configuration:
+
 ```bash
 # Check ACL configuration
 docker exec orly-relay env | grep ACL
@@ -416,9 +437,11 @@ docker exec orly-relay env | grep ACL
 ```
 
 ### **Spider Not Syncing Content**
+
 **Problem**: Spider enabled but not pulling events
 
 **Solution**: Check for relay lists and follow events:
+
 ```bash
 # Check spider status
 docker logs orly-relay | grep -i spider
@@ -431,6 +454,7 @@ docker logs orly-relay | grep -i "kind.*3"
 ```
 
 ### **Working Solution (Proven):**
+
 ```apache
 <VirtualHost SERVER_IP:443>
     ServerName domain.com
@@ -438,20 +462,21 @@ docker logs orly-relay | grep -i "kind.*3"
     SSLCertificateFile /etc/letsencrypt/live/domain.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/domain.com/privkey.pem
     DocumentRoot /var/www/relay
-    
+
     # Direct WebSocket proxy - this is the key!
     ProxyRequests Off
     ProxyPreserveHost On
     ProxyPass / ws://127.0.0.1:7777/
     ProxyPassReverse / ws://127.0.0.1:7777/
-    
+
     Header always set Access-Control-Allow-Origin "*"
 </VirtualHost>
 ```
 
 ---
 
-**Key Lessons**: 
+**Key Lessons**:
+
 1. Plesk interface often fails to apply Apache directives
 2. Use `ws://` proxy for Nostr relays, not `http://`
 3. Direct Apache config files are more reliable than Plesk interface
@@ -464,17 +489,20 @@ docker logs orly-relay | grep -i "kind.*3"
 ## 🎉 **Summary of Latest Improvements**
 
 ### **Enhanced Proxy Support**
+
 - ✅ Flexible WebSocket scheme validation (accepts both `ws://` and `wss://`)
 - ✅ Enhanced CORS headers for better web app compatibility
 - ✅ Improved error handling for malformed client data
 - ✅ Proxy-aware logging for better debugging
 
 ### **Spider and ACL Features**
+
 - ✅ Follows-based access control (`ORLY_ACL_MODE=follows`)
 - ✅ Content syncing from other relays (`ORLY_SPIDER_MODE=follows`)
 - ✅ No payment requirements (`ORLY_SUBSCRIPTION_ENABLED=false`)
 
 ### **Production Ready**
+
 - ✅ Robust error handling
 - ✅ Enhanced logging and debugging
 - ✅ Better client compatibility

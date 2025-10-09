@@ -28,7 +28,7 @@ err = client.Request(ctx, "make_invoice", params, &invoice)
 ## Methods
 
 - `get_info` - Get wallet info
-- `get_balance` - Get wallet balance  
+- `get_balance` - Get wallet balance
 - `make_invoice` - Create invoice
 - `lookup_invoice` - Check invoice status
 - `pay_invoice` - Pay invoice

@@ -1,11 +1,13 @@
 # WebSocket Connection Debug Guide
 
 ## 🚨 **Current Issue**
+
 `wss://orly-relay.imwald.eu/` returns `NS_ERROR_WEBSOCKET_CONNECTION_REFUSED`
 
 ## 🔍 **Debug Steps**
 
 ### **Step 1: Verify Relay is Running**
+
 ```bash
 # On your server
 curl -I http://127.0.0.1:7777
@@ -16,6 +18,7 @@ docker ps | grep stella
 ```
 
 ### **Step 2: Test Apache Modules**
+
 ```bash
 # Check if WebSocket modules are enabled
 apache2ctl -M | grep -E "(proxy|rewrite)"
@@ -30,6 +33,7 @@ sudo systemctl restart apache2
 ```
 
 ### **Step 3: Check Apache Configuration**
+
 ```bash
 # Check what Plesk generated
 sudo cat /etc/apache2/plesk.conf.d/vhosts/orly-relay.imwald.eu.conf
@@ -39,6 +43,7 @@ grep -E "(Proxy|Rewrite)" /etc/apache2/plesk.conf.d/vhosts/orly-relay.imwald.eu.
 ```
 
 ### **Step 4: Test Direct WebSocket Connection**
+
 ```bash
 # Test if the issue is Apache or the relay itself
 echo '["REQ","test",{}]' | websocat ws://127.0.0.1:7777/
@@ -48,6 +53,7 @@ echo '["REQ","test",{}]' | websocat ws://127.0.0.1:7777/
 ```
 
 ### **Step 5: Check Apache Error Logs**
+
 ```bash
 # Watch Apache errors in real-time
 sudo tail -f /var/log/apache2/error.log
@@ -83,6 +89,7 @@ ProxyAddHeaders On
 ```
 
 ### **Alternative Simpler Version:**
+
 If the above doesn't work, try just:
 
 ```apache

@@ -25,16 +25,16 @@ An overview of the features provided by this package are as follows:
 
 - Secret key generation, serialization, and parsing
 - Public key generation, serialization and parsing per ANSI X9.62-1998
-    - Parses uncompressed, compressed, and hybrid public keys
-    - Serializes uncompressed and compressed public keys
+  - Parses uncompressed, compressed, and hybrid public keys
+  - Serializes uncompressed and compressed public keys
 - Specialized types for performing optimized and constant time field operations
-    - `FieldVal` type for working modulo the secp256k1 field prime
-    - `ModNScalar` type for working modulo the secp256k1 group order
+  - `FieldVal` type for working modulo the secp256k1 field prime
+  - `ModNScalar` type for working modulo the secp256k1 group order
 - Elliptic curve operations in Jacobian projective coordinates
-    - Point addition
-    - Point doubling
-    - Scalar multiplication with an arbitrary point
-    - Scalar multiplication with the base point (group generator)
+  - Point addition
+  - Point doubling
+  - Scalar multiplication with an arbitrary point
+  - Scalar multiplication with the base point (group generator)
 - Point decompression from a given x coordinate
 - Nonce generation via RFC6979 with support for extra data and version
   information that can be used to prevent nonce reuse between signing algorithms

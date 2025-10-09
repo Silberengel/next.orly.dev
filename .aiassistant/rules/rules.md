@@ -38,7 +38,7 @@ describing how the item is used.
 For documentation on package, summarise in up to 3 sentences the functions and
 purpose of the package
 
-Do not use markdown ** or __ or any similar things in initial words of a bullet
+Do not use markdown \*\* or \_\_ or any similar things in initial words of a bullet
 point, instead use standard godoc style # prefix for header sections
 
 ALWAYS separate each bullet point with an empty line, and ALWAYS indent them
@@ -90,8 +90,8 @@ A good typical example:
 
 ```
 
-use the source of the relay-tester to help guide what expectations the test has, 
-and use context7 for information about the nostr protocol, and use additional 
+use the source of the relay-tester to help guide what expectations the test has,
+and use context7 for information about the nostr protocol, and use additional
 log statements to help locate the cause of bugs
 
 always use Go v1.25.1 for everything involving Go
