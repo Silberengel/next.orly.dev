@@ -9,6 +9,7 @@
     let authMethod = '';
     let userProfile = null;
     let userRole = '';
+    let userSigner = null;
     let showSettingsDrawer = false;
     let selectedTab = 'export';
     let isSearchMode = false;
@@ -47,6 +48,12 @@
             isLoggedIn = true;
             userPubkey = storedPubkey;
             authMethod = storedAuthMethod;
+            
+            // Restore signer for extension method
+            if (storedAuthMethod === 'extension' && window.nostr) {
+                userSigner = window.nostr;
+            }
+            
             // Fetch user role for already logged in users
             fetchUserRole();
         }
@@ -97,6 +104,7 @@
         isLoggedIn = true;
         userPubkey = pubkey;
         authMethod = method;
+        userSigner = signer;
         showLoginModal = false;
         
         // Initialize Nostr client and fetch profile
@@ -118,6 +126,7 @@
         authMethod = '';
         userProfile = null;
         userRole = '';
+        userSigner = null;
         showSettingsDrawer = false;
         
         // Clear stored authentication
@@ -402,12 +411,6 @@
             throw new Error('Not logged in');
         }
         
-        // Get the private key from localStorage
-        const privateKey = localStorage.getItem('nostr_privkey');
-        if (!privateKey) {
-            throw new Error('Private key not found');
-        }
-        
         // Create NIP-98 auth event
         const authEvent = {
             kind: 27235,
@@ -420,13 +423,27 @@
             pubkey: userPubkey
         };
         
-        // Sign the event (simplified - in a real implementation you'd use proper signing)
-        // For now, we'll create a mock signature
-        authEvent.id = 'mock-id';
-        authEvent.sig = 'mock-signature';
+        let signedEvent;
+        
+        if (userSigner && authMethod === 'extension') {
+            // Use the signer from the extension
+            try {
+                signedEvent = await userSigner.signEvent(authEvent);
+            } catch (error) {
+                throw new Error('Failed to sign with extension: ' + error.message);
+            }
+        } else if (authMethod === 'nsec') {
+            // For nsec method, we need to implement proper signing
+            // For now, create a mock signature (in production, use proper crypto)
+            authEvent.id = 'mock-id-' + Date.now();
+            authEvent.sig = 'mock-signature-' + Date.now();
+            signedEvent = authEvent;
+        } else {
+            throw new Error('No valid signer available');
+        }
         
         // Encode as base64
-        const eventJson = JSON.stringify(authEvent);
+        const eventJson = JSON.stringify(signedEvent);
         const base64Event = btoa(eventJson);
         
         return `Nostr ${base64Event}`;

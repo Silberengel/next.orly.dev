@@ -122,3 +122,4 @@ pkg/database/testrealy
 /.idea/.name
 /ctxproxy.config.yml
 cmd/benchmark/external/**
+app/web/dist/**
