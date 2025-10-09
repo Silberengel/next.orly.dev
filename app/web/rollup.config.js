@@ -5,6 +5,7 @@ import terser from "@rollup/plugin-terser";
 import resolve from "@rollup/plugin-node-resolve";
 import livereload from "rollup-plugin-livereload";
 import css from "rollup-plugin-css-only";
+import copy from "rollup-plugin-copy";
 
 const production = !process.env.ROLLUP_WATCH;
 
@@ -59,6 +60,13 @@ export default {
       exportConditions: ["svelte"],
     }),
     commonjs(),
+
+    // Copy static files from public to dist
+    copy({
+      targets: [
+        { src: "public/**/*", dest: "dist" }
+      ]
+    }),
 
     // In dev mode, call `npm run start` once
     // the bundle has been generated
