@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, nostrClient } from './nostr.js';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -15,7 +15,6 @@
     let isSearchMode = false;
     let searchQuery = '';
     let searchTabs = [];
-    let myEvents = [];
     let allEvents = [];
     let selectedFile = null;
     let expandedEvents = new Set();
@@ -23,18 +22,19 @@
     let hasMoreEvents = true;
     let eventsPerPage = 100;
     let oldestEventTimestamp = null; // For timestamp-based pagination
+    let newestEventTimestamp = null; // For loading newer events
     
-    // My Events pagination state
-    let isLoadingMyEvents = false;
-    let hasMoreMyEvents = true;
-    let oldestMyEventTimestamp = null; // For timestamp-based pagination
     
-    // Shared event cache system
-    let eventCache = new Map(); // pubkey -> events[]
-    let cacheTimestamps = new Map(); // pubkey -> timestamp
+    // Screen-filling events view state
+    let eventsPerScreen = 20; // Default, will be calculated based on screen size
+    
+    // Global events cache system
     let globalEventsCache = []; // All events cache
     let globalCacheTimestamp = 0;
     const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+    
+    // Events filter toggle
+    let showOnlyMyEvents = false;
 
     // Kind name mapping based on repository kind definitions
     const kindNames = {
@@ -142,9 +142,39 @@
         expandedEvents = expandedEvents; // Trigger reactivity
     }
 
+    async function handleToggleChange() {
+        // Toggle state is already updated by bind:checked
+        console.log('Toggle changed, showOnlyMyEvents:', showOnlyMyEvents);
+        
+        // Reload events with the new filter
+        const authors = showOnlyMyEvents && isLoggedIn && userPubkey ? [userPubkey] : null;
+        await loadAllEvents(true, authors);
+    }
+
+    // Events are filtered server-side, but add client-side filtering as backup
+    $: filteredEvents = showOnlyMyEvents && isLoggedIn && userPubkey 
+        ? allEvents.filter(event => event.pubkey === userPubkey)
+        : allEvents;
+
     async function deleteEvent(eventId) {
-        if (!isLoggedIn || (userRole !== 'admin' && userRole !== 'owner')) {
-            alert('Admin or owner permission required');
+        if (!isLoggedIn) {
+            alert('Please log in first');
+            return;
+        }
+        
+        // Find the event to check if user can delete it
+        const event = allEvents.find(e => e.id === eventId);
+        if (!event) {
+            alert('Event not found');
+            return;
+        }
+        
+        // Check permissions: admin/owner can delete any event, write users can only delete their own events
+        const canDelete = (userRole === 'admin' || userRole === 'owner') || 
+                         (userRole === 'write' && event.pubkey === userPubkey);
+        
+        if (!canDelete) {
+            alert('You do not have permission to delete this event');
             return;
         }
         
@@ -153,24 +183,40 @@
         }
         
         try {
-            const authHeader = await createNIP98AuthHeader(`/api/events/${eventId}`, 'DELETE');
-            const response = await fetch(`/api/events/${eventId}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': authHeader
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Delete failed: ${response.status} ${response.statusText}`);
+            // Check if signer is available
+            if (!userSigner) {
+                throw new Error('Signer not available for signing');
             }
             
-            // Remove from local list
-            allEvents = allEvents.filter(event => event.id !== eventId);
-            alert('Event deleted successfully');
+            // Create the delete event template (unsigned)
+            const deleteEventTemplate = {
+                kind: 5,
+                created_at: Math.floor(Date.now() / 1000),
+                tags: [['e', eventId]], // e-tag referencing the event to delete
+                content: '',
+                pubkey: userPubkey
+            };
+            
+            console.log('Created delete event template:', deleteEventTemplate);
+            
+            // Sign the event using the signer
+            const signedDeleteEvent = await userSigner.signEvent(deleteEventTemplate);
+            console.log('Signed delete event:', signedDeleteEvent);
+            
+            // Publish the delete event to the relay
+            const result = await nostrClient.publish(signedDeleteEvent);
+            console.log('Delete event published:', result);
+            
+            if (result.success && result.okCount > 0) {
+                // Remove from local list
+                allEvents = allEvents.filter(event => event.id !== eventId);
+                alert(`Event deleted successfully (accepted by ${result.okCount} relay(s))`);
+            } else {
+                throw new Error('No relays accepted the delete event');
+            }
         } catch (error) {
-            console.error('Delete failed:', error);
-            alert('Delete failed: ' + error.message);
+            console.error('Failed to delete event:', error);
+            alert('Failed to delete event: ' + error.message);
         }
     }
 
@@ -223,14 +269,10 @@
         const state = {
             selectedTab,
             expandedEvents: Array.from(expandedEvents),
-            eventCache: Object.fromEntries(eventCache),
-            cacheTimestamps: Object.fromEntries(cacheTimestamps),
             globalEventsCache,
             globalCacheTimestamp,
             hasMoreEvents,
-            oldestEventTimestamp,
-            hasMoreMyEvents,
-            oldestMyEventTimestamp
+            oldestEventTimestamp
         };
         
         localStorage.setItem('app_state', JSON.stringify(state));
@@ -255,13 +297,6 @@
                 }
                 
                 // Restore cache data
-                if (state.eventCache) {
-                    eventCache = new Map(Object.entries(state.eventCache));
-                }
-                
-                if (state.cacheTimestamps) {
-                    cacheTimestamps = new Map(Object.entries(state.cacheTimestamps));
-                }
                 
                 if (state.globalEventsCache) {
                     globalEventsCache = state.globalEventsCache;
@@ -301,10 +336,6 @@
             allEvents = globalEventsCache;
         }
         
-        // Restore user's events from cache
-        if (userPubkey && eventCache.has(userPubkey) && isCacheValid(cacheTimestamps.get(userPubkey))) {
-            myEvents = eventCache.get(userPubkey);
-        }
     }
 
     function isCacheValid(timestamp) {
@@ -312,11 +343,6 @@
         return Date.now() - timestamp < CACHE_DURATION;
     }
 
-    function updateCache(pubkey, events) {
-        eventCache.set(pubkey, events);
-        cacheTimestamps.set(pubkey, Date.now());
-        savePersistentState();
-    }
 
     function updateGlobalCache(events) {
         globalEventsCache = events;
@@ -325,8 +351,6 @@
     }
 
     function clearCache() {
-        eventCache.clear();
-        cacheTimestamps.clear();
         globalEventsCache = [];
         globalCacheTimestamp = 0;
         savePersistentState();
@@ -335,8 +359,7 @@
     const baseTabs = [
         {id: 'export', icon: '📤', label: 'Export'},
         {id: 'import', icon: '💾', label: 'Import', requiresAdmin: true},
-        {id: 'myevents', icon: '👤', label: 'My Events'},
-        {id: 'allevents', icon: '📡', label: 'All Events'},
+        {id: 'events', icon: '📡', label: 'Events'},
         {id: 'sprocket', icon: '⚙️', label: 'Sprocket', requiresOwner: true},
     ];
 
@@ -355,6 +378,8 @@
 
     function selectTab(tabId) {
         selectedTab = tabId;
+        
+        
         savePersistentState();
     }
 
@@ -633,22 +658,22 @@
         
         if (isLoadingMyEvents) return;
         
-        // Check cache first for initial load
-        if (reset && eventCache.has(userPubkey) && isCacheValid(cacheTimestamps.get(userPubkey))) {
-            myEvents = eventCache.get(userPubkey);
-            // Set oldest timestamp from cached events
-            if (myEvents.length > 0) {
-                oldestMyEventTimestamp = Math.min(...myEvents.map(e => e.created_at));
-            }
-            return;
-        }
+        // Always load fresh data when feed becomes visible (reset = true)
+        // Skip cache check to ensure fresh data every time
         
         isLoadingMyEvents = true;
         
+        // Reset timestamps when doing a fresh load
+        if (reset) {
+            oldestMyEventTimestamp = null;
+            newestMyEventTimestamp = null;
+        }
+        
         try {
             // Use WebSocket REQ to fetch user events with timestamp-based pagination
+            // Load 1000 events on initial load, otherwise use 200 for pagination
             const events = await fetchUserEvents(userPubkey, {
-                limit: eventsPerPage,
+                limit: reset ? 1000 : 200,
                 until: reset ? null : oldestMyEventTimestamp
             });
             
@@ -670,7 +695,24 @@
                 }
             }
             
-            hasMoreMyEvents = events.length === eventsPerPage;
+            hasMoreMyEvents = events.length === (reset ? 1000 : 200);
+            
+            // Auto-load more events if content doesn't fill viewport and more events are available
+            // Only do this on initial load (reset = true) to avoid interfering with scroll-based loading
+            if (reset && hasMoreMyEvents) {
+                setTimeout(() => {
+                    // Only check viewport if we're currently on the My Events tab
+                    if (selectedTab === 'myevents') {
+                        const eventsContainers = document.querySelectorAll('.events-view-content');
+                        // The My Events container should be the first one (before All Events)
+                        const myEventsContainer = eventsContainers[0];
+                        if (myEventsContainer && myEventsContainer.scrollHeight <= myEventsContainer.clientHeight) {
+                            // Content doesn't fill viewport, load more automatically
+                            loadMoreMyEvents();
+                        }
+                    }
+                }, 100); // Small delay to ensure DOM is updated
+            }
             
         } catch (error) {
             console.error('Failed to load events:', error);
@@ -680,6 +722,7 @@
         }
     }
 
+
     async function loadMoreMyEvents() {
         if (!isLoadingMyEvents && hasMoreMyEvents) {
             await loadMyEvents(false);
@@ -688,15 +731,14 @@
 
     function handleMyEventsScroll(event) {
         const { scrollTop, scrollHeight, clientHeight } = event.target;
-        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+        const threshold = 100; // Load more when 100px from bottom
         
-        // Load more when 50% of content is out of view below
-        if (scrollPercentage > 0.5 && !isLoadingMyEvents && hasMoreMyEvents) {
+        if (scrollHeight - scrollTop - clientHeight < threshold) {
             loadMoreMyEvents();
         }
     }
 
-    async function loadAllEvents(reset = false) {
+    async function loadAllEvents(reset = false, authors = null) {
         if (!isLoggedIn || (userRole !== 'write' && userRole !== 'admin' && userRole !== 'owner')) {
             alert('Write, admin, or owner permission required');
             return;
@@ -704,24 +746,33 @@
         
         if (isLoadingEvents) return;
         
-        // Check cache first for initial load
-        if (reset && globalEventsCache.length > 0 && isCacheValid(globalCacheTimestamp)) {
-            allEvents = globalEventsCache;
-            // Set oldest timestamp from cached events
-            if (allEvents.length > 0) {
-                oldestEventTimestamp = Math.min(...allEvents.map(e => e.created_at));
-            }
-            return;
-        }
+        // Always load fresh data when feed becomes visible (reset = true)
+        // Skip cache check to ensure fresh data every time
         
         isLoadingEvents = true;
         
+        // Reset timestamps when doing a fresh load
+        if (reset) {
+            oldestEventTimestamp = null;
+            newestEventTimestamp = null;
+        }
+        
         try {
             // Use WebSocket REQ to fetch events with timestamp-based pagination
+            // Load 100 events on initial load, otherwise use 200 for pagination
+            console.log('Loading events with authors filter:', authors);
             const events = await fetchAllEvents({
-                limit: eventsPerPage,
-                until: reset ? null : oldestEventTimestamp
+                limit: reset ? 100 : 200,
+                until: reset ? Math.floor(Date.now() / 1000) : oldestEventTimestamp,
+                authors: authors
             });
+            console.log('Received events:', events.length, 'events');
+            if (authors && events.length > 0) {
+                const nonUserEvents = events.filter(event => event.pubkey !== userPubkey);
+                if (nonUserEvents.length > 0) {
+                    console.warn('Server returned non-user events:', nonUserEvents.length, 'out of', events.length);
+                }
+            }
             
             if (reset) {
                 allEvents = events;
@@ -741,7 +792,24 @@
                 }
             }
             
-            hasMoreEvents = events.length === eventsPerPage;
+            hasMoreEvents = events.length === (reset ? 1000 : 200);
+            
+            // Auto-load more events if content doesn't fill viewport and more events are available
+            // Only do this on initial load (reset = true) to avoid interfering with scroll-based loading
+            if (reset && hasMoreEvents) {
+                setTimeout(() => {
+                    // Only check viewport if we're currently on the All Events tab
+                    if (selectedTab === 'events') {
+                        const eventsContainers = document.querySelectorAll('.events-view-content');
+                        // The All Events container should be the first one (only container now)
+                        const allEventsContainer = eventsContainers[0];
+                        if (allEventsContainer && allEventsContainer.scrollHeight <= allEventsContainer.clientHeight) {
+                            // Content doesn't fill viewport, load more automatically
+                            loadMoreEvents();
+                        }
+                    }
+                }, 100); // Small delay to ensure DOM is updated
+            }
             
         } catch (error) {
             console.error('Failed to load events:', error);
@@ -751,31 +819,26 @@
         }
     }
 
+
     async function loadMoreEvents() {
-        if (!isLoadingEvents && hasMoreEvents) {
-            await loadAllEvents(false);
-        }
+        await loadAllEvents(false);
     }
 
     function handleScroll(event) {
         const { scrollTop, scrollHeight, clientHeight } = event.target;
-        const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
+        const threshold = 100; // Load more when 100px from bottom
         
-        // Load more when 50% of content is out of view below
-        if (scrollPercentage > 0.5 && !isLoadingEvents && hasMoreEvents) {
+        if (scrollHeight - scrollTop - clientHeight < threshold) {
             loadMoreEvents();
         }
     }
 
-    // Load initial events when allevents tab is selected
-    $: if (selectedTab === 'allevents' && isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner') && allEvents.length === 0) {
-        loadAllEvents(true);
+    // Load events when events tab is selected (only if no events loaded yet)
+    $: if (selectedTab === 'events' && isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner') && allEvents.length === 0) {
+        const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+        loadAllEvents(true, authors);
     }
 
-    // Load user events when myevents tab is selected
-    $: if (selectedTab === 'myevents' && isLoggedIn && userPubkey && myEvents.length === 0) {
-        loadMyEvents(true);
-    }
 
     // NIP-98 authentication helper
     async function createNIP98AuthHeader(url, method) {
@@ -944,109 +1007,52 @@
                     </div>
                 {/if}
             </div>
-        {:else if selectedTab === 'myevents'}
-            <div class="allevents-container">
-                {#if isLoggedIn}
-                    <div class="allevents-header">
-                        <button class="refresh-btn" on:click={() => loadMyEvents(true)} disabled={isLoadingMyEvents}>
-                            🔄 Refresh Events
-                        </button>
-                    </div>
-                    <div class="allevents-list" on:scroll={handleMyEventsScroll}>
-                        {#if myEvents.length > 0}
-                            {#each myEvents as event}
-                                <div class="allevents-event-item" class:expanded={expandedEvents.has(event.id)}>
-                                    <div class="allevents-event-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
-                                        <div class="allevents-event-avatar">
-                                            <div class="avatar-placeholder">👤</div>
-                                        </div>
-                                        <div class="allevents-event-info">
-                                            <div class="allevents-event-author">
-                                                {truncatePubkey(event.pubkey)}
-                                            </div>
-                                            <div class="allevents-event-kind">
-                                                <span class="kind-number">{event.kind}</span>
-                                                <span class="kind-name">{getKindName(event.kind)}</span>
-                                            </div>
-                                        </div>
-                                        <div class="allevents-event-content">
-                                            {truncateContent(event.content)}
-                                        </div>
-                                        {#if userRole === 'admin' || userRole === 'owner'}
-                                            <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
-                                                🗑️
-                                            </button>
-                                        {/if}
-                                    </div>
-                                    {#if expandedEvents.has(event.id)}
-                                        <div class="allevents-event-details">
-                                            <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
-                                        </div>
-                                    {/if}
-                                </div>
-                            {/each}
-                        {:else if !isLoadingMyEvents}
-                            <div class="no-events">
-                                <p>No events found.</p>
-                            </div>
-                        {/if}
-                        
-                        {#if isLoadingMyEvents}
-                            <div class="loading-events">
-                                <div class="loading-spinner"></div>
-                                <p>Loading events...</p>
-                            </div>
-                        {/if}
-                        
-                        {#if !hasMoreMyEvents && myEvents.length > 0}
-                            <div class="end-of-events">
-                                <p>No more events to load.</p>
-                            </div>
-                        {/if}
-                    </div>
-                {:else}
-                    <div class="login-prompt">
-                        <p>Please log in to view your events.</p>
-                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
-                    </div>
-                {/if}
-            </div>
-        {:else if selectedTab === 'allevents'}
-            <div class="allevents-container">
+        {:else if selectedTab === 'events'}
+            <div class="events-view-container">
                 {#if isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner')}
-                    <div class="allevents-header">
-                        <button class="refresh-btn" on:click={() => loadAllEvents(true)} disabled={isLoadingEvents}>
-                            🔄 Refresh Events
+                    <div class="events-view-header">
+                        <div class="events-view-toggle">
+                            <label class="toggle-container">
+                                <input type="checkbox" bind:checked={showOnlyMyEvents} on:change={() => handleToggleChange()}>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Only show my events</span>
+                            </label>
+                        </div>
+                        <button class="refresh-btn" on:click={() => {
+                            const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+                            loadAllEvents(false, authors);
+                        }} disabled={isLoadingEvents}>
+                            🔄 Load More
                         </button>
                     </div>
-                    <div class="allevents-list" on:scroll={handleScroll}>
-                        {#if allEvents.length > 0}
-                            {#each allEvents as event}
-                                <div class="allevents-event-item" class:expanded={expandedEvents.has(event.id)}>
-                                    <div class="allevents-event-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
-                                        <div class="allevents-event-avatar">
+                    <div class="events-view-content" on:scroll={handleScroll}>
+                        {#if filteredEvents.length > 0}
+                            {#each filteredEvents as event}
+                                <div class="events-view-item" class:expanded={expandedEvents.has(event.id)}>
+                                    <div class="events-view-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
+                                        <div class="events-view-avatar">
                                             <div class="avatar-placeholder">👤</div>
                                         </div>
-                                        <div class="allevents-event-info">
-                                            <div class="allevents-event-author">
+                                        <div class="events-view-info">
+                                            <div class="events-view-author">
                                                 {truncatePubkey(event.pubkey)}
                                             </div>
-                                            <div class="allevents-event-kind">
+                                            <div class="events-view-kind">
                                                 <span class="kind-number">{event.kind}</span>
                                                 <span class="kind-name">{getKindName(event.kind)}</span>
                                             </div>
                                         </div>
-                                        <div class="allevents-event-content">
+                                        <div class="events-view-content">
                                             {truncateContent(event.content)}
                                         </div>
-                                        {#if userRole === 'admin' || userRole === 'owner'}
+                                        {#if (userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey === userPubkey)}
                                             <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
                                                 🗑️
                                             </button>
                                         {/if}
                                     </div>
                                     {#if expandedEvents.has(event.id)}
-                                        <div class="allevents-event-details">
+                                        <div class="events-view-details">
                                             <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
                                         </div>
                                     {/if}
@@ -1759,18 +1765,19 @@
     }
 
     .export-btn, .import-btn, .refresh-btn {
-        padding: 0.75rem 1.5rem;
+        padding: 0.5rem 1rem;
         background: var(--primary);
         color: white;
         border: none;
-        border-radius: 6px;
+        border-radius: 4px;
         cursor: pointer;
-        font-size: 1rem;
+        font-size: 0.875rem;
         font-weight: 500;
         transition: background-color 0.2s;
         display: inline-flex;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.25rem;
+        height: 2em;
     }
 
     .export-btn:hover, .import-btn:hover, .refresh-btn:hover {
@@ -1821,8 +1828,8 @@
     }
 
 
-    /* All Events Container */
-    .allevents-container {
+    /* Events View Container */
+    .events-view-container {
         position: fixed;
         top: 3em;
         left: 200px;
@@ -1835,33 +1842,94 @@
         overflow: hidden;
     }
 
-    .allevents-header {
-        padding: 1rem;
+    .events-view-header {
+        padding: 0.5rem 1rem;
         background: var(--header-bg);
         border-bottom: 1px solid var(--border-color);
         flex-shrink: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 2.5em;
     }
 
-    .allevents-list {
+
+
+    .events-view-toggle {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .toggle-container {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        color: var(--text-color);
+    }
+
+    .toggle-container input[type="checkbox"] {
+        display: none;
+    }
+
+    .toggle-slider {
+        position: relative;
+        width: 2.5em;
+        height: 1.25em;
+        background: var(--border-color);
+        border-radius: 1.25em;
+        transition: background-color 0.3s;
+    }
+
+    .toggle-slider::before {
+        content: '';
+        position: absolute;
+        top: 0.125em;
+        left: 0.125em;
+        width: 1em;
+        height: 1em;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.3s;
+    }
+
+    .toggle-container input[type="checkbox"]:checked + .toggle-slider {
+        background: var(--primary);
+    }
+
+    .toggle-container input[type="checkbox"]:checked + .toggle-slider::before {
+        transform: translateX(1.25em);
+    }
+
+    .toggle-label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        user-select: none;
+    }
+
+    .events-view-content {
         flex: 1;
         overflow-y: auto;
         padding: 0;
     }
 
-    .allevents-event-item {
+    .events-view-item {
         border-bottom: 1px solid var(--border-color);
         transition: background-color 0.2s;
     }
 
-    .allevents-event-item:hover {
+    .events-view-item:hover {
         background: var(--button-hover-bg);
     }
 
-    .allevents-event-item.expanded {
+    .events-view-item.expanded {
         background: var(--button-hover-bg);
     }
 
-    .allevents-event-row {
+    .events-view-row {
         display: flex;
         align-items: center;
         padding: 0.75rem 1rem;
@@ -1870,7 +1938,7 @@
         min-height: 3rem;
     }
 
-    .allevents-event-avatar {
+    .events-view-avatar {
         flex-shrink: 0;
         width: 2rem;
         height: 2rem;
@@ -1890,7 +1958,7 @@
         font-size: 0.8rem;
     }
 
-    .allevents-event-info {
+    .events-view-info {
         flex-shrink: 0;
         width: 12rem;
         display: flex;
@@ -1898,14 +1966,14 @@
         gap: 0.25rem;
     }
 
-    .allevents-event-author {
+    .events-view-author {
         font-family: monospace;
         font-size: 0.8rem;
         color: var(--text-color);
         opacity: 0.8;
     }
 
-    .allevents-event-kind {
+    .events-view-kind {
         display: flex;
         align-items: center;
         gap: 0.5rem;
@@ -1928,7 +1996,7 @@
         font-weight: 500;
     }
 
-    .allevents-event-content {
+    .events-view-content {
         flex: 1;
         color: var(--text-color);
         font-size: 0.9rem;
@@ -1953,7 +2021,7 @@
         color: white;
     }
 
-    .allevents-event-details {
+    .events-view-details {
         border-top: 1px solid var(--border-color);
         background: var(--header-bg);
         padding: 1rem;
@@ -2025,6 +2093,7 @@
     .end-of-events p {
         margin: 0;
     }
+
     
     @media (max-width: 640px) {
         .settings-drawer {
@@ -2049,15 +2118,15 @@
             padding: 1rem;
         }
 
-        .allevents-container {
+        .events-view-container {
             left: 160px;
         }
 
-        .allevents-event-info {
+        .events-view-info {
             width: 8rem;
         }
 
-        .allevents-event-author {
+        .events-view-author {
             font-size: 0.7rem;
         }
 
@@ -2065,7 +2134,7 @@
             font-size: 0.7rem;
         }
 
-        .allevents-event-content {
+        .events-view-content {
             font-size: 0.8rem;
         }
     }

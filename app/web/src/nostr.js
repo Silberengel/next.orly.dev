@@ -162,6 +162,77 @@ class NostrClient {
     this.relays.clear();
     this.subscriptions.clear();
   }
+
+  // Publish an event to all connected relays
+  async publish(event) {
+    return new Promise((resolve, reject) => {
+      const eventMessage = ["EVENT", event];
+      console.log("Publishing event:", eventMessage);
+      
+      let publishedCount = 0;
+      let okCount = 0;
+      let errorCount = 0;
+      const totalRelays = this.relays.size;
+      
+      if (totalRelays === 0) {
+        reject(new Error("No relays connected"));
+        return;
+      }
+
+      const handleResponse = (relayUrl, success) => {
+        if (success) {
+          okCount++;
+        } else {
+          errorCount++;
+        }
+        
+        if (okCount + errorCount === totalRelays) {
+          if (okCount > 0) {
+            resolve({ success: true, okCount, errorCount });
+          } else {
+            reject(new Error(`All relays rejected the event. Errors: ${errorCount}`));
+          }
+        }
+      };
+
+      // Set up a temporary listener for OK responses
+      const originalHandleMessage = this.handleMessage.bind(this);
+      this.handleMessage = (relayUrl, message) => {
+        if (message[0] === "OK" && message[1] === event.id) {
+          const success = message[2] === true;
+          console.log(`Relay ${relayUrl} response:`, success ? "OK" : "REJECTED", message[3] || "");
+          handleResponse(relayUrl, success);
+        }
+        // Call original handler for other messages
+        originalHandleMessage(relayUrl, message);
+      };
+
+      // Send to all connected relays
+      for (const [relayUrl, ws] of this.relays) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(JSON.stringify(eventMessage));
+            publishedCount++;
+            console.log(`Event sent to ${relayUrl}`);
+          } catch (error) {
+            console.error(`Failed to send event to ${relayUrl}:`, error);
+            handleResponse(relayUrl, false);
+          }
+        } else {
+          console.warn(`Relay ${relayUrl} is not open, skipping`);
+          handleResponse(relayUrl, false);
+        }
+      }
+
+      // Restore original handler after timeout
+      setTimeout(() => {
+        this.handleMessage = originalHandleMessage;
+        if (okCount + errorCount < totalRelays) {
+          reject(new Error("Timeout waiting for relay responses"));
+        }
+      }, 10000); // 10 second timeout
+    });
+  }
 }
 
 // Create a global client instance
@@ -411,6 +482,8 @@ export async function fetchEvents(filters, options = {}) {
         requestFilters.limit = limit;
       }
 
+      console.log('Sending REQ with filters:', requestFilters);
+
       subscriptionId = nostrClient.subscribe(
         requestFilters,
         (event) => {
@@ -476,15 +549,17 @@ export async function fetchEvents(filters, options = {}) {
 // Fetch all events with timestamp-based pagination
 export async function fetchAllEvents(options = {}) {
   const {
-    limit = 10,
+    limit = 100,
     since = null,
-    until = null
+    until = null,
+    authors = null
   } = options;
 
   const filters = {};
   
   if (since) filters.since = since;
   if (until) filters.until = until;
+  if (authors) filters.authors = authors;
   
   const events = await fetchEvents(filters, { 
     limit: limit,
@@ -497,7 +572,7 @@ export async function fetchAllEvents(options = {}) {
 // Fetch user's events with timestamp-based pagination
 export async function fetchUserEvents(pubkey, options = {}) {
   const {
-    limit = 10,
+    limit = 100,
     since = null,
     until = null
   } = options;
@@ -516,6 +591,7 @@ export async function fetchUserEvents(pubkey, options = {}) {
   
   return events;
 }
+
 
 // Initialize client connection
 export async function initializeNostrClient() {
