@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, nostrClient, NostrClient } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, nostrClient, NostrClient } from './nostr.js';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -23,6 +23,10 @@
     let eventsPerPage = 100;
     let oldestEventTimestamp = null; // For timestamp-based pagination
     let newestEventTimestamp = null; // For loading newer events
+    
+    // Search results state
+    let searchResults = new Map(); // Map of searchTabId -> { events, isLoading, hasMore, oldestTimestamp }
+    let isLoadingSearch = false;
     
     
     // Screen-filling events view state
@@ -809,19 +813,94 @@
         const searchTabId = `search-${Date.now()}`;
         const newSearchTab = {
             id: searchTabId,
-            icon: '❌',
+            icon: '🔍',
             label: query,
             isSearchTab: true,
             query: query
         };
         searchTabs = [...searchTabs, newSearchTab];
         selectedTab = searchTabId;
+        
+        // Initialize search results for this tab
+        searchResults.set(searchTabId, {
+            events: [],
+            isLoading: false,
+            hasMore: true,
+            oldestTimestamp: null
+        });
+        
+        // Start loading search results
+        loadSearchResults(searchTabId, query);
     }
 
     function closeSearchTab(tabId) {
         searchTabs = searchTabs.filter(tab => tab.id !== tabId);
+        searchResults.delete(tabId); // Clean up search results
         if (selectedTab === tabId) {
             selectedTab = 'export'; // Fall back to export tab
+        }
+    }
+
+    async function loadSearchResults(searchTabId, query, reset = true) {
+        const searchResult = searchResults.get(searchTabId);
+        if (!searchResult || searchResult.isLoading) return;
+        
+        // Update loading state
+        searchResult.isLoading = true;
+        searchResults.set(searchTabId, searchResult);
+        
+        try {
+            const options = {
+                limit: reset ? 100 : 200,
+                until: reset ? Math.floor(Date.now() / 1000) : searchResult.oldestTimestamp
+            };
+            
+            console.log('Loading search results for query:', query, 'with options:', options);
+            const events = await searchEvents(query, options);
+            console.log('Received search results:', events.length, 'events');
+            
+            if (reset) {
+                searchResult.events = events;
+            } else {
+                searchResult.events = [...searchResult.events, ...events];
+            }
+            
+            // Update oldest timestamp for next pagination
+            if (events.length > 0) {
+                const oldestInBatch = Math.min(...events.map(e => e.created_at));
+                if (!searchResult.oldestTimestamp || oldestInBatch < searchResult.oldestTimestamp) {
+                    searchResult.oldestTimestamp = oldestInBatch;
+                }
+            }
+            
+            searchResult.hasMore = events.length === (reset ? 100 : 200);
+            searchResult.isLoading = false;
+            searchResults.set(searchTabId, searchResult);
+            
+        } catch (error) {
+            console.error('Failed to load search results:', error);
+            searchResult.isLoading = false;
+            searchResults.set(searchTabId, searchResult);
+            alert('Failed to load search results: ' + error.message);
+        }
+    }
+
+    async function loadMoreSearchResults(searchTabId) {
+        const searchTab = searchTabs.find(tab => tab.id === searchTabId);
+        if (searchTab) {
+            await loadSearchResults(searchTabId, searchTab.query, false);
+        }
+    }
+
+    function handleSearchScroll(event, searchTabId) {
+        const { scrollTop, scrollHeight, clientHeight } = event.target;
+        const threshold = 100; // Load more when 100px from bottom
+        
+        if (scrollHeight - scrollTop - clientHeight < threshold) {
+            const searchResult = searchResults.get(searchTabId);
+            if (searchResult && !searchResult.isLoading && searchResult.hasMore) {
+                loadMoreSearchResults(searchTabId);
+            }
         }
     }
 
@@ -1319,12 +1398,11 @@
                 {#each tabs as tab}
                     <button class="tab" class:active={selectedTab === tab.id}
                          on:click={() => selectTab(tab.id)}>
-                        {#if tab.isSearchTab}
-                            <span class="tab-icon close-icon" on:click|stopPropagation={() => closeSearchTab(tab.id)} on:keydown={(e) => e.key === 'Enter' && closeSearchTab(tab.id)} role="button" tabindex="0">{tab.icon}</span>
-                        {:else}
-                            <span class="tab-icon">{tab.icon}</span>
-                        {/if}
+                        <span class="tab-icon">{tab.icon}</span>
                         <span class="tab-label">{tab.label}</span>
+                        {#if tab.isSearchTab}
+                            <span class="tab-close-icon" on:click|stopPropagation={() => closeSearchTab(tab.id)} on:keydown={(e) => e.key === 'Enter' && closeSearchTab(tab.id)} role="button" tabindex="0">✕</span>
+                        {/if}
                     </button>
                 {/each}
             </div>
@@ -1590,6 +1668,71 @@
                     </div>
                 {/if}
             </div>
+        {:else if searchTabs.some(tab => tab.id === selectedTab)}
+            {#each searchTabs as searchTab}
+                {#if searchTab.id === selectedTab}
+                    <div class="search-results-view">
+                        <div class="search-results-header">
+                            <h2>🔍 Search Results: "{searchTab.query}"</h2>
+                            <button class="refresh-btn" on:click={() => loadSearchResults(searchTab.id, searchTab.query, true)} disabled={searchResults.get(searchTab.id)?.isLoading}>
+                                🔄 Refresh
+                            </button>
+                        </div>
+                        <div class="search-results-content" on:scroll={(e) => handleSearchScroll(e, searchTab.id)}>
+                            {#if searchResults.get(searchTab.id)?.events?.length > 0}
+                                {#each searchResults.get(searchTab.id).events as event}
+                                    <div class="search-result-item" class:expanded={expandedEvents.has(event.id)}>
+                                        <div class="search-result-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
+                                            <div class="search-result-avatar">
+                                                <div class="avatar-placeholder">👤</div>
+                                            </div>
+                                            <div class="search-result-info">
+                                                <div class="search-result-author">
+                                                    {truncatePubkey(event.pubkey)}
+                                                </div>
+                                                <div class="search-result-kind">
+                                                    <span class="kind-number">{event.kind}</span>
+                                                    <span class="kind-name">{getKindName(event.kind)}</span>
+                                                </div>
+                                            </div>
+                                            <div class="search-result-content">
+                                                {truncateContent(event.content)}
+                                            </div>
+                                            {#if (userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey === userPubkey)}
+                                                <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
+                                                    🗑️
+                                                </button>
+                                            {/if}
+                                        </div>
+                                        {#if expandedEvents.has(event.id)}
+                                            <div class="search-result-details">
+                                                <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            {:else if !searchResults.get(searchTab.id)?.isLoading}
+                                <div class="no-search-results">
+                                    <p>No search results found for "{searchTab.query}".</p>
+                                </div>
+                            {/if}
+                            
+                            {#if searchResults.get(searchTab.id)?.isLoading}
+                                <div class="loading-search-results">
+                                    <div class="loading-spinner"></div>
+                                    <p>Searching...</p>
+                                </div>
+                            {/if}
+                            
+                            {#if !searchResults.get(searchTab.id)?.hasMore && searchResults.get(searchTab.id)?.events?.length > 0}
+                                <div class="end-of-search-results">
+                                    <p>No more search results to load.</p>
+                                </div>
+                            {/if}
+                        </div>
+                    </div>
+                {/if}
+            {/each}
         {:else}
             <div class="welcome-message">
                 {#if isLoggedIn}
@@ -1914,13 +2057,20 @@
         flex: 1;
     }
 
-    .close-icon {
+    .tab-close-icon {
         cursor: pointer;
         transition: opacity 0.2s;
+        font-size: 0.8em;
+        margin-left: auto;
+        padding: 0.25rem;
+        border-radius: 0.25rem;
+        flex-shrink: 0;
     }
 
-    .close-icon:hover {
+    .tab-close-icon:hover {
         opacity: 0.7;
+        background-color: var(--warning);
+        color: white;
     }
 
     /* Main Content */
@@ -2902,6 +3052,148 @@
         margin: 0;
     }
 
+    /* Search Results Styles */
+    .search-results-view {
+        position: fixed;
+        top: 3em;
+        left: 200px;
+        right: 0;
+        bottom: 0;
+        background: var(--bg-color);
+        color: var(--text-color);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .search-results-header {
+        padding: 0.5rem 1rem;
+        background: var(--header-bg);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 2.5em;
+    }
+
+    .search-results-header h2 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-color);
+    }
+
+    .search-results-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0;
+    }
+
+    .search-result-item {
+        border-bottom: 1px solid var(--border-color);
+        transition: background-color 0.2s;
+    }
+
+    .search-result-item:hover {
+        background: var(--button-hover-bg);
+    }
+
+    .search-result-item.expanded {
+        background: var(--button-hover-bg);
+    }
+
+    .search-result-row {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        gap: 0.75rem;
+        min-height: 3rem;
+    }
+
+    .search-result-avatar {
+        flex-shrink: 0;
+        width: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .search-result-info {
+        flex-shrink: 0;
+        width: 12rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .search-result-author {
+        font-family: monospace;
+        font-size: 0.8rem;
+        color: var(--text-color);
+        opacity: 0.8;
+    }
+
+    .search-result-kind {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .search-result-content {
+        flex: 1;
+        color: var(--text-color);
+        font-size: 0.9rem;
+        line-height: 1.3;
+        word-break: break-word;
+        padding: 0 0.5rem;
+    }
+
+    .search-result-details {
+        border-top: 1px solid var(--border-color);
+        background: var(--header-bg);
+        padding: 1rem;
+    }
+
+    .no-search-results {
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .no-search-results p {
+        margin: 0;
+        font-size: 1rem;
+    }
+
+    .loading-search-results {
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .loading-search-results p {
+        margin: 0;
+        font-size: 0.9rem;
+    }
+
+    .end-of-search-results {
+        padding: 1rem;
+        text-align: center;
+        color: var(--text-color);
+        opacity: 0.5;
+        font-size: 0.8rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .end-of-search-results p {
+        margin: 0;
+    }
+
     
     @media (max-width: 640px) {
         .settings-drawer {
@@ -2943,6 +3235,22 @@
         }
 
         .events-view-content {
+            font-size: 0.8rem;
+        }
+
+        .search-results-view {
+            left: 160px;
+        }
+
+        .search-result-info {
+            width: 8rem;
+        }
+
+        .search-result-author {
+            font-size: 0.7rem;
+        }
+
+        .search-result-content {
             font-size: 0.8rem;
         }
     }

@@ -650,6 +650,31 @@ export async function fetchUserEvents(pubkey, options = {}) {
   return events;
 }
 
+// NIP-50 search function
+export async function searchEvents(searchQuery, options = {}) {
+  const {
+    limit = 100,
+    since = null,
+    until = null,
+    kinds = null
+  } = options;
+
+  const filters = {
+    search: searchQuery
+  };
+  
+  if (since) filters.since = since;
+  if (until) filters.until = until;
+  if (kinds) filters.kinds = kinds;
+  
+  const events = await fetchEvents(filters, { 
+    limit: limit,
+    timeout: 30000 
+  });
+  
+  return events;
+}
+
 
 // Initialize client connection
 export async function initializeNostrClient() {
