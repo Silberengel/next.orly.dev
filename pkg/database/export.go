@@ -108,5 +108,4 @@ func (d *D) Export(c context.Context, w io.Writer, pubkeys ...[]byte) {
 			}
 		}
 	}
-	return
 }

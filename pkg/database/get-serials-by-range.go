@@ -31,9 +31,9 @@ func (d *D) GetSerialsByRange(idx Range) (
 			for it.Seek(endBoundary); it.Valid(); it.Next() {
 				item := it.Item()
 				var key []byte
-				key = item.Key()
+				key = item.Key()[:len(key)-5]
 				if bytes.Compare(
-					key[:len(key)-5], idx.Start,
+					key, idx.Start,
 				) < 0 {
 					// didn't find it within the timestamp range
 					return

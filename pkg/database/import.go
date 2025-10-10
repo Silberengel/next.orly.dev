@@ -83,6 +83,4 @@ func (d *D) Import(rr io.Reader) {
 		// Help garbage collection
 		tmp = nil
 	}()
-
-	return
 }
