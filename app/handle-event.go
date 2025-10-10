@@ -199,6 +199,28 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
 		log.I.F("processing delete event %0x", env.E.ID)
+
+		// Store the delete event itself FIRST to ensure it's available for queries
+		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		log.I.F("attempting to save delete event %0x from pubkey %0x", env.E.ID, env.E.Pubkey)
+		if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+			log.E.F("failed to save delete event %0x: %v", env.E.ID, err)
+			if strings.HasPrefix(err.Error(), "blocked:") {
+				errStr := err.Error()[len("blocked: "):len(err.Error())]
+				if err = Ok.Error(
+					l, env, errStr,
+				); chk.E(err) {
+					return
+				}
+				return
+			}
+			chk.E(err)
+			return
+		}
+		log.I.F("successfully saved delete event %0x", env.E.ID)
+
+		// Now process the deletion (remove target events)
 		if err = l.HandleDelete(env); err != nil {
 			log.E.F("HandleDelete failed for event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {
@@ -215,26 +237,12 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		} else {
 			log.I.F("HandleDelete completed successfully for event %0x", env.E.ID)
 		}
+
 		// Send OK response for delete events
 		if err = Ok.Ok(l, env, ""); chk.E(err) {
 			return
 		}
-		// Store the delete event itself
-		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
-			if strings.HasPrefix(err.Error(), "blocked:") {
-				errStr := err.Error()[len("blocked: "):len(err.Error())]
-				if err = Ok.Error(
-					l, env, errStr,
-				); chk.E(err) {
-					return
-				}
-				return
-			}
-			chk.E(err)
-			return
-		}
+
 		// Deliver the delete event to subscribers
 		clonedEvent := env.E.Clone()
 		go l.publishers.Deliver(clonedEvent)

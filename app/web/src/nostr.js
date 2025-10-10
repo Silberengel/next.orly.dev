@@ -302,7 +302,7 @@ export async function fetchEvents(filters, options = {}) {
   }
 }
 
-// Fetch all events with timestamp-based pagination using NDK
+// Fetch all events with timestamp-based pagination using NDK (including delete events)
 export async function fetchAllEvents(options = {}) {
   const {
     limit = 100,
@@ -316,6 +316,8 @@ export async function fetchAllEvents(options = {}) {
   if (since) filters.since = since;
   if (until) filters.until = until;
   if (authors) filters.authors = authors;
+  
+  // Don't specify kinds filter - this will include all events including delete events (kind 5)
   
   const events = await fetchEvents(filters, { 
     limit: limit,
@@ -405,6 +407,41 @@ export async function fetchEventById(eventId, options = {}) {
     return rawEvents.length > 0 ? rawEvents[0] : null;
   } catch (error) {
     console.error("Failed to fetch event by ID via NDK:", error);
+    throw error;
+  }
+}
+
+// Fetch delete events that target a specific event ID using Nostr
+export async function fetchDeleteEventsByTarget(eventId, options = {}) {
+  const {
+    timeout = 10000
+  } = options;
+
+  console.log(`Fetching delete events for target: ${eventId}`);
+
+  try {
+    const ndk = nostrClient.getNDK();
+    
+    const filters = {
+      kinds: [5], // Kind 5 is deletion
+      '#e': [eventId] // e-tag referencing the target event
+    };
+
+    console.log('Fetching delete events via NDK with filters:', filters);
+
+    // Use NDK's fetchEvents method
+    const events = await ndk.fetchEvents(filters, {
+      timeout
+    });
+
+    console.log(`Fetched ${events.size} delete events via NDK`);
+    
+    // Convert NDK events to raw events
+    const rawEvents = Array.from(events).map(event => event.rawEvent());
+    
+    return rawEvents;
+  } catch (error) {
+    console.error("Failed to fetch delete events via NDK:", error);
     throw error;
   }
 }

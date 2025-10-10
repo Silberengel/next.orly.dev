@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, fetchEventById, nostrClient, NostrClient } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, fetchEventById, fetchDeleteEventsByTarget, nostrClient, NostrClient } from './nostr.js';
     import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
     
     let isDarkTheme = false;
@@ -147,6 +147,7 @@
     }
 
     function truncatePubkey(pubkey) {
+        if (!pubkey) return 'unknown';
         return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
     }
 
@@ -173,10 +174,12 @@
         await loadAllEvents(true, authors);
     }
 
+
     // Events are filtered server-side, but add client-side filtering as backup
-    $: filteredEvents = showOnlyMyEvents && isLoggedIn && userPubkey 
-        ? allEvents.filter(event => event.pubkey === userPubkey)
-        : allEvents;
+    // Sort events by created_at timestamp (newest first)
+    $: filteredEvents = (showOnlyMyEvents && isLoggedIn && userPubkey 
+        ? allEvents.filter(event => event.pubkey && event.pubkey === userPubkey)
+        : allEvents).sort((a, b) => b.created_at - a.created_at);
 
     async function deleteEvent(eventId) {
         if (!isLoggedIn) {
@@ -193,7 +196,7 @@
         
         // Check permissions: admin/owner can delete any event, write users can only delete their own events
         const canDelete = (userRole === 'admin' || userRole === 'owner') || 
-                         (userRole === 'write' && event.pubkey === userPubkey);
+                         (userRole === 'write' && event.pubkey && event.pubkey === userPubkey);
         
         if (!canDelete) {
             alert('You do not have permission to delete this event');
@@ -229,7 +232,7 @@
             // Only publish to external relays if:
             // 1. User is deleting their own event, OR
             // 2. User is admin/owner AND deleting their own event
-            const isDeletingOwnEvent = event.pubkey === userPubkey;
+            const isDeletingOwnEvent = event.pubkey && event.pubkey === userPubkey;
             const isAdminOrOwner = (userRole === 'admin' || userRole === 'owner');
             const shouldPublishToExternalRelays = isDeletingOwnEvent;
             
@@ -255,6 +258,25 @@
                         console.log('Could not fetch event after deletion (likely deleted):', fetchError.message);
                     }
                     
+                    // Also verify that the delete event has been saved
+                    try {
+                        const deleteEvents = await fetchDeleteEventsByTarget(eventId, { timeout: 5000 });
+                        if (deleteEvents.length > 0) {
+                            console.log(`Delete event verification: Found ${deleteEvents.length} delete event(s) targeting ${eventId}`);
+                            // Check if our delete event is among them
+                            const ourDeleteEvent = deleteEvents.find(de => de.pubkey && de.pubkey === userPubkey);
+                            if (ourDeleteEvent) {
+                                console.log('Our delete event found in database:', ourDeleteEvent.id);
+                            } else {
+                                console.warn('Our delete event not found in database, but other delete events exist');
+                            }
+                        } else {
+                            console.warn('No delete events found in database for target event:', eventId);
+                        }
+                    } catch (deleteFetchError) {
+                        console.log('Could not verify delete event in database:', deleteFetchError.message);
+                    }
+                    
                     // Remove from local lists
                     allEvents = allEvents.filter(event => event.id !== eventId);
                     myEvents = myEvents.filter(event => event.id !== eventId);
@@ -272,6 +294,11 @@
                     
                     // Update persistent state
                     savePersistentState();
+                    
+                    // Reload events to show the new delete event at the top
+                    console.log('Reloading events to show delete event...');
+                    const authors = showOnlyMyEvents && isLoggedIn && userPubkey ? [userPubkey] : null;
+                    await loadAllEvents(true, authors);
                     
                     alert(`Event deleted successfully (accepted by ${result.okCount} relay(s))`);
                 } else {
@@ -306,6 +333,25 @@
                         console.log('Could not fetch event after deletion (likely deleted):', fetchError.message);
                     }
                     
+                    // Also verify that the delete event has been saved
+                    try {
+                        const deleteEvents = await fetchDeleteEventsByTarget(eventId, { timeout: 5000 });
+                        if (deleteEvents.length > 0) {
+                            console.log(`Delete event verification: Found ${deleteEvents.length} delete event(s) targeting ${eventId}`);
+                            // Check if our delete event is among them
+                            const ourDeleteEvent = deleteEvents.find(de => de.pubkey && de.pubkey === userPubkey);
+                            if (ourDeleteEvent) {
+                                console.log('Our delete event found in database:', ourDeleteEvent.id);
+                            } else {
+                                console.warn('Our delete event not found in database, but other delete events exist');
+                            }
+                        } else {
+                            console.warn('No delete events found in database for target event:', eventId);
+                        }
+                    } catch (deleteFetchError) {
+                        console.log('Could not verify delete event in database:', deleteFetchError.message);
+                    }
+                    
                     // Remove from local lists
                     allEvents = allEvents.filter(event => event.id !== eventId);
                     myEvents = myEvents.filter(event => event.id !== eventId);
@@ -323,6 +369,11 @@
                     
                     // Update persistent state
                     savePersistentState();
+                    
+                    // Reload events to show the new delete event at the top
+                    console.log('Reloading events to show delete event...');
+                    const authors = showOnlyMyEvents && isLoggedIn && userPubkey ? [userPubkey] : null;
+                    await loadAllEvents(true, authors);
                     
                     alert(`Event deleted successfully (local relay only - admin/owner deleting other user's event)`);
                 } else {
@@ -463,7 +514,7 @@
 
 
     function updateGlobalCache(events) {
-        globalEventsCache = events;
+        globalEventsCache = events.sort((a, b) => b.created_at - a.created_at);
         globalCacheTimestamp = Date.now();
         savePersistentState();
     }
@@ -943,9 +994,9 @@
             console.log('Received search results:', events.length, 'events');
             
             if (reset) {
-                searchResult.events = events;
+                searchResult.events = events.sort((a, b) => b.created_at - a.created_at);
             } else {
-                searchResult.events = [...searchResult.events, ...events];
+                searchResult.events = [...searchResult.events, ...events].sort((a, b) => b.created_at - a.created_at);
             }
             
             // Update oldest timestamp for next pagination
@@ -1172,9 +1223,9 @@
             });
             
             if (reset) {
-                myEvents = events;
+                myEvents = events.sort((a, b) => b.created_at - a.created_at);
             } else {
-                myEvents = [...myEvents, ...events];
+                myEvents = [...myEvents, ...events].sort((a, b) => b.created_at - a.created_at);
             }
             
             // Update oldest timestamp for next pagination
@@ -1248,9 +1299,9 @@
         }
         
         try {
-            // Use WebSocket REQ to fetch events with timestamp-based pagination
+            // Use Nostr WebSocket to fetch events with timestamp-based pagination
             // Load 100 events on initial load, otherwise use 200 for pagination
-            console.log('Loading events with authors filter:', authors);
+            console.log('Loading events with authors filter:', authors, 'including delete events');
             const events = await fetchAllEvents({
                 limit: reset ? 100 : 200,
                 until: reset ? Math.floor(Date.now() / 1000) : oldestEventTimestamp,
@@ -1258,18 +1309,18 @@
             });
             console.log('Received events:', events.length, 'events');
             if (authors && events.length > 0) {
-                const nonUserEvents = events.filter(event => event.pubkey !== userPubkey);
+                const nonUserEvents = events.filter(event => event.pubkey && event.pubkey !== userPubkey);
                 if (nonUserEvents.length > 0) {
                     console.warn('Server returned non-user events:', nonUserEvents.length, 'out of', events.length);
                 }
             }
             
             if (reset) {
-                allEvents = events;
+                allEvents = events.sort((a, b) => b.created_at - a.created_at);
                 // Update global cache
                 updateGlobalCache(events);
             } else {
-                allEvents = [...allEvents, ...events];
+                allEvents = [...allEvents, ...events].sort((a, b) => b.created_at - a.created_at);
                 // Update global cache with all events
                 updateGlobalCache(allEvents);
             }
@@ -1551,12 +1602,24 @@
                                 <span class="toggle-label">Only show my events</span>
                             </label>
                         </div>
-                        <button class="refresh-btn" on:click={() => {
-                            const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
-                            loadAllEvents(false, authors);
-                        }} disabled={isLoadingEvents}>
-                            🔄 Load More
-                        </button>
+                        <div class="events-view-buttons">
+                            <button class="refresh-btn" on:click={() => {
+                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+                                loadAllEvents(false, authors);
+                            }} disabled={isLoadingEvents}>
+                                🔄 Load More
+                            </button>
+                            <button class="reload-btn" on:click={() => {
+                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+                                loadAllEvents(true, authors);
+                            }} disabled={isLoadingEvents}>
+                                {#if isLoadingEvents}
+                                    <div class="spinner"></div>
+                                {:else}
+                                    🔄
+                                {/if}
+                            </button>
+                        </div>
                     </div>
                     <div class="events-view-content" on:scroll={handleScroll}>
                         {#if filteredEvents.length > 0}
@@ -1571,14 +1634,27 @@
                                                 {truncatePubkey(event.pubkey)}
                                             </div>
                                             <div class="events-view-kind">
-                                                <span class="kind-number">{event.kind}</span>
+                                                <span class="kind-number" class:delete-event={event.kind === 5}>{event.kind}</span>
                                                 <span class="kind-name">{getKindName(event.kind)}</span>
                                             </div>
                                         </div>
                                         <div class="events-view-content">
-                                            {truncateContent(event.content)}
+                                            {#if event.kind === 5}
+                                                <div class="delete-event-info">
+                                                    <span class="delete-event-label">🗑️ Delete Event</span>
+                                                    {#if event.tags && event.tags.length > 0}
+                                                        <div class="delete-targets">
+                                                            {#each event.tags.filter(tag => tag[0] === 'e') as eTag}
+                                                                <span class="delete-target">Target: {eTag[1].slice(0, 8)}...{eTag[1].slice(-8)}</span>
+                                                            {/each}
+                                                        </div>
+                                                    {/if}
+                                                </div>
+                                            {:else}
+                                                {truncateContent(event.content)}
+                                            {/if}
                                         </div>
-                                        {#if (userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey === userPubkey)}
+                                        {#if event.kind !== 5 && ((userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey && event.pubkey === userPubkey))}
                                             <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
                                                 🗑️
                                             </button>
@@ -1777,7 +1853,7 @@
                                             <div class="search-result-content">
                                                 {truncateContent(event.content)}
                                             </div>
-                                            {#if (userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey === userPubkey)}
+                                            {#if event.kind !== 5 && ((userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey && event.pubkey === userPubkey))}
                                                 <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
                                                     🗑️
                                                 </button>
@@ -2801,7 +2877,13 @@
         line-height: 1.5;
     }
 
-    .export-btn, .import-btn, .refresh-btn {
+    .events-view-buttons {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .export-btn, .import-btn, .refresh-btn, .reload-btn {
         padding: 0.5rem 1rem;
         background: var(--primary);
         color: white;
@@ -2817,8 +2899,27 @@
         height: 2em;
     }
 
-    .export-btn:hover, .import-btn:hover, .refresh-btn:hover {
+    .export-btn:hover, .import-btn:hover, .refresh-btn:hover, .reload-btn:hover {
         background: #00ACC1;
+    }
+
+    .reload-btn {
+        min-width: 2em;
+        justify-content: center;
+    }
+
+    .spinner {
+        width: 1em;
+        height: 1em;
+        border: 2px solid transparent;
+        border-top: 2px solid currentColor;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
 
     .export-btn:disabled, .import-btn:disabled {
@@ -3056,6 +3157,35 @@
     .delete-btn:hover {
         background: var(--warning);
         color: white;
+    }
+
+
+    .kind-number.delete-event {
+        background: var(--warning);
+    }
+
+    .delete-event-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .delete-event-label {
+        font-weight: 500;
+        color: var(--warning);
+    }
+
+    .delete-targets {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+    }
+
+    .delete-target {
+        font-size: 0.75rem;
+        font-family: monospace;
+        color: var(--text-color);
+        opacity: 0.7;
     }
 
     .events-view-details {

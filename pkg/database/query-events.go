@@ -38,6 +38,12 @@ func CheckExpiration(ev *event.E) (expired bool) {
 func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	evs event.S, err error,
 ) {
+	return d.QueryEventsWithOptions(c, f, true)
+}
+
+func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool) (
+	evs event.S, err error,
+) {
 	// if there is Ids in the query, this overrides anything else
 	var expDeletes types.Uint40s
 	var expEvs event.S
@@ -195,16 +201,15 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 					// We don't need to do anything with direct event ID
 					// references as we will filter those out in the second pass
 				}
-				// Check for 'a' tags that reference parameterized replaceable
-				// events
+				// Check for 'a' tags that reference replaceable events
 				aTags := ev.Tags.GetAll([]byte("a"))
 				for _, aTag := range aTags {
 					if aTag.Len() < 2 {
 						continue
 					}
-					// Parse the 'a' tag value: kind:pubkey:d-tag
+					// Parse the 'a' tag value: kind:pubkey:d-tag (for parameterized) or kind:pubkey (for regular)
 					split := bytes.Split(aTag.Value(), []byte{':'})
-					if len(split) != 3 {
+					if len(split) < 2 {
 						continue
 					}
 					// Parse the kind
@@ -214,8 +219,8 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 						continue
 					}
 					kk := kind.New(uint16(kindInt))
-					// Only process parameterized replaceable events
-					if !kind.IsParameterizedReplaceable(kk.K) {
+					// Process both regular and parameterized replaceable events
+					if !kind.IsReplaceable(kk.K) {
 						continue
 					}
 					// Parse the pubkey
@@ -230,21 +235,30 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 					// Create the key for the deletion map using hex
 					// representation of pubkey
 					key := hex.Enc(pk) + ":" + strconv.Itoa(int(kk.K))
-					// Initialize the inner map if it doesn't exist
-					if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
-						deletionsByKindPubkeyDTag[key] = make(map[string]int64)
+
+					if kind.IsParameterizedReplaceable(kk.K) {
+						// For parameterized replaceable events, use d-tag specific deletion
+						if len(split) < 3 {
+							continue
+						}
+						// Initialize the inner map if it doesn't exist
+						if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
+							deletionsByKindPubkeyDTag[key] = make(map[string]int64)
+						}
+						// Record the newest delete timestamp for this d-tag
+						dValue := string(split[2])
+						if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
+							deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
+						}
+					} else {
+						// For regular replaceable events, mark as deleted by kind/pubkey
+						deletionsByKindPubkey[key] = true
 					}
-					// Record the newest delete timestamp for this d-tag
-					dValue := string(split[2])
-					if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
-						deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
-					}
-					// Debug logging
 				}
 				// For replaceable events, we need to check if there are any
 				// e-tags that reference events with the same kind and pubkey
 				for _, eTag := range eTags {
-					if eTag.Len() != 64 {
+					if len(eTag.Value()) != 64 {
 						continue
 					}
 					// Get the event ID from the e-tag
@@ -252,15 +266,30 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 					if _, err = hex.DecBytes(evId, eTag.Value()); err != nil {
 						continue
 					}
-					// Query for the event
-					var targetEvs event.S
-					targetEvs, err = d.QueryEvents(
-						c, &filter.F{Ids: tag.NewFromBytesSlice(evId)},
-					)
-					if err != nil || len(targetEvs) == 0 {
-						continue
+
+					// Look for the target event in our current batch instead of querying
+					var targetEv *event.E
+					for _, candidateEv := range allEvents {
+						if utils.FastEqual(candidateEv.ID, evId) {
+							targetEv = candidateEv
+							break
+						}
 					}
-					targetEv := targetEvs[0]
+
+					// If not found in current batch, try to fetch it directly
+					if targetEv == nil {
+						// Get serial for the event ID
+						ser, serErr := d.GetSerialById(evId)
+						if serErr != nil || ser == nil {
+							continue
+						}
+						// Fetch the event by serial
+						targetEv, serErr = d.FetchEventBySerial(ser)
+						if serErr != nil || targetEv == nil {
+							continue
+						}
+					}
+
 					// Only allow users to delete their own events
 					if !utils.FastEqual(targetEv.Pubkey, ev.Pubkey) {
 						continue
@@ -378,8 +407,8 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 				// )
 			}
 
-			// Skip events with kind 5 (Deletion)
-			if ev.Kind == kind.Deletion.K {
+			// Skip events with kind 5 (Deletion) unless explicitly requested
+			if ev.Kind == kind.Deletion.K && !includeDeleteEvents {
 				continue
 			}
 			// Check if this event's ID is in the filter
@@ -408,16 +437,8 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 				// kind/pubkey and is not in the filter AND there isn't a newer
 				// event with the same kind/pubkey
 				if deletionsByKindPubkey[key] && !isIdInFilter {
-					// Check if there's a newer event with the same kind/pubkey
-					// that hasn't been specifically deleted
-					existing, exists := replaceableEvents[key]
-					if !exists || ev.CreatedAt > existing.CreatedAt {
-						// This is the newest event so far, keep it
-						replaceableEvents[key] = ev
-					} else {
-						// There's a newer event, skip this one
-						continue
-					}
+					// This replaceable event has been deleted, skip it
+					continue
 				} else {
 					// Normal replaceable event handling
 					existing, exists := replaceableEvents[key]
@@ -499,5 +520,25 @@ func (d *D) QueryEvents(c context.Context, f *filter.F) (
 			}
 		}()
 	}
+	return
+}
+
+// QueryDeleteEventsByTargetId queries for delete events that target a specific event ID
+func (d *D) QueryDeleteEventsByTargetId(c context.Context, targetEventId []byte) (
+	evs event.S, err error,
+) {
+	// Create a filter for deletion events with the target event ID in e-tags
+	f := &filter.F{
+		Kinds: kind.NewS(kind.Deletion),
+		Tags: tag.NewS(
+			tag.NewFromAny("#e", hex.Enc(targetEventId)),
+		),
+	}
+
+	// Query for the delete events
+	if evs, err = d.QueryEventsWithOptions(c, f, true); chk.E(err) {
+		return
+	}
+
 	return
 }

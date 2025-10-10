@@ -30,6 +30,15 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 		log.I.F("HandleDelete: tag %d: %s = %s", i, string(t.Key()), string(t.Value()))
 	}
 
+	// Debug: log admin and owner lists
+	log.I.F("HandleDelete: checking against %d admins and %d owners", len(l.Admins), len(l.Owners))
+	for i, pk := range l.Admins {
+		log.I.F("HandleDelete: admin[%d] = %0x", i, pk)
+	}
+	for i, pk := range l.Owners {
+		log.I.F("HandleDelete: owner[%d] = %0x", i, pk)
+	}
+
 	var ownerDelete bool
 	for _, pk := range l.Admins {
 		if utils.FastEqual(pk, env.E.Pubkey) {
