@@ -166,7 +166,7 @@ func (pp *PaymentProcessor) syncFollowList() error {
 	}
 	// sign and save
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return err
 	}
 	log.I.F(
@@ -224,7 +224,7 @@ func (pp *PaymentProcessor) checkSubscriptionStatus() error {
 				key := item.KeyCopy(nil)
 				// key format: sub:<hexpub>
 				hexpub := string(key[len(prefix):])
-				
+
 				var sub database.Subscription
 				if err := item.Value(
 					func(val []byte) error {
@@ -233,23 +233,23 @@ func (pp *PaymentProcessor) checkSubscriptionStatus() error {
 				); err != nil {
 					continue // skip invalid subscription records
 				}
-				
+
 				pubkey, err := hex.Dec(hexpub)
 				if err != nil {
 					continue // skip invalid pubkey
 				}
-				
+
 				// Check if paid subscription is expiring in 7 days
 				if !sub.PaidUntil.IsZero() {
 					// Format dates for comparison (ignore time component)
 					paidUntilDate := sub.PaidUntil.Truncate(24 * time.Hour)
 					sevenDaysDate := sevenDaysFromNow.Truncate(24 * time.Hour)
-					
+
 					if paidUntilDate.Equal(sevenDaysDate) {
 						go pp.createExpiryWarningNote(pubkey, sub.PaidUntil)
 					}
 				}
-				
+
 				// Check if user is on trial (no paid subscription, trial not expired)
 				if sub.PaidUntil.IsZero() && now.Before(sub.TrialEnd) {
 					go pp.createTrialReminderNote(pubkey, sub.TrialEnd)
@@ -261,7 +261,9 @@ func (pp *PaymentProcessor) checkSubscriptionStatus() error {
 }
 
 // createExpiryWarningNote creates a warning note for users whose paid subscription expires in 7 days
-func (pp *PaymentProcessor) createExpiryWarningNote(userPubkey []byte, expiryTime time.Time) error {
+func (pp *PaymentProcessor) createExpiryWarningNote(
+	userPubkey []byte, expiryTime time.Time,
+) error {
 	// Get relay identity secret to sign the note
 	skb, err := pp.db.GetRelayIdentitySecret()
 	if err != nil || len(skb) != 32 {
@@ -286,7 +288,8 @@ func (pp *PaymentProcessor) createExpiryWarningNote(userPubkey []byte, expiryTim
 	}
 
 	// Create the warning note content
-	content := fmt.Sprintf(`⚠️ Subscription Expiring Soon ⚠️
+	content := fmt.Sprintf(
+		`⚠️ Subscription Expiring Soon ⚠️
 
 Your paid subscription to this relay will expire in 7 days on %s.
 
@@ -304,8 +307,10 @@ Don't lose access to your private relay! Extend your subscription today.
 
 Relay: nostr:%s
 
-Log in to the relay dashboard to access your configuration at: %s`, 
-		expiryTime.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
+Log in to the relay dashboard to access your configuration at: %s`,
+		expiryTime.Format("2006-01-02 15:04:05 UTC"), monthlyPrice,
+		monthlyPrice, string(relayNpubForContent), pp.getDashboardURL(),
+	)
 
 	// Build the event
 	ev := event.New()
@@ -320,17 +325,20 @@ Log in to the relay dashboard to access your configuration at: %s`,
 
 	// Add expiration tag (5 days from creation)
 	noteExpiry := time.Now().AddDate(0, 0, 5)
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+	*ev.Tags = append(
+		*ev.Tags,
+		tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())),
+	)
 
 	// Add "private" tag with authorized npubs (user and relay)
 	var authorizedNpubs []string
-	
+
 	// Add user npub
 	userNpub, err := bech32encoding.BinToNpub(userPubkey)
 	if err == nil {
 		authorizedNpubs = append(authorizedNpubs, string(userNpub))
 	}
-	
+
 	// Add relay npub
 	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
 	if err == nil {
@@ -344,20 +352,27 @@ Log in to the relay dashboard to access your configuration at: %s`,
 	}
 
 	// Add a special tag to mark this as an expiry warning
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("warning", "subscription-expiry"))
+	*ev.Tags = append(
+		*ev.Tags, tag.NewFromAny("warning", "subscription-expiry"),
+	)
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save expiry warning note: %w", err)
 	}
 
-	log.I.F("created expiry warning note for user %s (expires %s)", hex.Enc(userPubkey), expiryTime.Format("2006-01-02"))
+	log.I.F(
+		"created expiry warning note for user %s (expires %s)",
+		hex.Enc(userPubkey), expiryTime.Format("2006-01-02"),
+	)
 	return nil
 }
 
 // createTrialReminderNote creates a reminder note for users on trial to support the relay
-func (pp *PaymentProcessor) createTrialReminderNote(userPubkey []byte, trialEnd time.Time) error {
+func (pp *PaymentProcessor) createTrialReminderNote(
+	userPubkey []byte, trialEnd time.Time,
+) error {
 	// Get relay identity secret to sign the note
 	skb, err := pp.db.GetRelayIdentitySecret()
 	if err != nil || len(skb) != 32 {
@@ -385,7 +400,8 @@ func (pp *PaymentProcessor) createTrialReminderNote(userPubkey []byte, trialEnd 
 	}
 
 	// Create the reminder note content
-	content := fmt.Sprintf(`🆓 Free Trial Reminder 🆓
+	content := fmt.Sprintf(
+		`🆓 Free Trial Reminder 🆓
 
 You're currently using this relay for FREE! Your trial expires on %s.
 
@@ -407,8 +423,10 @@ Thank you for considering supporting decentralized communication!
 
 Relay: nostr:%s
 
-Log in to the relay dashboard to access your configuration at: %s`, 
-		trialEnd.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, dailyRate, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
+Log in to the relay dashboard to access your configuration at: %s`,
+		trialEnd.Format("2006-01-02 15:04:05 UTC"), monthlyPrice, dailyRate,
+		monthlyPrice, string(relayNpubForContent), pp.getDashboardURL(),
+	)
 
 	// Build the event
 	ev := event.New()
@@ -423,17 +441,20 @@ Log in to the relay dashboard to access your configuration at: %s`,
 
 	// Add expiration tag (5 days from creation)
 	noteExpiry := time.Now().AddDate(0, 0, 5)
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+	*ev.Tags = append(
+		*ev.Tags,
+		tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())),
+	)
 
 	// Add "private" tag with authorized npubs (user and relay)
 	var authorizedNpubs []string
-	
+
 	// Add user npub
 	userNpub, err := bech32encoding.BinToNpub(userPubkey)
 	if err == nil {
 		authorizedNpubs = append(authorizedNpubs, string(userNpub))
 	}
-	
+
 	// Add relay npub
 	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
 	if err == nil {
@@ -451,11 +472,14 @@ Log in to the relay dashboard to access your configuration at: %s`,
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save trial reminder note: %w", err)
 	}
 
-	log.I.F("created trial reminder note for user %s (trial ends %s)", hex.Enc(userPubkey), trialEnd.Format("2006-01-02"))
+	log.I.F(
+		"created trial reminder note for user %s (trial ends %s)",
+		hex.Enc(userPubkey), trialEnd.Format("2006-01-02"),
+	)
 	return nil
 }
 
@@ -501,8 +525,13 @@ func (pp *PaymentProcessor) handleNotification(
 				if skb, err := pp.db.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
 					var signer p256k.Signer
 					if err := signer.InitSec(skb); err == nil {
-						if !strings.EqualFold(hex.Enc(rpk), hex.Enc(signer.Pub())) {
-							log.W.F("relay_pubkey in payment metadata does not match this relay identity: got %s want %s", hex.Enc(rpk), hex.Enc(signer.Pub()))
+						if !strings.EqualFold(
+							hex.Enc(rpk), hex.Enc(signer.Pub()),
+						) {
+							log.W.F(
+								"relay_pubkey in payment metadata does not match this relay identity: got %s want %s",
+								hex.Enc(rpk), hex.Enc(signer.Pub()),
+							)
 						}
 					}
 				}
@@ -557,9 +586,15 @@ func (pp *PaymentProcessor) handleNotification(
 	// Log helpful identifiers
 	var payerHex = hex.Enc(pubkey)
 	if userNpub == "" {
-		log.I.F("payment processed: payer %s %d sats -> %d days", payerHex, satsReceived, days)
+		log.I.F(
+			"payment processed: payer %s %d sats -> %d days", payerHex,
+			satsReceived, days,
+		)
 	} else {
-		log.I.F("payment processed: %s (%s) %d sats -> %d days", userNpub, payerHex, satsReceived, days)
+		log.I.F(
+			"payment processed: %s (%s) %d sats -> %d days", userNpub, payerHex,
+			satsReceived, days,
+		)
 	}
 
 	// Update ACL follows cache and relay follow list immediately
@@ -578,7 +613,9 @@ func (pp *PaymentProcessor) handleNotification(
 }
 
 // createPaymentNote creates a note recording the payment with private tag for authorization
-func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived int64, days int) error {
+func (pp *PaymentProcessor) createPaymentNote(
+	payerPubkey []byte, satsReceived int64, days int,
+) error {
 	// Get relay identity secret to sign the note
 	skb, err := pp.db.GetRelayIdentitySecret()
 	if err != nil || len(skb) != 32 {
@@ -611,8 +648,11 @@ func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived i
 	}
 
 	// Create the note content with nostr:npub link and dashboard link
-	content := fmt.Sprintf("Payment received: %d sats for %d days. Subscription expires: %s\n\nRelay: nostr:%s\n\nLog in to the relay dashboard to access your configuration at: %s", 
-		satsReceived, days, expiryTime.Format("2006-01-02 15:04:05 UTC"), string(relayNpubForContent), pp.getDashboardURL())
+	content := fmt.Sprintf(
+		"Payment received: %d sats for %d days. Subscription expires: %s\n\nRelay: nostr:%s\n\nLog in to the relay dashboard to access your configuration at: %s",
+		satsReceived, days, expiryTime.Format("2006-01-02 15:04:05 UTC"),
+		string(relayNpubForContent), pp.getDashboardURL(),
+	)
 
 	// Build the event
 	ev := event.New()
@@ -627,17 +667,20 @@ func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived i
 
 	// Add expiration tag (5 days from creation)
 	noteExpiry := time.Now().AddDate(0, 0, 5)
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+	*ev.Tags = append(
+		*ev.Tags,
+		tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())),
+	)
 
 	// Add "private" tag with authorized npubs (payer and relay)
 	var authorizedNpubs []string
-	
+
 	// Add payer npub
 	payerNpub, err := bech32encoding.BinToNpub(payerPubkey)
 	if err == nil {
 		authorizedNpubs = append(authorizedNpubs, string(payerNpub))
 	}
-	
+
 	// Add relay npub
 	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
 	if err == nil {
@@ -652,11 +695,14 @@ func (pp *PaymentProcessor) createPaymentNote(payerPubkey []byte, satsReceived i
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save payment note: %w", err)
 	}
 
-	log.I.F("created payment note for %s with private authorization", hex.Enc(payerPubkey))
+	log.I.F(
+		"created payment note for %s with private authorization",
+		hex.Enc(payerPubkey),
+	)
 	return nil
 }
 
@@ -686,7 +732,8 @@ func (pp *PaymentProcessor) CreateWelcomeNote(userPubkey []byte) error {
 	}
 
 	// Create the welcome note content with nostr:npub link
-	content := fmt.Sprintf(`Welcome to the relay! 🎉
+	content := fmt.Sprintf(
+		`Welcome to the relay! 🎉
 
 You have a FREE 30-day trial that started when you first logged in.
 
@@ -706,7 +753,9 @@ Relay: nostr:%s
 
 Log in to the relay dashboard to access your configuration at: %s
 
-Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForContent), pp.getDashboardURL())
+Enjoy your time on the relay!`, monthlyPrice, monthlyPrice,
+		string(relayNpubForContent), pp.getDashboardURL(),
+	)
 
 	// Build the event
 	ev := event.New()
@@ -721,17 +770,20 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForC
 
 	// Add expiration tag (5 days from creation)
 	noteExpiry := time.Now().AddDate(0, 0, 5)
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())))
+	*ev.Tags = append(
+		*ev.Tags,
+		tag.NewFromAny("expiration", fmt.Sprintf("%d", noteExpiry.Unix())),
+	)
 
 	// Add "private" tag with authorized npubs (user and relay)
 	var authorizedNpubs []string
-	
+
 	// Add user npub
 	userNpub, err := bech32encoding.BinToNpub(userPubkey)
 	if err == nil {
 		authorizedNpubs = append(authorizedNpubs, string(userNpub))
 	}
-	
+
 	// Add relay npub
 	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
 	if err == nil {
@@ -749,7 +801,7 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice, string(relayNpubForC
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save welcome note: %w", err)
 	}
 
@@ -846,13 +898,15 @@ func (pp *PaymentProcessor) UpdateRelayProfile() error {
 	relayURL := strings.Replace(pp.getDashboardURL(), "https://", "wss://", 1)
 
 	// Create profile content as JSON
-	profileContent := fmt.Sprintf(`{
+	profileContent := fmt.Sprintf(
+		`{
 	"name": "Relay Bot",
 	"about": "This relay requires a subscription to access. Zap any of my notes to pay for access. Monthly price: %d sats (%d sats/day). Relay: %s",
 	"lud16": "",
 	"nip05": "",
 	"website": "%s"
-}`, monthlyPrice, dailyRate, relayURL, pp.getDashboardURL())
+}`, monthlyPrice, dailyRate, relayURL, pp.getDashboardURL(),
+	)
 
 	// Build the profile event
 	ev := event.New()
@@ -864,7 +918,7 @@ func (pp *PaymentProcessor) UpdateRelayProfile() error {
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if _, _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save relay profile: %w", err)
 	}
 

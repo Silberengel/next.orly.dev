@@ -293,7 +293,10 @@ func (s *Spider) calculateOptimalChunkSize() int {
 		chunkSize = 10
 	}
 
-	log.D.F("Spider: calculated optimal chunk size: %d pubkeys (max would be %d)", chunkSize, maxPubkeys)
+	log.D.F(
+		"Spider: calculated optimal chunk size: %d pubkeys (max would be %d)",
+		chunkSize, maxPubkeys,
+	)
 	return chunkSize
 }
 
@@ -301,7 +304,10 @@ func (s *Spider) calculateOptimalChunkSize() int {
 func (s *Spider) queryRelayForEvents(
 	relayURL string, followedPubkeys [][]byte, startTime, endTime time.Time,
 ) (int, error) {
-	log.T.F("Spider sync: querying relay %s with %d pubkeys", relayURL, len(followedPubkeys))
+	log.T.F(
+		"Spider sync: querying relay %s with %d pubkeys", relayURL,
+		len(followedPubkeys),
+	)
 
 	// Connect to the relay with a timeout context
 	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
@@ -324,8 +330,10 @@ func (s *Spider) queryRelayForEvents(
 		}
 
 		chunk := followedPubkeys[i:end]
-		log.T.F("Spider sync: processing chunk %d-%d (%d pubkeys) for relay %s",
-			i, end-1, len(chunk), relayURL)
+		log.T.F(
+			"Spider sync: processing chunk %d-%d (%d pubkeys) for relay %s",
+			i, end-1, len(chunk), relayURL,
+		)
 
 		// Create filter for this chunk of pubkeys
 		f := &filter.F{
@@ -338,8 +346,10 @@ func (s *Spider) queryRelayForEvents(
 		// Subscribe to get events for this chunk
 		sub, err := client.Subscribe(ctx, filter.NewS(f))
 		if err != nil {
-			log.E.F("Spider sync: failed to subscribe to chunk %d-%d for relay %s: %v",
-				i, end-1, relayURL, err)
+			log.E.F(
+				"Spider sync: failed to subscribe to chunk %d-%d for relay %s: %v",
+				i, end-1, relayURL, err,
+			)
 			continue
 		}
 
@@ -385,7 +395,7 @@ func (s *Spider) queryRelayForEvents(
 				}
 
 				// Save the event to the database
-				if _, _, err := s.db.SaveEvent(s.ctx, ev); err != nil {
+				if err, _ := s.db.SaveEvent(s.ctx, ev); err != nil {
 					if !strings.HasPrefix(err.Error(), "blocked:") {
 						log.T.F(
 							"Spider sync: error saving event from relay %s: %v",
@@ -410,12 +420,16 @@ func (s *Spider) queryRelayForEvents(
 		sub.Unsub()
 		totalEventsSaved += chunkEventsSaved
 
-		log.T.F("Spider sync: completed chunk %d-%d for relay %s, saved %d events",
-			i, end-1, relayURL, chunkEventsSaved)
+		log.T.F(
+			"Spider sync: completed chunk %d-%d for relay %s, saved %d events",
+			i, end-1, relayURL, chunkEventsSaved,
+		)
 	}
 
-	log.T.F("Spider sync: completed all chunks for relay %s, total saved %d events",
-		relayURL, totalEventsSaved)
+	log.T.F(
+		"Spider sync: completed all chunks for relay %s, total saved %d events",
+		relayURL, totalEventsSaved,
+	)
 	return totalEventsSaved, nil
 }
 

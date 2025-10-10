@@ -84,7 +84,7 @@ type Saver interface {
 	// SaveEvent is called once relay.AcceptEvent reports true. The owners
 	// parameter is for designating admins whose delete by e tag events apply
 	// the same as author's own.
-	SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error)
+	SaveEvent(c context.Context, ev *event.E) (err error, replaced bool)
 }
 
 type Importer interface {

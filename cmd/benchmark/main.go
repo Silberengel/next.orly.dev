@@ -370,7 +370,7 @@ func (b *Benchmark) RunPeakThroughputTest() {
 			for ev := range eventChan {
 				eventStart := time.Now()
 
-				_, _, err := b.db.SaveEvent(ctx, ev)
+				err, _ := b.db.SaveEvent(ctx, ev)
 				latency := time.Since(eventStart)
 
 				mu.Lock()
@@ -460,7 +460,7 @@ func (b *Benchmark) RunBurstPatternTest() {
 				defer wg.Done()
 
 				eventStart := time.Now()
-				_, _, err := b.db.SaveEvent(ctx, ev)
+				err, _ := b.db.SaveEvent(ctx, ev)
 				latency := time.Since(eventStart)
 
 				mu.Lock()
@@ -554,7 +554,7 @@ func (b *Benchmark) RunMixedReadWriteTest() {
 				if eventIndex%2 == 0 {
 					// Write operation
 					writeStart := time.Now()
-					_, _, err := b.db.SaveEvent(ctx, events[eventIndex])
+					err, _ := b.db.SaveEvent(ctx, events[eventIndex])
 					writeLatency := time.Since(writeStart)
 
 					mu.Lock()
@@ -878,7 +878,7 @@ func (b *Benchmark) RunConcurrentQueryStoreTest() {
 			for time.Since(start) < b.config.TestDuration && eventIndex < len(writeEvents) {
 				// Write operation
 				writeStart := time.Now()
-				_, _, err := b.db.SaveEvent(ctx, writeEvents[eventIndex])
+				err, _ := b.db.SaveEvent(ctx, writeEvents[eventIndex])
 				writeLatency := time.Since(writeStart)
 
 				mu.Lock()

@@ -52,11 +52,11 @@ func TestGetSerialById(t *testing.T) {
 			t.Fatal(err)
 		}
 		ev.Free()
-		
+
 		events = append(events, ev)
 
 		// Save the event to the database
-		if _, _, err = db.SaveEvent(ctx, ev); err != nil {
+		if err, _ = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
 		}
 

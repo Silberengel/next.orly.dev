@@ -27,7 +27,10 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		log.E.F("HandleEvent: failed to unmarshal event: %v", err)
 		return
 	}
-	log.I.F("HandleEvent: successfully unmarshaled event, kind: %d, pubkey: %s", env.E.Kind, hex.Enc(env.E.Pubkey))
+	log.I.F(
+		"HandleEvent: successfully unmarshaled event, kind: %d, pubkey: %s",
+		env.E.Kind, hex.Enc(env.E.Pubkey),
+	)
 	defer func() {
 		if env != nil && env.E != nil {
 			env.E.Free()
@@ -45,7 +48,8 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			// Sprocket is disabled due to failure - reject all events
 			log.W.F("sprocket is disabled, rejecting event %0x", env.E.ID)
 			if err = Ok.Error(
-				l, env, "sprocket disabled - events rejected until sprocket is restored",
+				l, env,
+				"sprocket disabled - events rejected until sprocket is restored",
 			); chk.E(err) {
 				return
 			}
@@ -54,9 +58,13 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 
 		if !l.sprocketManager.IsRunning() {
 			// Sprocket is enabled but not running - reject all events
-			log.W.F("sprocket is enabled but not running, rejecting event %0x", env.E.ID)
+			log.W.F(
+				"sprocket is enabled but not running, rejecting event %0x",
+				env.E.ID,
+			)
 			if err = Ok.Error(
-				l, env, "sprocket not running - events rejected until sprocket starts",
+				l, env,
+				"sprocket not running - events rejected until sprocket starts",
 			); chk.E(err) {
 				return
 			}
@@ -134,13 +142,19 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	// check permissions of user
-	log.I.F("HandleEvent: checking ACL permissions for pubkey: %s", hex.Enc(l.authedPubkey.Load()))
+	log.I.F(
+		"HandleEvent: checking ACL permissions for pubkey: %s",
+		hex.Enc(l.authedPubkey.Load()),
+	)
 
 	// If ACL mode is "none" and no pubkey is set, use the event's pubkey
 	var pubkeyForACL []byte
 	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" {
 		pubkeyForACL = env.E.Pubkey
-		log.I.F("HandleEvent: ACL mode is 'none', using event pubkey for ACL check: %s", hex.Enc(pubkeyForACL))
+		log.I.F(
+			"HandleEvent: ACL mode is 'none', using event pubkey for ACL check: %s",
+			hex.Enc(pubkeyForACL),
+		)
 	} else {
 		pubkeyForACL = l.authedPubkey.Load()
 	}
@@ -174,7 +188,8 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		switch accessLevel {
 		case "none":
 			log.D.F(
-				"handle event: sending 'OK,false,auth-required...' to %s", l.remote,
+				"handle event: sending 'OK,false,auth-required...' to %s",
+				l.remote,
 			)
 			if err = okenvelope.NewFrom(
 				env.Id(), false,
@@ -242,16 +257,24 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	// if the event is a delete, process the delete
-	log.I.F("HandleEvent: checking if event is delete - kind: %d, EventDeletion.K: %d", env.E.Kind, kind.EventDeletion.K)
+	log.I.F(
+		"HandleEvent: checking if event is delete - kind: %d, EventDeletion.K: %d",
+		env.E.Kind, kind.EventDeletion.K,
+	)
 	if env.E.Kind == kind.EventDeletion.K {
 		log.I.F("processing delete event %0x", env.E.ID)
 
 		// Store the delete event itself FIRST to ensure it's available for queries
-		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		saveCtx, cancel := context.WithTimeout(
+			context.Background(), 30*time.Second,
+		)
 		defer cancel()
-		log.I.F("attempting to save delete event %0x from pubkey %0x", env.E.ID, env.E.Pubkey)
+		log.I.F(
+			"attempting to save delete event %0x from pubkey %0x", env.E.ID,
+			env.E.Pubkey,
+		)
 		log.I.F("delete event pubkey hex: %s", hex.Enc(env.E.Pubkey))
-		if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+		if err, _ = l.SaveEvent(saveCtx, env.E); err != nil {
 			log.E.F("failed to save delete event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
@@ -282,7 +305,9 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			// For non-blocked errors, still send OK but log the error
 			log.W.F("Delete processing failed but continuing: %v", err)
 		} else {
-			log.I.F("HandleDelete completed successfully for event %0x", env.E.ID)
+			log.I.F(
+				"HandleDelete completed successfully for event %0x", env.E.ID,
+			)
 		}
 
 		// Send OK response for delete events
@@ -314,7 +339,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
-	if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+	if err, _ = l.SaveEvent(saveCtx, env.E); err != nil {
 		if strings.HasPrefix(err.Error(), "blocked:") {
 			errStr := err.Error()[len("blocked: "):len(err.Error())]
 			if err = Ok.Error(

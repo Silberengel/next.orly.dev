@@ -9,7 +9,6 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
@@ -103,7 +102,9 @@ func (d *D) WouldReplaceEvent(ev *event.E) (bool, types.Uint40s, error) {
 }
 
 // SaveEvent saves an event to the database, generating all the necessary indexes.
-func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
+func (d *D) SaveEvent(c context.Context, ev *event.E) (
+	err error, replaced bool,
+) {
 	if ev == nil {
 		err = errors.New("nil event")
 		return
@@ -136,10 +137,9 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	}
 	// check for replacement (separated check vs deletion)
 	if kind.IsReplaceable(ev.Kind) || kind.IsParameterizedReplaceable(ev.Kind) {
-		var wouldReplace bool
 		var sers types.Uint40s
 		var werr error
-		if wouldReplace, sers, werr = d.WouldReplaceEvent(ev); werr != nil {
+		if replaced, sers, werr = d.WouldReplaceEvent(ev); werr != nil {
 			if errors.Is(werr, ErrOlderThanExisting) {
 				if kind.IsReplaceable(ev.Kind) {
 					err = errors.New("blocked: event is older than existing replaceable event")
@@ -156,7 +156,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 			// any other error
 			return
 		}
-		if wouldReplace {
+		if replaced {
 			for _, s := range sers {
 				var oldEv *event.E
 				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
@@ -177,10 +177,6 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 	var idxs [][]byte
 	if idxs, err = GetIndexesForEvent(ev, serial); chk.E(err) {
 		return
-	}
-	// log.I.S(idxs)
-	for _, k := range idxs {
-		kc += len(k)
 	}
 	// Start a transaction to save the event and all its indexes
 	err = d.Update(
@@ -209,23 +205,11 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 			v := new(bytes.Buffer)
 			ev.MarshalBinary(v)
 			kb, vb := k.Bytes(), v.Bytes()
-			kc += len(kb)
-			vc += len(vb)
-			// log.I.S(kb, vb)
 			if err = txn.Set(kb, vb); chk.E(err) {
 				return
 			}
 			return
 		},
 	)
-	log.T.F(
-		"total data written: %d bytes keys %d bytes values for event ID %s", kc,
-		vc, hex.Enc(ev.ID),
-	)
-	// log.T.C(
-	// 	func() string {
-	// 		return fmt.Sprintf("event:\n%s\n", ev.Serialize())
-	// 	},
-	// )
 	return
 }
