@@ -36,8 +36,8 @@ jobs:
         run: go build -v ./...
 
       - name: Test with cgo
-        run: go test -v ./...
-
+        run: go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
+      
       - name: Set CGO off
         run: echo "CGO_ENABLED=0" >> $GITHUB_ENV
 
@@ -45,8 +45,8 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        run: go test -v ./...
-#  release:
+        run: go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
+      #  release:
 #    needs: build
 #    runs-on: ubuntu-latest
 #    permissions:
