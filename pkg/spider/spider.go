@@ -395,7 +395,7 @@ func (s *Spider) queryRelayForEvents(
 				}
 
 				// Save the event to the database
-				if err, _ := s.db.SaveEvent(s.ctx, ev); err != nil {
+				if _, err := s.db.SaveEvent(s.ctx, ev); err != nil {
 					if !strings.HasPrefix(err.Error(), "blocked:") {
 						log.T.F(
 							"Spider sync: error saving event from relay %s: %v",

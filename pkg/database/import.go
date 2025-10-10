@@ -59,7 +59,7 @@ func (d *D) Import(rr io.Reader) {
 				continue
 			}
 
-			if err, _ = d.SaveEvent(d.ctx, ev); err != nil {
+			if _, err = d.SaveEvent(d.ctx, ev); err != nil {
 				// return the pooled buffer on error paths too
 				ev.Free()
 				continue

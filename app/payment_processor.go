@@ -166,7 +166,7 @@ func (pp *PaymentProcessor) syncFollowList() error {
 	}
 	// sign and save
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return err
 	}
 	log.I.F(
@@ -358,7 +358,7 @@ Log in to the relay dashboard to access your configuration at: %s`,
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save expiry warning note: %w", err)
 	}
 
@@ -472,7 +472,7 @@ Log in to the relay dashboard to access your configuration at: %s`,
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save trial reminder note: %w", err)
 	}
 
@@ -695,7 +695,7 @@ func (pp *PaymentProcessor) createPaymentNote(
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save payment note: %w", err)
 	}
 
@@ -801,7 +801,7 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice,
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save welcome note: %w", err)
 	}
 
@@ -918,7 +918,7 @@ func (pp *PaymentProcessor) UpdateRelayProfile() error {
 
 	// Sign and save the event
 	ev.Sign(sign)
-	if err, _ := pp.db.SaveEvent(pp.ctx, ev); err != nil {
+	if _, err := pp.db.SaveEvent(pp.ctx, ev); err != nil {
 		return fmt.Errorf("failed to save relay profile: %w", err)
 	}
 

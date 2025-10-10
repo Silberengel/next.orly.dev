@@ -67,7 +67,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	ev1.Content = []byte("Alpha beta visit https://example.com deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
 	ev1.Tags = tag.NewS()
 	ev1.Sign(sign)
-	if err, _ := db.SaveEvent(ctx, ev1); err != nil {
+	if _, err := db.SaveEvent(ctx, ev1); err != nil {
 		t.Fatalf("save ev1: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	ev2.Content = []byte("beta and GAMMA with nostr:nevent1qqqqq")
 	ev2.Tags = tag.NewS()
 	ev2.Sign(sign)
-	if err, _ := db.SaveEvent(ctx, ev2); err != nil {
+	if _, err := db.SaveEvent(ctx, ev2); err != nil {
 		t.Fatalf("save ev2: %v", err)
 	}
 
@@ -91,7 +91,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	ev3.Content = []byte("see www.example.org #[1]")
 	ev3.Tags = tag.NewS()
 	ev3.Sign(sign)
-	if err, _ := db.SaveEvent(ctx, ev3); err != nil {
+	if _, err := db.SaveEvent(ctx, ev3); err != nil {
 		t.Fatalf("save ev3: %v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	ev4.Tags = tag.NewS()
 	*ev4.Tags = append(*ev4.Tags, tag.NewFromAny("t", "delta epsilon"))
 	ev4.Sign(sign)
-	if err, _ := db.SaveEvent(ctx, ev4); err != nil {
+	if _, err := db.SaveEvent(ctx, ev4); err != nil {
 		t.Fatalf("save ev4: %v", err)
 	}
 
@@ -117,7 +117,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	ev5.Tags = tag.NewS()
 	*ev5.Tags = append(*ev5.Tags, tag.NewFromAny("t", "zeta"))
 	ev5.Sign(sign)
-	if err, _ := db.SaveEvent(ctx, ev5); err != nil {
+	if _, err := db.SaveEvent(ctx, ev5); err != nil {
 		t.Fatalf("save ev5: %v", err)
 	}
 

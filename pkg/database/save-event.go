@@ -103,7 +103,7 @@ func (d *D) WouldReplaceEvent(ev *event.E) (bool, types.Uint40s, error) {
 
 // SaveEvent saves an event to the database, generating all the necessary indexes.
 func (d *D) SaveEvent(c context.Context, ev *event.E) (
-	err error, replaced bool,
+	replaced bool, err error,
 ) {
 	if ev == nil {
 		err = errors.New("nil event")

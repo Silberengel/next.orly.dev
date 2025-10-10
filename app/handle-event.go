@@ -274,7 +274,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			env.E.Pubkey,
 		)
 		log.I.F("delete event pubkey hex: %s", hex.Enc(env.E.Pubkey))
-		if err, _ = l.SaveEvent(saveCtx, env.E); err != nil {
+		if _, err = l.SaveEvent(saveCtx, env.E); err != nil {
 			log.E.F("failed to save delete event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
@@ -339,7 +339,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
-	if err, _ = l.SaveEvent(saveCtx, env.E); err != nil {
+	if _, err = l.SaveEvent(saveCtx, env.E); err != nil {
 		if strings.HasPrefix(err.Error(), "blocked:") {
 			errStr := err.Error()[len("blocked: "):len(err.Error())]
 			if err = Ok.Error(
