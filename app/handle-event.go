@@ -12,6 +12,7 @@ import (
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/okenvelope"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/reason"
 	"next.orly.dev/pkg/utils"
@@ -21,14 +22,19 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	log.D.F("handling event: %s", msg)
 	// decode the envelope
 	env := eventenvelope.NewSubmission()
+	log.I.F("HandleEvent: received event message length: %d", len(msg))
 	if msg, err = env.Unmarshal(msg); chk.E(err) {
+		log.E.F("HandleEvent: failed to unmarshal event: %v", err)
 		return
 	}
+	log.I.F("HandleEvent: successfully unmarshaled event, kind: %d, pubkey: %s", env.E.Kind, hex.Enc(env.E.Pubkey))
 	defer func() {
 		if env != nil && env.E != nil {
 			env.E.Free()
 		}
 	}()
+
+	log.I.F("HandleEvent: continuing with event processing...")
 	if len(msg) > 0 {
 		log.I.F("extra '%s'", msg)
 	}
@@ -128,44 +134,83 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	// check permissions of user
-	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load(), l.remote)
-	switch accessLevel {
-	case "none":
-		log.D.F(
-			"handle event: sending 'OK,false,auth-required...' to %s", l.remote,
-		)
-		if err = okenvelope.NewFrom(
-			env.Id(), false,
-			reason.AuthRequired.F("auth required for write access"),
-		).Write(l); chk.E(err) {
-			// return
+	log.I.F("HandleEvent: checking ACL permissions for pubkey: %s", hex.Enc(l.authedPubkey.Load()))
+
+	// If ACL mode is "none" and no pubkey is set, use the event's pubkey
+	var pubkeyForACL []byte
+	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" {
+		pubkeyForACL = env.E.Pubkey
+		log.I.F("HandleEvent: ACL mode is 'none', using event pubkey for ACL check: %s", hex.Enc(pubkeyForACL))
+	} else {
+		pubkeyForACL = l.authedPubkey.Load()
+	}
+
+	accessLevel := acl.Registry.GetAccessLevel(pubkeyForACL, l.remote)
+	log.I.F("HandleEvent: ACL access level: %s", accessLevel)
+
+	// Skip ACL check for admin/owner delete events
+	skipACLCheck := false
+	if env.E.Kind == kind.EventDeletion.K {
+		// Check if the delete event signer is admin or owner
+		for _, admin := range l.Admins {
+			if utils.FastEqual(admin, env.E.Pubkey) {
+				skipACLCheck = true
+				log.I.F("HandleEvent: admin delete event - skipping ACL check")
+				break
+			}
 		}
-		log.D.F("handle event: sending challenge to %s", l.remote)
-		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
-			Write(l); chk.E(err) {
+		if !skipACLCheck {
+			for _, owner := range l.Owners {
+				if utils.FastEqual(owner, env.E.Pubkey) {
+					skipACLCheck = true
+					log.I.F("HandleEvent: owner delete event - skipping ACL check")
+					break
+				}
+			}
+		}
+	}
+
+	if !skipACLCheck {
+		switch accessLevel {
+		case "none":
+			log.D.F(
+				"handle event: sending 'OK,false,auth-required...' to %s", l.remote,
+			)
+			if err = okenvelope.NewFrom(
+				env.Id(), false,
+				reason.AuthRequired.F("auth required for write access"),
+			).Write(l); chk.E(err) {
+				// return
+			}
+			log.D.F("handle event: sending challenge to %s", l.remote)
+			if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+				Write(l); chk.E(err) {
+				return
+			}
 			return
-		}
-		return
-	case "read":
-		log.D.F(
-			"handle event: sending 'OK,false,auth-required:...' to %s",
-			l.remote,
-		)
-		if err = okenvelope.NewFrom(
-			env.Id(), false,
-			reason.AuthRequired.F("auth required for write access"),
-		).Write(l); chk.E(err) {
+		case "read":
+			log.D.F(
+				"handle event: sending 'OK,false,auth-required:...' to %s",
+				l.remote,
+			)
+			if err = okenvelope.NewFrom(
+				env.Id(), false,
+				reason.AuthRequired.F("auth required for write access"),
+			).Write(l); chk.E(err) {
+				return
+			}
+			log.D.F("handle event: sending challenge to %s", l.remote)
+			if err = authenvelope.NewChallengeWith(l.challenge.Load()).
+				Write(l); chk.E(err) {
+				return
+			}
 			return
+		default:
+			// user has write access or better, continue
+			log.I.F("HandleEvent: user has %s access, continuing", accessLevel)
 		}
-		log.D.F("handle event: sending challenge to %s", l.remote)
-		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
-			Write(l); chk.E(err) {
-			return
-		}
-		return
-	default:
-		// user has write access or better, continue
-		// log.D.F("user has %s access", accessLevel)
+	} else {
+		log.I.F("HandleEvent: skipping ACL check for admin/owner delete event")
 	}
 
 	// check if event is ephemeral - if so, deliver and return early
@@ -197,6 +242,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	// if the event is a delete, process the delete
+	log.I.F("HandleEvent: checking if event is delete - kind: %d, EventDeletion.K: %d", env.E.Kind, kind.EventDeletion.K)
 	if env.E.Kind == kind.EventDeletion.K {
 		log.I.F("processing delete event %0x", env.E.ID)
 
@@ -204,6 +250,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		log.I.F("attempting to save delete event %0x from pubkey %0x", env.E.ID, env.E.Pubkey)
+		log.I.F("delete event pubkey hex: %s", hex.Enc(env.E.Pubkey))
 		if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
 			log.E.F("failed to save delete event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {

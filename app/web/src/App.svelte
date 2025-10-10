@@ -218,15 +218,20 @@
                 kind: 5,
                 created_at: Math.floor(Date.now() / 1000),
                 tags: [['e', eventId]], // e-tag referencing the event to delete
-                content: '',
-                pubkey: userPubkey
+                content: ''
+                // Don't set pubkey - let the signer set it
             };
             
             console.log('Created delete event template:', deleteEventTemplate);
+            console.log('User pubkey:', userPubkey);
+            console.log('Target event:', event);
+            console.log('Target event pubkey:', event.pubkey);
             
             // Sign the event using the signer
             const signedDeleteEvent = await userSigner.signEvent(deleteEventTemplate);
             console.log('Signed delete event:', signedDeleteEvent);
+            console.log('Signed delete event pubkey:', signedDeleteEvent.pubkey);
+            console.log('Delete event tags:', signedDeleteEvent.tags);
             
             // Determine if we should publish to external relays
             // Only publish to external relays if:

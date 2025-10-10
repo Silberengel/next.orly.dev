@@ -33,11 +33,12 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 	// Debug: log admin and owner lists
 	log.I.F("HandleDelete: checking against %d admins and %d owners", len(l.Admins), len(l.Owners))
 	for i, pk := range l.Admins {
-		log.I.F("HandleDelete: admin[%d] = %0x", i, pk)
+		log.I.F("HandleDelete: admin[%d] = %0x (hex: %s)", i, pk, hex.Enc(pk))
 	}
 	for i, pk := range l.Owners {
-		log.I.F("HandleDelete: owner[%d] = %0x", i, pk)
+		log.I.F("HandleDelete: owner[%d] = %0x (hex: %s)", i, pk, hex.Enc(pk))
 	}
+	log.I.F("HandleDelete: delete event pubkey = %0x (hex: %s)", env.E.Pubkey, hex.Enc(env.E.Pubkey))
 
 	var ownerDelete bool
 	for _, pk := range l.Admins {
@@ -175,8 +176,14 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					if ev, err = l.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					// allow deletion if the signer is the author OR an admin/owner
-					if !(ownerDelete || utils.FastEqual(env.E.Pubkey, ev.Pubkey)) {
+					// Debug: log the comparison details
+					log.I.F("HandleDelete: checking deletion permission for event %s", hex.Enc(ev.ID))
+					log.I.F("HandleDelete: delete event pubkey = %s, target event pubkey = %s", hex.Enc(env.E.Pubkey), hex.Enc(ev.Pubkey))
+					log.I.F("HandleDelete: ownerDelete = %v, pubkey match = %v", ownerDelete, utils.FastEqual(env.E.Pubkey, ev.Pubkey))
+
+					// For admin/owner deletes: allow deletion regardless of pubkey match
+					// For regular users: allow deletion only if the signer is the author
+					if !ownerDelete && !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
 						log.W.F(
 							"HandleDelete: attempted deletion of event %s by unauthorized user - delete pubkey=%s, event pubkey=%s",
 							hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
@@ -184,6 +191,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						)
 						continue
 					}
+					log.I.F("HandleDelete: deletion authorized for event %s", hex.Enc(ev.ID))
 					validDeletionFound = true
 					// exclude delete events
 					if ev.Kind == kind.EventDeletion.K {
@@ -230,10 +238,9 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					if ev, err = l.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
-					// check that the author is the same as the signer of the
-					// delete, for the k tag case the author is the signer of
-					// the event.
-					if !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
+					// For admin/owner deletes: allow deletion regardless of pubkey match
+					// For regular users: allow deletion only if the signer is the author
+					if !ownerDelete && !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
 						continue
 					}
 					validDeletionFound = true
