@@ -1,5 +1,6 @@
 <script>
     import { createEventDispatcher } from 'svelte';
+    import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
     
     const dispatch = createEventDispatcher();
     
@@ -103,22 +104,23 @@
                 throw new Error('Invalid nsec format. Must start with "nsec1"');
             }
             
-            // Convert nsec to hex format (simplified for demo)
-            const privateKey = nsecToHex(nsecInput.trim());
+            // Create NDK signer from nsec
+            const signer = new NDKPrivateKeySigner(nsecInput.trim());
             
-            // In a real implementation, you'd derive the public key from private key
-            const publicKey = 'derived_' + privateKey.slice(5, 37);
+            // Get the public key from the signer
+            const publicKey = await signer.user().then(user => user.pubkey);
             
             // Store securely (in production, consider more secure storage)
             localStorage.setItem('nostr_auth_method', 'nsec');
             localStorage.setItem('nostr_pubkey', publicKey);
-            localStorage.setItem('nostr_privkey', privateKey);
+            localStorage.setItem('nostr_privkey', nsecInput.trim());
             
             successMessage = 'Successfully logged in with nsec!';
             dispatch('login', {
                 method: 'nsec',
                 pubkey: publicKey,
-                privateKey: privateKey
+                privateKey: nsecInput.trim(),
+                signer: signer
             });
             
             setTimeout(() => {

@@ -1,292 +1,105 @@
+import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
 import { DEFAULT_RELAYS } from "./constants.js";
 
-// Simple WebSocket relay manager
+// NDK-based Nostr client wrapper
 class NostrClient {
   constructor() {
-    this.relays = new Map();
-    this.subscriptions = new Map();
+    this.ndk = new NDK({
+      explicitRelayUrls: DEFAULT_RELAYS
+    });
+    this.isConnected = false;
   }
 
   async connect() {
-    console.log("Starting connection to", DEFAULT_RELAYS.length, "relays...");
-
-    const connectionPromises = DEFAULT_RELAYS.map((relayUrl) => {
-      return new Promise((resolve) => {
-        try {
-          console.log(`Attempting to connect to ${relayUrl}`);
-          const ws = new WebSocket(relayUrl);
-
-          ws.onopen = () => {
-            console.log(`✓ Successfully connected to ${relayUrl}`);
-            resolve(true);
-          };
-
-          ws.onerror = (error) => {
-            console.error(`✗ Error connecting to ${relayUrl}:`, error);
-            resolve(false);
-          };
-
-          ws.onclose = (event) => {
-            console.warn(
-              `Connection closed to ${relayUrl}:`,
-              event.code,
-              event.reason,
-            );
-          };
-
-          ws.onmessage = (event) => {
-            console.log(`Message from ${relayUrl}:`, event.data);
-            try {
-              this.handleMessage(relayUrl, JSON.parse(event.data));
-            } catch (error) {
-              console.error(
-                `Failed to parse message from ${relayUrl}:`,
-                error,
-                event.data,
-              );
-            }
-          };
-
-          this.relays.set(relayUrl, ws);
-
-          // Timeout after 5 seconds
-          setTimeout(() => {
-            if (ws.readyState !== WebSocket.OPEN) {
-              console.warn(`Connection timeout for ${relayUrl}`);
-              resolve(false);
-            }
-          }, 5000);
-        } catch (error) {
-          console.error(`Failed to create WebSocket for ${relayUrl}:`, error);
-          resolve(false);
-        }
-      });
-    });
-
-    const results = await Promise.all(connectionPromises);
-    const successfulConnections = results.filter(Boolean).length;
-    console.log(
-      `Connected to ${successfulConnections}/${DEFAULT_RELAYS.length} relays`,
-    );
-
-    // Wait a bit more for connections to stabilize
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log("Starting NDK connection to", DEFAULT_RELAYS.length, "relays...");
+    
+    try {
+      await this.ndk.connect();
+      this.isConnected = true;
+      console.log("✓ NDK successfully connected to relays");
+      
+      // Wait a bit for connections to stabilize
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error("✗ NDK connection failed:", error);
+      throw error;
+    }
   }
 
   async connectToRelay(relayUrl) {
-    console.log(`Connecting to single relay: ${relayUrl}`);
-
-    return new Promise((resolve) => {
-      try {
-        console.log(`Attempting to connect to ${relayUrl}`);
-        const ws = new WebSocket(relayUrl);
-
-        ws.onopen = () => {
-          console.log(`✓ Successfully connected to ${relayUrl}`);
-          resolve(true);
-        };
-
-        ws.onerror = (error) => {
-          console.error(`✗ Error connecting to ${relayUrl}:`, error);
-          resolve(false);
-        };
-
-        ws.onclose = (event) => {
-          console.warn(
-            `Connection closed to ${relayUrl}:`,
-            event.code,
-            event.reason,
-          );
-        };
-
-        ws.onmessage = (event) => {
-          console.log(`Message from ${relayUrl}:`, event.data);
-          try {
-            this.handleMessage(relayUrl, JSON.parse(event.data));
-          } catch (error) {
-            console.error(
-              `Failed to parse message from ${relayUrl}:`,
-              error,
-              event.data,
-            );
-          }
-        };
-
-        this.relays.set(relayUrl, ws);
-
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          if (ws.readyState !== WebSocket.OPEN) {
-            console.warn(`Connection timeout for ${relayUrl}`);
-            resolve(false);
-          }
-        }, 5000);
-      } catch (error) {
-        console.error(`Failed to create WebSocket for ${relayUrl}:`, error);
-        resolve(false);
-      }
-    });
-  }
-
-  handleMessage(relayUrl, message) {
-    console.log(`Processing message from ${relayUrl}:`, message);
-    const [type, subscriptionId, event, ...rest] = message;
-
-    console.log(`Message type: ${type}, subscriptionId: ${subscriptionId}`);
-
-    if (type === "EVENT") {
-      console.log(`Received EVENT for subscription ${subscriptionId}:`, event);
-      if (this.subscriptions.has(subscriptionId)) {
-        console.log(
-          `Found callback for subscription ${subscriptionId}, executing...`,
-        );
-        const callback = this.subscriptions.get(subscriptionId);
-        callback(event);
-      } else {
-        console.warn(`No callback found for subscription ${subscriptionId}`);
-      }
-    } else if (type === "EOSE") {
-      console.log(
-        `End of stored events for subscription ${subscriptionId} from ${relayUrl}`,
-      );
-      // Dispatch EOSE event for fetchEvents function
-      if (this.subscriptions.has(subscriptionId)) {
-        window.dispatchEvent(new CustomEvent('nostr-eose', {
-          detail: { subscriptionId, relayUrl }
-        }));
-      }
-    } else if (type === "NOTICE") {
-      console.warn(`Notice from ${relayUrl}:`, subscriptionId);
-    } else {
-      console.log(`Unknown message type ${type} from ${relayUrl}:`, message);
+    console.log(`Adding relay to NDK: ${relayUrl}`);
+    
+    try {
+      await this.ndk.addRelay(relayUrl);
+      console.log(`✓ Successfully added relay ${relayUrl}`);
+      return true;
+    } catch (error) {
+      console.error(`✗ Failed to add relay ${relayUrl}:`, error);
+      return false;
     }
   }
 
   subscribe(filters, callback) {
-    const subscriptionId = Math.random().toString(36).substring(7);
-    console.log(
-      `Creating subscription ${subscriptionId} with filters:`,
-      filters,
-    );
+    console.log("Creating NDK subscription with filters:", filters);
+    
+    const subscription = this.ndk.subscribe(filters, {
+      closeOnEose: true
+    });
 
-    this.subscriptions.set(subscriptionId, callback);
+    subscription.on('event', (event) => {
+      console.log("Event received via NDK:", event);
+      callback(event.rawEvent());
+    });
 
-    const subscription = ["REQ", subscriptionId, filters];
-    console.log(`Subscription message:`, JSON.stringify(subscription));
+    subscription.on('eose', () => {
+      console.log("EOSE received via NDK");
+      window.dispatchEvent(new CustomEvent('nostr-eose', {
+        detail: { subscriptionId: subscription.id }
+      }));
+    });
 
-    let sentCount = 0;
-    for (const [relayUrl, ws] of this.relays) {
-      console.log(
-        `Checking relay ${relayUrl}, readyState: ${ws.readyState} (${ws.readyState === WebSocket.OPEN ? "OPEN" : "NOT OPEN"})`,
-      );
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(JSON.stringify(subscription));
-          console.log(`✓ Sent subscription to ${relayUrl}`);
-          sentCount++;
-        } catch (error) {
-          console.error(`✗ Failed to send subscription to ${relayUrl}:`, error);
-        }
-      } else {
-        console.warn(`✗ Cannot send to ${relayUrl}, connection not ready`);
-      }
-    }
-
-    console.log(
-      `Subscription ${subscriptionId} sent to ${sentCount}/${this.relays.size} relays`,
-    );
-    return subscriptionId;
+    return subscription.id;
   }
 
   unsubscribe(subscriptionId) {
-    this.subscriptions.delete(subscriptionId);
-
-    const closeMessage = ["CLOSE", subscriptionId];
-
-    for (const [relayUrl, ws] of this.relays) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(closeMessage));
-      }
-    }
+    console.log(`Closing NDK subscription: ${subscriptionId}`);
+    // NDK handles subscription cleanup automatically
   }
 
   disconnect() {
-    for (const [relayUrl, ws] of this.relays) {
-      ws.close();
-    }
-    this.relays.clear();
-    this.subscriptions.clear();
+    console.log("Disconnecting NDK");
+    this.ndk.destroy();
+    this.isConnected = false;
   }
 
-  // Publish an event to all connected relays
+  // Publish an event using NDK
   async publish(event) {
-    return new Promise((resolve, reject) => {
-      const eventMessage = ["EVENT", event];
-      console.log("Publishing event:", eventMessage);
-      
-      let publishedCount = 0;
-      let okCount = 0;
-      let errorCount = 0;
-      const totalRelays = this.relays.size;
-      
-      if (totalRelays === 0) {
-        reject(new Error("No relays connected"));
-        return;
-      }
+    console.log("Publishing event via NDK:", event);
+    
+    try {
+      const ndkEvent = this.ndk.createEvent(event);
+      await ndkEvent.publish();
+      console.log("✓ Event published successfully via NDK");
+      return { success: true, okCount: 1, errorCount: 0 };
+    } catch (error) {
+      console.error("✗ Failed to publish event via NDK:", error);
+      throw error;
+    }
+  }
 
-      const handleResponse = (relayUrl, success) => {
-        if (success) {
-          okCount++;
-        } else {
-          errorCount++;
-        }
-        
-        if (okCount + errorCount === totalRelays) {
-          if (okCount > 0) {
-            resolve({ success: true, okCount, errorCount });
-          } else {
-            reject(new Error(`All relays rejected the event. Errors: ${errorCount}`));
-          }
-        }
-      };
+  // Get NDK instance for advanced usage
+  getNDK() {
+    return this.ndk;
+  }
 
-      // Set up a temporary listener for OK responses
-      const originalHandleMessage = this.handleMessage.bind(this);
-      this.handleMessage = (relayUrl, message) => {
-        if (message[0] === "OK" && message[1] === event.id) {
-          const success = message[2] === true;
-          console.log(`Relay ${relayUrl} response:`, success ? "OK" : "REJECTED", message[3] || "");
-          handleResponse(relayUrl, success);
-        }
-        // Call original handler for other messages
-        originalHandleMessage(relayUrl, message);
-      };
+  // Get signer from NDK
+  getSigner() {
+    return this.ndk.signer;
+  }
 
-      // Send to all connected relays
-      for (const [relayUrl, ws] of this.relays) {
-        if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(JSON.stringify(eventMessage));
-            publishedCount++;
-            console.log(`Event sent to ${relayUrl}`);
-          } catch (error) {
-            console.error(`Failed to send event to ${relayUrl}:`, error);
-            handleResponse(relayUrl, false);
-          }
-        } else {
-          console.warn(`Relay ${relayUrl} is not open, skipping`);
-          handleResponse(relayUrl, false);
-        }
-      }
-
-      // Restore original handler after timeout
-      setTimeout(() => {
-        this.handleMessage = originalHandleMessage;
-        if (okCount + errorCount < totalRelays) {
-          reject(new Error("Timeout waiting for relay responses"));
-        }
-      }, 10000); // 10 second timeout
-    });
+  // Set signer for NDK
+  setSigner(signer) {
+    this.ndk.signer = signer;
   }
 }
 
@@ -387,224 +200,100 @@ function parseProfileFromEvent(event) {
   }
 }
 
-// Fetch user profile metadata (kind 0)
+// Fetch user profile metadata (kind 0) using NDK
 export async function fetchUserProfile(pubkey) {
-  return new Promise(async (resolve, reject) => {
-    console.log(`Starting profile fetch for pubkey: ${pubkey}`);
+  console.log(`Starting profile fetch for pubkey: ${pubkey}`);
 
-    let resolved = false;
-    let newestEvent = null;
-    let debounceTimer = null;
-    let overallTimer = null;
-    let subscriptionId = null;
-
-    function cleanup() {
-      if (subscriptionId) {
-        try {
-          nostrClient.unsubscribe(subscriptionId);
-        } catch {}
-      }
-      if (debounceTimer) clearTimeout(debounceTimer);
-      if (overallTimer) clearTimeout(overallTimer);
+  // 1) Try cached profile first and resolve immediately if present
+  try {
+    const cachedEvent = await getLatestProfileEvent(pubkey);
+    if (cachedEvent) {
+      console.log("Using cached profile event");
+      const profile = parseProfileFromEvent(cachedEvent);
+      return profile;
     }
+  } catch (e) {
+    console.warn("Failed to load cached profile", e);
+  }
 
-    // 1) Try cached profile first and resolve immediately if present
-    try {
-      const cachedEvent = await getLatestProfileEvent(pubkey);
-      if (cachedEvent) {
-        console.log("Using cached profile event");
-        const profile = parseProfileFromEvent(cachedEvent);
-        resolved = true; // resolve immediately with cache
-        resolve(profile);
-      }
-    } catch (e) {
-      console.warn("Failed to load cached profile", e);
-    }
-
-    // 2) Set overall timeout
-    overallTimer = setTimeout(() => {
-      if (!newestEvent) {
-        console.log("Profile fetch timeout reached");
-        if (!resolved) reject(new Error("Profile fetch timeout"));
-      } else if (!resolved) {
-        resolve(parseProfileFromEvent(newestEvent));
-      }
-      cleanup();
-    }, 15000);
-
-    // 3) Wait a bit to ensure connections are ready and then subscribe without limit
-    setTimeout(() => {
-      console.log("Starting subscription after connection delay...");
-      subscriptionId = nostrClient.subscribe(
-        {
-          kinds: [0],
-          authors: [pubkey],
-        },
-        (event) => {
-          // Collect all kind 0 events and pick the newest by created_at
-          if (!event || event.kind !== 0) return;
-          console.log("Profile event received:", event);
-
-          if (
-            !newestEvent ||
-            (event.created_at || 0) > (newestEvent.created_at || 0)
-          ) {
-            newestEvent = event;
-          }
-
-          // Debounce to wait for more relays; then finalize selection
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(async () => {
-            try {
-              if (newestEvent) {
-                await putEvent(newestEvent); // cache newest only
-                const profile = parseProfileFromEvent(newestEvent);
-
-                // Notify listeners that an updated profile is available
-                try {
-                  if (typeof window !== "undefined" && window.dispatchEvent) {
-                    window.dispatchEvent(
-                      new CustomEvent("profile-updated", {
-                        detail: { pubkey, profile, event: newestEvent },
-                      }),
-                    );
-                  }
-                } catch (e) {
-                  console.warn("Failed to dispatch profile-updated event", e);
-                }
-
-                if (!resolved) {
-                  resolve(profile);
-                  resolved = true;
-                }
-              }
-            } finally {
-              cleanup();
-            }
-          }, 800);
-        },
-      );
-    }, 2000);
-  });
-}
-
-// Fetch events using WebSocket REQ envelopes
-export async function fetchEvents(filters, options = {}) {
-  return new Promise(async (resolve, reject) => {
-    console.log(`Starting event fetch with filters:`, filters);
-
-    let resolved = false;
-    let events = [];
-    let debounceTimer = null;
-    let overallTimer = null;
-    let subscriptionId = null;
-    let eoseReceived = false;
-
-    const {
-      timeout = 30000,
-      debounceDelay = 1000,
-      limit = null
-    } = options;
-
-    function cleanup() {
-      if (subscriptionId) {
-        try {
-          nostrClient.unsubscribe(subscriptionId);
-        } catch {}
-      }
-      if (debounceTimer) clearTimeout(debounceTimer);
-      if (overallTimer) clearTimeout(overallTimer);
-    }
-
-    // Set overall timeout
-    overallTimer = setTimeout(() => {
-      if (!resolved) {
-        console.log("Event fetch timeout reached");
-        if (events.length > 0) {
-          resolve(events);
-        } else {
-          reject(new Error("Event fetch timeout"));
-        }
-        resolved = true;
-      }
-      cleanup();
-    }, timeout);
-
-    // Subscribe to events
-    setTimeout(() => {
-      console.log("Starting event subscription...");
+  // 2) Fetch profile using NDK
+  try {
+    const ndk = nostrClient.getNDK();
+    const user = ndk.getUser({ hexpubkey: pubkey });
+    
+    // Fetch the latest profile event
+    const profileEvent = await user.fetchProfile();
+    
+    if (profileEvent) {
+      console.log("Profile fetched via NDK:", profileEvent);
       
-      // Add limit to filters if specified
-      const requestFilters = { ...filters };
-      if (limit) {
-        requestFilters.limit = limit;
-      }
-
-      console.log('Sending REQ with filters:', requestFilters);
-
-      subscriptionId = nostrClient.subscribe(
-        requestFilters,
-        (event) => {
-          if (!event) return;
-          console.log("Event received:", event);
-          
-          // Check if we already have this event (deduplication)
-          const existingEvent = events.find(e => e.id === event.id);
-          if (!existingEvent) {
-            events.push(event);
-          }
-
-          // If we have a limit and reached it, resolve immediately
-          if (limit && events.length >= limit) {
-            if (!resolved) {
-              resolve(events.slice(0, limit));
-              resolved = true;
-            }
-            cleanup();
-            return;
-          }
-
-          // Debounce to wait for more events
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => {
-            if (eoseReceived && !resolved) {
-              resolve(events);
-              resolved = true;
-              cleanup();
-            }
-          }, debounceDelay);
-        },
-      );
-
-      // Listen for EOSE events
-      const handleEOSE = (event) => {
-        if (event.detail.subscriptionId === subscriptionId) {
-          console.log("EOSE received for subscription", subscriptionId);
-          eoseReceived = true;
-          
-          // If we haven't resolved yet and have events, resolve now
-          if (!resolved && events.length > 0) {
-            resolve(events);
-            resolved = true;
-            cleanup();
-          }
+      // Cache the event
+      await putEvent(profileEvent.rawEvent());
+      
+      // Parse profile data
+      const profile = parseProfileFromEvent(profileEvent.rawEvent());
+      
+      // Notify listeners that an updated profile is available
+      try {
+        if (typeof window !== "undefined" && window.dispatchEvent) {
+          window.dispatchEvent(
+            new CustomEvent("profile-updated", {
+              detail: { pubkey, profile, event: profileEvent.rawEvent() },
+            }),
+          );
         }
-      };
-
-      // Add EOSE listener
-      window.addEventListener('nostr-eose', handleEOSE);
-
-      // Cleanup EOSE listener
-      const originalCleanup = cleanup;
-      cleanup = () => {
-        window.removeEventListener('nostr-eose', handleEOSE);
-        originalCleanup();
-      };
-    }, 1000);
-  });
+      } catch (e) {
+        console.warn("Failed to dispatch profile-updated event", e);
+      }
+      
+      return profile;
+    } else {
+      throw new Error("No profile found");
+    }
+  } catch (error) {
+    console.error("Failed to fetch profile via NDK:", error);
+    throw error;
+  }
 }
 
-// Fetch all events with timestamp-based pagination
+// Fetch events using NDK
+export async function fetchEvents(filters, options = {}) {
+  console.log(`Starting event fetch with filters:`, filters);
+
+  const {
+    timeout = 30000,
+    limit = null
+  } = options;
+
+  try {
+    const ndk = nostrClient.getNDK();
+    
+    // Add limit to filters if specified
+    const requestFilters = { ...filters };
+    if (limit) {
+      requestFilters.limit = limit;
+    }
+
+    console.log('Fetching events via NDK with filters:', requestFilters);
+
+    // Use NDK's fetchEvents method
+    const events = await ndk.fetchEvents(requestFilters, {
+      timeout
+    });
+
+    console.log(`Fetched ${events.size} events via NDK`);
+    
+    // Convert NDK events to raw events
+    const rawEvents = Array.from(events).map(event => event.rawEvent());
+    
+    return rawEvents;
+  } catch (error) {
+    console.error("Failed to fetch events via NDK:", error);
+    throw error;
+  }
+}
+
+// Fetch all events with timestamp-based pagination using NDK
 export async function fetchAllEvents(options = {}) {
   const {
     limit = 100,
@@ -627,7 +316,7 @@ export async function fetchAllEvents(options = {}) {
   return events;
 }
 
-// Fetch user's events with timestamp-based pagination
+// Fetch user's events with timestamp-based pagination using NDK
 export async function fetchUserEvents(pubkey, options = {}) {
   const {
     limit = 100,
@@ -650,7 +339,7 @@ export async function fetchUserEvents(pubkey, options = {}) {
   return events;
 }
 
-// NIP-50 search function
+// NIP-50 search function using NDK
 export async function searchEvents(searchQuery, options = {}) {
   const {
     limit = 100,

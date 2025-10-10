@@ -1,6 +1,7 @@
 <script>
     import LoginModal from './LoginModal.svelte';
     import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, nostrClient, NostrClient } from './nostr.js';
+    import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -751,6 +752,17 @@
         // Initialize Nostr client and fetch profile
         try {
             await initializeNostrClient();
+            
+            // Set up NDK signer based on authentication method
+            if (method === 'extension' && signer) {
+                // Extension signer (NIP-07 compatible)
+                nostrClient.setSigner(signer);
+            } else if (method === 'nsec' && privateKey) {
+                // Private key signer for nsec
+                const ndkSigner = new NDKPrivateKeySigner(privateKey);
+                nostrClient.setSigner(ndkSigner);
+            }
+            
             userProfile = await fetchUserProfile(pubkey);
             console.log('Profile loaded:', userProfile);
         } catch (error) {
