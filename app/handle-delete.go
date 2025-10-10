@@ -24,23 +24,36 @@ func (l *Listener) GetSerialsFromFilter(f *filter.F) (
 }
 
 func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
-	// log.I.C(
-	// 	func() string {
-	// 		return fmt.Sprintf(
-	// 			"delete event\n%s", env.E.Serialize(),
-	// 		)
-	// 	},
-	// )
+	log.I.F("HandleDelete: processing delete event %0x from pubkey %0x", env.E.ID, env.E.Pubkey)
+	log.I.F("HandleDelete: delete event tags: %d tags", len(*env.E.Tags))
+	for i, t := range *env.E.Tags {
+		log.I.F("HandleDelete: tag %d: %s = %s", i, string(t.Key()), string(t.Value()))
+	}
+
 	var ownerDelete bool
 	for _, pk := range l.Admins {
 		if utils.FastEqual(pk, env.E.Pubkey) {
 			ownerDelete = true
+			log.I.F("HandleDelete: delete event from admin/owner %0x", env.E.Pubkey)
 			break
 		}
+	}
+	if !ownerDelete {
+		for _, pk := range l.Owners {
+			if utils.FastEqual(pk, env.E.Pubkey) {
+				ownerDelete = true
+				log.I.F("HandleDelete: delete event from owner %0x", env.E.Pubkey)
+				break
+			}
+		}
+	}
+	if !ownerDelete {
+		log.I.F("HandleDelete: delete event from regular user %0x", env.E.Pubkey)
 	}
 	// process the tags in the delete event
 	var deleteErr error
 	var validDeletionFound bool
+	var deletionCount int
 	for _, t := range *env.E.Tags {
 		// first search for a tags, as these are the simplest to process
 		if utils.FastEqual(t.Key(), []byte("a")) {
@@ -109,8 +122,10 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						if err = l.DeleteEventBySerial(
 							l.Ctx(), s, ev,
 						); chk.E(err) {
+							log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
 							continue
 						}
+						deletionCount++
 					}
 				}
 			}
@@ -121,21 +136,27 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 		if utils.FastEqual(t.Key(), []byte("e")) {
 			val := t.Value()
 			if len(val) == 0 {
+				log.W.F("HandleDelete: empty e-tag value")
 				continue
 			}
+			log.I.F("HandleDelete: processing e-tag with value: %s", string(val))
 			var dst []byte
 			if b, e := hex.Dec(string(val)); chk.E(e) {
+				log.E.F("HandleDelete: failed to decode hex event ID %s: %v", string(val), e)
 				continue
 			} else {
 				dst = b
+				log.I.F("HandleDelete: decoded event ID: %0x", dst)
 			}
 			f := &filter.F{
 				Ids: tag.NewFromBytesSlice(dst),
 			}
 			var sers types.Uint40s
 			if sers, err = l.GetSerialsFromFilter(f); chk.E(err) {
+				log.E.F("HandleDelete: failed to get serials from filter: %v", err)
 				continue
 			}
+			log.I.F("HandleDelete: found %d serials for event ID %s", len(sers), string(val))
 			// if found, delete them
 			if len(sers) > 0 {
 				// there should be only one event per serial, so we can just
@@ -164,8 +185,10 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
 					)
 					if err = l.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
+						log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
 						continue
 					}
+					deletionCount++
 				}
 				continue
 			}
@@ -204,17 +227,27 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 					if !utils.FastEqual(env.E.Pubkey, ev.Pubkey) {
 						continue
 					}
+					validDeletionFound = true
+					log.I.F(
+						"HandleDelete: deleting event %s via k-tag by authorized user %s",
+						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
+					)
+					if err = l.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
+						log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
+						continue
+					}
+					deletionCount++
 				}
-				continue
 			}
 		}
-		continue
 	}
 
 	// If no valid deletions were found, return an error
 	if !validDeletionFound {
+		log.W.F("HandleDelete: no valid deletions found for event %0x", env.E.ID)
 		return fmt.Errorf("blocked: cannot delete events that belong to other users")
 	}
 
+	log.I.F("HandleDelete: successfully processed %d deletions for event %0x", deletionCount, env.E.ID)
 	return
 }

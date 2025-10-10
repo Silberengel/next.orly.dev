@@ -1,4 +1,4 @@
-import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+import NDK, { NDKPrivateKeySigner, NDKEvent } from '@nostr-dev-kit/ndk';
 import { DEFAULT_RELAYS } from "./constants.js";
 
 // NDK-based Nostr client wrapper
@@ -30,7 +30,13 @@ class NostrClient {
     console.log(`Adding relay to NDK: ${relayUrl}`);
     
     try {
-      await this.ndk.addRelay(relayUrl);
+      // For now, just update the DEFAULT_RELAYS array and reconnect
+      // This is a simpler approach that avoids replacing the NDK instance
+      DEFAULT_RELAYS.push(relayUrl);
+      
+      // Reconnect with the updated relay list
+      await this.connect();
+      
       console.log(`✓ Successfully added relay ${relayUrl}`);
       return true;
     } catch (error) {
@@ -68,7 +74,10 @@ class NostrClient {
 
   disconnect() {
     console.log("Disconnecting NDK");
-    this.ndk.destroy();
+    // Note: NDK doesn't have a destroy method, just disconnect
+    if (this.ndk && typeof this.ndk.disconnect === 'function') {
+      this.ndk.disconnect();
+    }
     this.isConnected = false;
   }
 
@@ -77,7 +86,7 @@ class NostrClient {
     console.log("Publishing event via NDK:", event);
     
     try {
-      const ndkEvent = this.ndk.createEvent(event);
+      const ndkEvent = new NDKEvent(this.ndk, event);
       await ndkEvent.publish();
       console.log("✓ Event published successfully via NDK");
       return { success: true, okCount: 1, errorCount: 0 };
@@ -362,6 +371,42 @@ export async function searchEvents(searchQuery, options = {}) {
   });
   
   return events;
+}
+
+// Fetch a specific event by ID
+export async function fetchEventById(eventId, options = {}) {
+  const {
+    timeout = 10000,
+    relays = null
+  } = options;
+
+  console.log(`Fetching event by ID: ${eventId}`);
+
+  try {
+    const ndk = nostrClient.getNDK();
+    
+    const filters = {
+      ids: [eventId]
+    };
+
+    console.log('Fetching event via NDK with filters:', filters);
+
+    // Use NDK's fetchEvents method
+    const events = await ndk.fetchEvents(filters, {
+      timeout
+    });
+
+    console.log(`Fetched ${events.size} events via NDK`);
+    
+    // Convert NDK events to raw events
+    const rawEvents = Array.from(events).map(event => event.rawEvent());
+    
+    // Return the first event if found, null otherwise
+    return rawEvents.length > 0 ? rawEvents[0] : null;
+  } catch (error) {
+    console.error("Failed to fetch event by ID via NDK:", error);
+    throw error;
+  }
 }
 
 

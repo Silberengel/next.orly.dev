@@ -34,6 +34,7 @@ type Server struct {
 	remote     string
 	publishers *publish.S
 	Admins     [][]byte
+	Owners     [][]byte
 	*database.D
 
 	// optional reverse proxy for dev web server
@@ -179,7 +180,7 @@ func (s *Server) UserInterface() {
 		s.challengeMutex.Unlock()
 	}
 
-	// Serve favicon.ico by serving orly.png
+	// Serve favicon.ico by serving orly-favicon.png
 	s.mux.HandleFunc("/favicon.ico", s.handleFavicon)
 
 	// Serve the main login interface (and static assets) or proxy in dev mode
@@ -206,7 +207,7 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/sprocket/config", s.handleSprocketConfig)
 }
 
-// handleFavicon serves orly.png as favicon.ico
+// handleFavicon serves orly-favicon.png as favicon.ico
 func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
 	// In dev mode with proxy configured, forward to dev server
 	if s.devProxy != nil {
@@ -214,14 +215,14 @@ func (s *Server) handleFavicon(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serve orly.png as favicon.ico from embedded web app
+	// Serve orly-favicon.png as favicon.ico from embedded web app
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
 
-	// Create a request for orly.png and serve it
+	// Create a request for orly-favicon.png and serve it
 	faviconReq := &http.Request{
 		Method: "GET",
-		URL:    &url.URL{Path: "/orly.png"},
+		URL:    &url.URL{Path: "/orly-favicon.png"},
 	}
 	ServeEmbeddedWeb(w, faviconReq)
 }

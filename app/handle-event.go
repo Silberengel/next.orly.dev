@@ -167,6 +167,21 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		// user has write access or better, continue
 		// log.D.F("user has %s access", accessLevel)
 	}
+
+	// check if event is ephemeral - if so, deliver and return early
+	if kind.IsEphemeral(env.E.Kind) {
+		log.D.F("handling ephemeral event %0x (kind %d)", env.E.ID, env.E.Kind)
+		// Send OK response for ephemeral events
+		if err = Ok.Ok(l, env, ""); chk.E(err) {
+			return
+		}
+		// Deliver the event to subscribers immediately
+		clonedEvent := env.E.Clone()
+		go l.publishers.Deliver(clonedEvent)
+		log.D.F("delivered ephemeral event %0x", env.E.ID)
+		return
+	}
+
 	// check for protected tag (NIP-70)
 	protectedTag := env.E.Tags.GetFirst([]byte("-"))
 	if protectedTag != nil && acl.Registry.Active.Load() != "none" {
@@ -183,7 +198,9 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	}
 	// if the event is a delete, process the delete
 	if env.E.Kind == kind.EventDeletion.K {
+		log.I.F("processing delete event %0x", env.E.ID)
 		if err = l.HandleDelete(env); err != nil {
+			log.E.F("HandleDelete failed for event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
 				if err = Ok.Error(
@@ -193,10 +210,41 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 				}
 				return
 			}
+			// For non-blocked errors, still send OK but log the error
+			log.W.F("Delete processing failed but continuing: %v", err)
+		} else {
+			log.I.F("HandleDelete completed successfully for event %0x", env.E.ID)
 		}
+		// Send OK response for delete events
+		if err = Ok.Ok(l, env, ""); chk.E(err) {
+			return
+		}
+		// Store the delete event itself
+		saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+			if strings.HasPrefix(err.Error(), "blocked:") {
+				errStr := err.Error()[len("blocked: "):len(err.Error())]
+				if err = Ok.Error(
+					l, env, errStr,
+				); chk.E(err) {
+					return
+				}
+				return
+			}
+			chk.E(err)
+			return
+		}
+		// Deliver the delete event to subscribers
+		clonedEvent := env.E.Clone()
+		go l.publishers.Deliver(clonedEvent)
+		log.D.F("processed delete event %0x", env.E.ID)
+		return
 	} else {
 		// check if the event was deleted
-		if err = l.CheckForDeleted(env.E, l.Admins); err != nil {
+		// Combine admins and owners for deletion checking
+		adminOwners := append(l.Admins, l.Owners...)
+		if err = l.CheckForDeleted(env.E, adminOwners); err != nil {
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
 				if err = Ok.Error(
@@ -234,10 +282,19 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	go l.publishers.Deliver(clonedEvent)
 	log.D.F("saved event %0x", env.E.ID)
 	var isNewFromAdmin bool
+	// Check if event is from admin or owner
 	for _, admin := range l.Admins {
 		if utils.FastEqual(admin, env.E.Pubkey) {
 			isNewFromAdmin = true
 			break
+		}
+	}
+	if !isNewFromAdmin {
+		for _, owner := range l.Owners {
+			if utils.FastEqual(owner, env.E.Pubkey) {
+				isNewFromAdmin = true
+				break
+			}
 		}
 	}
 	if isNewFromAdmin {

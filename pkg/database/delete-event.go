@@ -45,32 +45,50 @@ func (d *D) DeleteEvent(c context.Context, eid []byte) (err error) {
 func (d *D) DeleteEventBySerial(
 	c context.Context, ser *types.Uint40, ev *event.E,
 ) (err error) {
+	d.Logger.Infof("DeleteEventBySerial: deleting event %0x (serial %d)", ev.ID, ser.Get())
+
 	// Get all indexes for the event
 	var idxs [][]byte
 	idxs, err = GetIndexesForEvent(ev, ser.Get())
 	if chk.E(err) {
+		d.Logger.Errorf("DeleteEventBySerial: failed to get indexes for event %0x: %v", ev.ID, err)
 		return
 	}
+	d.Logger.Infof("DeleteEventBySerial: found %d indexes for event %0x", len(idxs), ev.ID)
+
 	// Get the event key
 	eventKey := new(bytes.Buffer)
 	if err = indexes.EventEnc(ser).MarshalWrite(eventKey); chk.E(err) {
+		d.Logger.Errorf("DeleteEventBySerial: failed to create event key for %0x: %v", ev.ID, err)
 		return
 	}
+
 	// Delete the event and all its indexes in a transaction
 	err = d.Update(
 		func(txn *badger.Txn) (err error) {
 			// Delete the event
 			if err = txn.Delete(eventKey.Bytes()); chk.E(err) {
+				d.Logger.Errorf("DeleteEventBySerial: failed to delete event %0x: %v", ev.ID, err)
 				return
 			}
+			d.Logger.Infof("DeleteEventBySerial: deleted event %0x", ev.ID)
+
 			// Delete all indexes
-			for _, key := range idxs {
+			for i, key := range idxs {
 				if err = txn.Delete(key); chk.E(err) {
+					d.Logger.Errorf("DeleteEventBySerial: failed to delete index %d for event %0x: %v", i, ev.ID, err)
 					return
 				}
 			}
+			d.Logger.Infof("DeleteEventBySerial: deleted %d indexes for event %0x", len(idxs), ev.ID)
 			return
 		},
 	)
+	if chk.E(err) {
+		d.Logger.Errorf("DeleteEventBySerial: transaction failed for event %0x: %v", ev.ID, err)
+		return
+	}
+
+	d.Logger.Infof("DeleteEventBySerial: successfully deleted event %0x and all indexes", ev.ID)
 	return
 }

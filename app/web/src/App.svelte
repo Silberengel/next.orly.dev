@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, nostrClient, NostrClient } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, fetchEventById, nostrClient, NostrClient } from './nostr.js';
     import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
     
     let isDarkTheme = false;
@@ -40,6 +40,13 @@
     
     // Events filter toggle
     let showOnlyMyEvents = false;
+    
+    // My Events state
+    let myEvents = [];
+    let isLoadingMyEvents = false;
+    let hasMoreMyEvents = true;
+    let oldestMyEventTimestamp = null;
+    let newestMyEventTimestamp = null;
 
     // Sprocket management state
     let sprocketScript = '';
@@ -232,8 +239,40 @@
                 console.log('Delete event published:', result);
                 
                 if (result.success && result.okCount > 0) {
-                    // Remove from local list
+                    // Wait a moment for the deletion to propagate
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // Verify the event was actually deleted by trying to fetch it
+                    try {
+                        const deletedEvent = await fetchEventById(eventId, { timeout: 5000 });
+                        if (deletedEvent) {
+                            console.warn('Event still exists after deletion attempt:', deletedEvent);
+                            alert(`Warning: Delete event was accepted by ${result.okCount} relay(s), but the event still exists on the relay. This may indicate the relay does not properly handle delete events.`);
+                        } else {
+                            console.log('Event successfully deleted and verified');
+                        }
+                    } catch (fetchError) {
+                        console.log('Could not fetch event after deletion (likely deleted):', fetchError.message);
+                    }
+                    
+                    // Remove from local lists
                     allEvents = allEvents.filter(event => event.id !== eventId);
+                    myEvents = myEvents.filter(event => event.id !== eventId);
+                    
+                    // Remove from global cache
+                    globalEventsCache = globalEventsCache.filter(event => event.id !== eventId);
+                    
+                    // Remove from search results cache
+                    for (const [tabId, searchResult] of searchResults) {
+                        if (searchResult.events) {
+                            searchResult.events = searchResult.events.filter(event => event.id !== eventId);
+                            searchResults.set(tabId, searchResult);
+                        }
+                    }
+                    
+                    // Update persistent state
+                    savePersistentState();
+                    
                     alert(`Event deleted successfully (accepted by ${result.okCount} relay(s))`);
                 } else {
                     throw new Error('No relays accepted the delete event');
@@ -241,7 +280,7 @@
             } else {
                 // Admin/owner deleting someone else's event - only publish to local relay
                 // We need to publish only to the local relay, not external ones
-                const localRelayUrl = `wss://${window.location.host}/ws`;
+                const localRelayUrl = `wss://${window.location.host}/`;
                 
                 // Create a modified client that only connects to the local relay
                 const localClient = new NostrClient();
@@ -251,8 +290,40 @@
                 console.log('Delete event published to local relay only:', result);
                 
                 if (result.success && result.okCount > 0) {
-                    // Remove from local list
+                    // Wait a moment for the deletion to propagate
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    // Verify the event was actually deleted by trying to fetch it
+                    try {
+                        const deletedEvent = await fetchEventById(eventId, { timeout: 5000 });
+                        if (deletedEvent) {
+                            console.warn('Event still exists after deletion attempt:', deletedEvent);
+                            alert(`Warning: Delete event was accepted by ${result.okCount} relay(s), but the event still exists on the relay. This may indicate the relay does not properly handle delete events.`);
+                        } else {
+                            console.log('Event successfully deleted and verified');
+                        }
+                    } catch (fetchError) {
+                        console.log('Could not fetch event after deletion (likely deleted):', fetchError.message);
+                    }
+                    
+                    // Remove from local lists
                     allEvents = allEvents.filter(event => event.id !== eventId);
+                    myEvents = myEvents.filter(event => event.id !== eventId);
+                    
+                    // Remove from global cache
+                    globalEventsCache = globalEventsCache.filter(event => event.id !== eventId);
+                    
+                    // Remove from search results cache
+                    for (const [tabId, searchResult] of searchResults) {
+                        if (searchResult.events) {
+                            searchResult.events = searchResult.events.filter(event => event.id !== eventId);
+                            searchResults.set(tabId, searchResult);
+                        }
+                    }
+                    
+                    // Update persistent state
+                    savePersistentState();
+                    
                     alert(`Event deleted successfully (local relay only - admin/owner deleting other user's event)`);
                 } else {
                     throw new Error('Local relay did not accept the delete event');
@@ -1102,12 +1173,8 @@
             
             if (reset) {
                 myEvents = events;
-                // Update cache
-                updateCache(userPubkey, events);
             } else {
                 myEvents = [...myEvents, ...events];
-                // Update cache with all events
-                updateCache(userPubkey, myEvents);
             }
             
             // Update oldest timestamp for next pagination
@@ -1355,7 +1422,7 @@
 <!-- Header -->
 <header class="main-header" class:dark-theme={isDarkTheme}>
     <div class="header-content">
-        <img src="/orly.png" alt="Orly Logo" class="logo"/>
+        <img src="/orly-favicon.png" alt="Orly Logo" class="logo"/>
         {#if isSearchMode}
             <div class="search-input-container">
                 <input 

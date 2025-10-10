@@ -36,6 +36,18 @@ func Run(
 		}
 		adminKeys = append(adminKeys, pk)
 	}
+	// get the owners
+	var ownerKeys [][]byte
+	for _, owner := range cfg.Owners {
+		if len(owner) == 0 {
+			continue
+		}
+		var pk []byte
+		if pk, err = bech32encoding.NpubOrHexToPublicKeyBinary(owner); chk.E(err) {
+			continue
+		}
+		ownerKeys = append(ownerKeys, pk)
+	}
 	// start listener
 	l := &Server{
 		Ctx:        ctx,
@@ -43,6 +55,7 @@ func Run(
 		D:          db,
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
+		Owners:     ownerKeys,
 	}
 
 	// Initialize sprocket manager
@@ -67,6 +80,18 @@ func Run(
 			if !found {
 				cfg.Admins = append(cfg.Admins, pk)
 				log.I.F("added relay identity to admins for follow-list whitelisting")
+			}
+			// also ensure relay identity pubkey is considered an owner for full control
+			found = false
+			for _, o := range cfg.Owners {
+				if o == pk {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.Owners = append(cfg.Owners, pk)
+				log.I.F("added relay identity to owners for full control")
 			}
 		}
 	}
