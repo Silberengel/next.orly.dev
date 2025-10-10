@@ -1,6 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
-    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, nostrClient } from './nostr.js';
+    import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, nostrClient, NostrClient } from './nostr.js';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -213,16 +213,45 @@
             const signedDeleteEvent = await userSigner.signEvent(deleteEventTemplate);
             console.log('Signed delete event:', signedDeleteEvent);
             
-            // Publish the delete event to the relay
-            const result = await nostrClient.publish(signedDeleteEvent);
-            console.log('Delete event published:', result);
+            // Determine if we should publish to external relays
+            // Only publish to external relays if:
+            // 1. User is deleting their own event, OR
+            // 2. User is admin/owner AND deleting their own event
+            const isDeletingOwnEvent = event.pubkey === userPubkey;
+            const isAdminOrOwner = (userRole === 'admin' || userRole === 'owner');
+            const shouldPublishToExternalRelays = isDeletingOwnEvent;
             
-            if (result.success && result.okCount > 0) {
-                // Remove from local list
-                allEvents = allEvents.filter(event => event.id !== eventId);
-                alert(`Event deleted successfully (accepted by ${result.okCount} relay(s))`);
+            if (shouldPublishToExternalRelays) {
+                // Publish the delete event to all relays (including external ones)
+                const result = await nostrClient.publish(signedDeleteEvent);
+                console.log('Delete event published:', result);
+                
+                if (result.success && result.okCount > 0) {
+                    // Remove from local list
+                    allEvents = allEvents.filter(event => event.id !== eventId);
+                    alert(`Event deleted successfully (accepted by ${result.okCount} relay(s))`);
+                } else {
+                    throw new Error('No relays accepted the delete event');
+                }
             } else {
-                throw new Error('No relays accepted the delete event');
+                // Admin/owner deleting someone else's event - only publish to local relay
+                // We need to publish only to the local relay, not external ones
+                const localRelayUrl = `wss://${window.location.host}/ws`;
+                
+                // Create a modified client that only connects to the local relay
+                const localClient = new NostrClient();
+                await localClient.connectToRelay(localRelayUrl);
+                
+                const result = await localClient.publish(signedDeleteEvent);
+                console.log('Delete event published to local relay only:', result);
+                
+                if (result.success && result.okCount > 0) {
+                    // Remove from local list
+                    allEvents = allEvents.filter(event => event.id !== eventId);
+                    alert(`Event deleted successfully (local relay only - admin/owner deleting other user's event)`);
+                } else {
+                    throw new Error('Local relay did not accept the delete event');
+                }
             }
         } catch (error) {
             console.error('Failed to delete event:', error);

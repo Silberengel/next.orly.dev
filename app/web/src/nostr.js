@@ -73,6 +73,61 @@ class NostrClient {
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
+  async connectToRelay(relayUrl) {
+    console.log(`Connecting to single relay: ${relayUrl}`);
+
+    return new Promise((resolve) => {
+      try {
+        console.log(`Attempting to connect to ${relayUrl}`);
+        const ws = new WebSocket(relayUrl);
+
+        ws.onopen = () => {
+          console.log(`✓ Successfully connected to ${relayUrl}`);
+          resolve(true);
+        };
+
+        ws.onerror = (error) => {
+          console.error(`✗ Error connecting to ${relayUrl}:`, error);
+          resolve(false);
+        };
+
+        ws.onclose = (event) => {
+          console.warn(
+            `Connection closed to ${relayUrl}:`,
+            event.code,
+            event.reason,
+          );
+        };
+
+        ws.onmessage = (event) => {
+          console.log(`Message from ${relayUrl}:`, event.data);
+          try {
+            this.handleMessage(relayUrl, JSON.parse(event.data));
+          } catch (error) {
+            console.error(
+              `Failed to parse message from ${relayUrl}:`,
+              error,
+              event.data,
+            );
+          }
+        };
+
+        this.relays.set(relayUrl, ws);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) {
+            console.warn(`Connection timeout for ${relayUrl}`);
+            resolve(false);
+          }
+        }, 5000);
+      } catch (error) {
+        console.error(`Failed to create WebSocket for ${relayUrl}:`, error);
+        resolve(false);
+      }
+    });
+  }
+
   handleMessage(relayUrl, message) {
     console.log(`Processing message from ${relayUrl}:`, message);
     const [type, subscriptionId, event, ...rest] = message;
@@ -237,6 +292,9 @@ class NostrClient {
 
 // Create a global client instance
 export const nostrClient = new NostrClient();
+
+// Export the class for creating new instances
+export { NostrClient };
 
 // IndexedDB helpers for caching events (kind 0 profiles)
 const DB_NAME = "nostrCache";
