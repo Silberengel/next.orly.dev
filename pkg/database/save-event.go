@@ -108,6 +108,12 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (kc, vc int, err error) {
 		err = errors.New("nil event")
 		return
 	}
+
+	// Check if the event is ephemeral (kinds 20000-29999) and reject if so
+	if kind.IsEphemeral(ev.Kind) {
+		err = errors.New("blocked: ephemeral events (kinds 20000-29999) are not stored")
+		return
+	}
 	// check if the event already exists
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {

@@ -207,6 +207,12 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			}
 		}
 	}
+
+	// Check if the event is ephemeral (kinds 20000-29999) and just deliver to subscribers.
+	if kind.IsEphemeral(env.E.Kind) {
+		go l.publishers.Deliver(env.E)
+		return
+	}
 	// store the event - use a separate context to prevent cancellation issues
 	saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -215,11 +215,78 @@ func TestSaveExistingEvent(t *testing.T) {
 	}
 
 	// Verify the error message
-	expectedErrorPrefix := "event already exists: "
+	expectedErrorPrefix := "blocked: event already exists"
 	if !bytes.HasPrefix([]byte(err.Error()), []byte(expectedErrorPrefix)) {
 		t.Fatalf(
 			"Expected error message to start with '%s', got '%s'",
 			expectedErrorPrefix, err.Error(),
 		)
+	}
+}
+
+// TestEphemeralEventRejection tests that ephemeral events (kinds 20000-29999) are rejected.
+func TestEphemeralEventRejection(t *testing.T) {
+	// Create a temporary directory for the database
+	tempDir, err := os.MkdirTemp("", "test-db-*")
+	if err != nil {
+		t.Fatalf("Failed to create temporary directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir) // Clean up after the test
+
+	// Create a context and cancel function for the database
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Initialize the database
+	db, err := New(ctx, cancel, tempDir, "info")
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+	defer db.Close()
+
+	// Create a signer
+	sign := new(p256k.Signer)
+	if err := sign.Generate(); chk.E(err) {
+		t.Fatal(err)
+	}
+
+	// Test different ephemeral event kinds
+	ephemeralKinds := []uint16{
+		20000, // EphemeralStart
+		21000, // LightningPubRPC
+		22242, // ClientAuthentication
+		23194, // NWCWalletRequest
+		23195, // NWCWalletResponse
+		23196, // NWCNotification
+		23197, // WalletNotification
+		24133, // NostrConnect
+		27235, // HTTPAuth
+		29998, // Just before EphemeralEnd
+	}
+
+	for _, kindValue := range ephemeralKinds {
+		// Create an ephemeral event
+		ev := event.New()
+		ev.Kind = kindValue
+		ev.Pubkey = sign.Pub()
+		ev.CreatedAt = timestamp.Now().V
+		ev.Content = []byte("Ephemeral event")
+		ev.Tags = tag.NewS()
+		ev.Sign(sign)
+
+		// Try to save the ephemeral event, it should be rejected
+		_, _, err = db.SaveEvent(ctx, ev)
+		if err == nil {
+			t.Fatalf("Expected ephemeral event with kind %d to be rejected, but it was accepted", kindValue)
+		}
+
+		// Verify the error message
+		expectedError := "blocked: ephemeral events (kinds 20000-29999) are not stored"
+		if err.Error() != expectedError {
+			t.Fatalf(
+				"Expected error message '%s', got '%s' for kind %d",
+				expectedError, err.Error(), kindValue,
+			)
+		}
 	}
 }

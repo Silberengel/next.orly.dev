@@ -138,6 +138,12 @@
         return kindNames[kind] || `Kind ${kind}`;
     }
 
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return 'Unknown time';
+        const date = new Date(timestamp * 1000);
+        return date.toLocaleString();
+    }
+
     function truncatePubkey(pubkey) {
         return pubkey.slice(0, 8) + '...' + pubkey.slice(-8);
     }
@@ -1482,7 +1488,7 @@
                     <div class="events-view-content" on:scroll={handleScroll}>
                         {#if filteredEvents.length > 0}
                             {#each filteredEvents as event}
-                                <div class="events-view-item" class:expanded={expandedEvents.has(event.id)}>
+                                <div class="events-view-item" class:expanded={expandedEvents.has(event.id)} title="Event created: {formatTimestamp(event.created_at)}">
                                     <div class="events-view-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
                                         <div class="events-view-avatar">
                                             <div class="avatar-placeholder">👤</div>
@@ -1681,7 +1687,7 @@
                         <div class="search-results-content" on:scroll={(e) => handleSearchScroll(e, searchTab.id)}>
                             {#if searchResults.get(searchTab.id)?.events?.length > 0}
                                 {#each searchResults.get(searchTab.id).events as event}
-                                    <div class="search-result-item" class:expanded={expandedEvents.has(event.id)}>
+                                    <div class="search-result-item" class:expanded={expandedEvents.has(event.id)} title="Event created: {formatTimestamp(event.created_at)}">
                                         <div class="search-result-row" on:click={() => toggleEventExpansion(event.id)} on:keydown={(e) => e.key === 'Enter' && toggleEventExpansion(event.id)} role="button" tabindex="0">
                                             <div class="search-result-avatar">
                                                 <div class="avatar-placeholder">👤</div>
