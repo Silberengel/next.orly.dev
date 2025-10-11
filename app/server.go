@@ -31,7 +31,6 @@ type Server struct {
 	mux        *http.ServeMux
 	Config     *config.C
 	Ctx        context.Context
-	remote     string
 	publishers *publish.S
 	Admins     [][]byte
 	Owners     [][]byte

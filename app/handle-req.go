@@ -324,7 +324,7 @@ privCheck:
 				remote:       l.remote,
 				Id:           string(env.Subscription),
 				Receiver:     receiver,
-				Filters:      env.Filters,
+				Filters:      &subbedFilters,
 				AuthedPubkey: l.authedPubkey.Load(),
 			},
 		)
