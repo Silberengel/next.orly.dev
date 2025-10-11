@@ -6,7 +6,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
-    image: silberengel/next-orly:v0.14.1
+    image: silberengel/next-orly:v0.14.2
     container_name: orly-relay
     restart: unless-stopped
     ports:
