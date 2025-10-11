@@ -1483,7 +1483,7 @@
 <!-- Header -->
 <header class="main-header" class:dark-theme={isDarkTheme}>
     <div class="header-content">
-        <img src="/orly-favicon.png" alt="Orly Logo" class="logo"/>
+        <img src="/orly.png" alt="ORLY Logo" class="logo"/>
         {#if isSearchMode}
             <div class="search-input-container">
                 <input 
@@ -2036,6 +2036,11 @@
         width: 2.5em;
         object-fit: contain;
         flex-shrink: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .logo:hover {
+        content: url('/favicon.png');
     }
 
     .header-title {
@@ -2646,17 +2651,18 @@
         line-height: 1;
         transition: background-color 0.2s;
         justify-content: center;
-        padding: 1em 1em 1em 1em;
+        padding: 0;
         margin: 0;
     }
     
     .user-profile-btn:hover {
         background-color: var(--button-bg);
+        padding: 0;
     }
     
     .user-avatar, .user-avatar-placeholder {
-        width: 1em;
-        height: 1em;
+        width: 2.5em;
+        height: 2.5em;
         object-fit: cover;
     }
     
@@ -2669,12 +2675,13 @@
     }
     
     .user-name {
-        font-size: 0.8rem;
+        font-size: 1.2em;
         font-weight: 500;
         max-width: 100px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        padding:0.5em;
     }
     
     /* Settings Drawer */

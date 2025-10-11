@@ -5,6 +5,7 @@ import terser from "@rollup/plugin-terser";
 import resolve from "@rollup/plugin-node-resolve";
 import livereload from "rollup-plugin-livereload";
 import css from "rollup-plugin-css-only";
+import copy from "rollup-plugin-copy";
 
 const production = !process.env.ROLLUP_WATCH;
 
@@ -71,6 +72,17 @@ export default {
     // If we're building for production (npm run build
     // instead of npm run dev), minify
     production && terser(),
+
+    // Copy static files from public to dist
+    copy({
+      targets: [
+        { src: 'public/index.html', dest: 'dist' },
+        { src: 'public/global.css', dest: 'dist' },
+        { src: 'public/favicon.png', dest: 'dist' },
+        { src: 'public/orly.png', dest: 'dist' },
+        { src: 'public/orly-favicon.png', dest: 'dist' }
+      ]
+    }),
   ],
   watch: {
     clearScreen: false,
