@@ -45,68 +45,55 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	// Check if sprocket is enabled and process event through it
 	if l.sprocketManager != nil && l.sprocketManager.IsEnabled() {
 		if l.sprocketManager.IsDisabled() {
-			// Sprocket is disabled due to failure - reject all events
-			log.W.F("sprocket is disabled, rejecting event %0x", env.E.ID)
-			if err = Ok.Error(
-				l, env,
-				"sprocket disabled - events rejected until sprocket is restored",
-			); chk.E(err) {
-				return
-			}
-			return
-		}
-
-		if !l.sprocketManager.IsRunning() {
-			// Sprocket is enabled but not running - reject all events
-			log.W.F(
-				"sprocket is enabled but not running, rejecting event %0x",
+			// Sprocket is disabled due to failure - allow events through
+			log.I.F("sprocket is disabled, allowing event %0x through without processing", env.E.ID)
+			// Continue with normal processing instead of rejecting
+		} else if !l.sprocketManager.IsRunning() {
+			// Sprocket is enabled but not running - allow events through
+			log.I.F(
+				"sprocket is enabled but not running, allowing event %0x through without processing",
 				env.E.ID,
 			)
-			if err = Ok.Error(
-				l, env,
-				"sprocket not running - events rejected until sprocket starts",
-			); chk.E(err) {
-				return
-			}
-			return
-		}
+			// Continue with normal processing instead of rejecting
+		} else {
 
-		// Process event through sprocket
-		response, sprocketErr := l.sprocketManager.ProcessEvent(env.E)
-		if chk.E(sprocketErr) {
-			log.E.F("sprocket processing failed: %v", sprocketErr)
-			if err = Ok.Error(
-				l, env, "sprocket processing failed",
-			); chk.E(err) {
+			// Process event through sprocket
+			response, sprocketErr := l.sprocketManager.ProcessEvent(env.E)
+			if chk.E(sprocketErr) {
+				log.E.F("sprocket processing failed: %v", sprocketErr)
+				if err = Ok.Error(
+					l, env, "sprocket processing failed",
+				); chk.E(err) {
+					return
+				}
 				return
 			}
-			return
-		}
 
-		// Handle sprocket response
-		switch response.Action {
-		case "accept":
-			// Continue with normal processing
-			log.D.F("sprocket accepted event %0x", env.E.ID)
-		case "reject":
-			// Return OK false with message
-			if err = okenvelope.NewFrom(
-				env.Id(), false,
-				reason.Error.F(response.Msg),
-			).Write(l); chk.E(err) {
+			// Handle sprocket response
+			switch response.Action {
+			case "accept":
+				// Continue with normal processing
+				log.D.F("sprocket accepted event %0x", env.E.ID)
+			case "reject":
+				// Return OK false with message
+				if err = okenvelope.NewFrom(
+					env.Id(), false,
+					reason.Error.F(response.Msg),
+				).Write(l); chk.E(err) {
+					return
+				}
 				return
-			}
-			return
-		case "shadowReject":
-			// Return OK true but abort processing
-			if err = Ok.Ok(l, env, ""); chk.E(err) {
+			case "shadowReject":
+				// Return OK true but abort processing
+				if err = Ok.Ok(l, env, ""); chk.E(err) {
+					return
+				}
+				log.D.F("sprocket shadow rejected event %0x", env.E.ID)
 				return
+			default:
+				log.W.F("unknown sprocket action: %s", response.Action)
+				// Default to accept for unknown actions
 			}
-			log.D.F("sprocket shadow rejected event %0x", env.E.ID)
-			return
-		default:
-			log.W.F("unknown sprocket action: %s", response.Action)
-			// Default to accept for unknown actions
 		}
 	}
 	// check the event ID is correct

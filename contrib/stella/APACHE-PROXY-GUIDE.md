@@ -32,9 +32,9 @@ docker run -d \
   -e ORLY_ACL_MODE=follows \
   -e ORLY_SPIDER_MODE=follows \
   -e ORLY_SPIDER_FREQUENCY=1h \
-  -e ORLY_SPROCKET_ENABLED=true \
+  -e ORLY_SPROCKET_ENABLED=false \
   -e ORLY_SUBSCRIPTION_ENABLED=false \
-  silberengel/next-orly:v0.14.1
+  silberengel/next-orly:v0.14.2
 
 # Test the relay
 curl -I http://127.0.0.1:7777
