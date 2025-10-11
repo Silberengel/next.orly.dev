@@ -94,10 +94,6 @@ cmd/benchmark/data
 !contrib/stella/.dockerignore
 !*.jsx
 !*.tsx
-!app/web/dist
-!/app/web/dist
-!/app/web/dist/*
-!/app/web/dist/**
 !bun.lock
 !*.svelte
 # ...even if they are in subdirectories
@@ -122,4 +118,3 @@ pkg/database/testrealy
 /.idea/.name
 /ctxproxy.config.yml
 cmd/benchmark/external/**
-app/web/dist/**
