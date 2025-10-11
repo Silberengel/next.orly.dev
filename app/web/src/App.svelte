@@ -156,6 +156,11 @@
         return content.length > maxLength ? content.slice(0, maxLength) + '...' : content;
     }
 
+    function formatTimestamp(timestamp) {
+        if (!timestamp) return '';
+        return new Date(timestamp * 1000).toLocaleString();
+    }
+
     function toggleEventExpansion(eventId) {
         if (expandedEvents.has(eventId)) {
             expandedEvents.delete(eventId);
@@ -1599,34 +1604,7 @@
         {:else if selectedTab === 'events'}
             <div class="events-view-container">
                 {#if isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner')}
-                    <div class="events-view-header">
-                        <div class="events-view-toggle">
-                            <label class="toggle-container">
-                                <input type="checkbox" bind:checked={showOnlyMyEvents} on:change={() => handleToggleChange()}>
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label">Only show my events</span>
-                            </label>
-                        </div>
-                        <div class="events-view-buttons">
-                            <button class="refresh-btn" on:click={() => {
-                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
-                                loadAllEvents(false, authors);
-                            }} disabled={isLoadingEvents}>
-                                🔄 Load More
-                            </button>
-                            <button class="reload-btn" on:click={() => {
-                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
-                                loadAllEvents(true, authors);
-                            }} disabled={isLoadingEvents}>
-                                {#if isLoadingEvents}
-                                    <div class="spinner"></div>
-                                {:else}
-                                    🔄
-                                {/if}
-                            </button>
-                        </div>
-                    </div>
-                    <div class="events-view-content" on:scroll={handleScroll}>
+                <div class="events-view-content" on:scroll={handleScroll}>
                         {#if filteredEvents.length > 0}
                             {#each filteredEvents as event}
                                 <div class="events-view-item" class:expanded={expandedEvents.has(event.id)}>
@@ -1644,6 +1622,9 @@
                                             </div>
                                         </div>
                                         <div class="events-view-content">
+                                            <div class="event-timestamp">
+                                                {formatTimestamp(event.created_at)}
+                                            </div>
                                             {#if event.kind === 5}
                                                 <div class="delete-event-info">
                                                     <span class="delete-event-label">🗑️ Delete Event</span>
@@ -1656,7 +1637,9 @@
                                                     {/if}
                                                 </div>
                                             {:else}
-                                                {truncateContent(event.content)}
+                                                <div class="event-content-single-line">
+                                                    {truncateContent(event.content)}
+                                                </div>
                                             {/if}
                                         </div>
                                         {#if event.kind !== 5 && ((userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey && event.pubkey === userPubkey))}
@@ -1690,15 +1673,39 @@
                                 <p>No more events to load.</p>
                             </div>
                         {/if}
-                    </div>
-                {:else if isLoggedIn}
+                </div>
+                {:else}
                     <div class="permission-denied">
                         <p>❌ Write, admin, or owner permission required to view all events.</p>
                     </div>
-                {:else}
-                    <div class="login-prompt">
-                        <p>Please log in to view events.</p>
-                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
+                {/if}
+                {#if isLoggedIn && (userRole === 'write' || userRole === 'admin' || userRole === 'owner')}
+                    <div class="events-view-header">
+                        <div class="events-view-toggle">
+                            <label class="toggle-container">
+                                <input type="checkbox" bind:checked={showOnlyMyEvents} on:change={() => handleToggleChange()}>
+                                <span class="toggle-slider"></span>
+                                <span class="toggle-label">Only show my events</span>
+                            </label>
+                        </div>
+                        <div class="events-view-buttons">
+                            <button class="refresh-btn" on:click={() => {
+                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+                                loadAllEvents(false, authors);
+                            }} disabled={isLoadingEvents}>
+                                🔄 Load More
+                            </button>
+                            <button class="reload-btn" on:click={() => {
+                                const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
+                                loadAllEvents(true, authors);
+                            }} disabled={isLoadingEvents}>
+                                {#if isLoadingEvents}
+                                    <div class="spinner"></div>
+                                {:else}
+                                    🔄
+                                {/if}
+                            </button>
+                        </div>
                     </div>
                 {/if}
             </div>
@@ -1856,7 +1863,12 @@
                                                 </div>
                                             </div>
                                             <div class="search-result-content">
-                                                {truncateContent(event.content)}
+                                                <div class="event-timestamp">
+                                                    {formatTimestamp(event.created_at)}
+                                                </div>
+                                                <div class="event-content-single-line">
+                                                    {truncateContent(event.content)}
+                                                </div>
                                             </div>
                                             {#if event.kind !== 5 && ((userRole === 'admin' || userRole === 'owner') || (userRole === 'write' && event.pubkey && event.pubkey === userPubkey))}
                                                 <button class="delete-btn" on:click|stopPropagation={() => deleteEvent(event.id)}>
@@ -2986,14 +2998,18 @@
     }
 
     .events-view-header {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
         padding: 0.5rem 1rem;
         background: var(--header-bg);
-        border-bottom: 1px solid var(--border-color);
-        flex-shrink: 0;
+        border-top: 1px solid var(--border-color);
         display: flex;
         justify-content: space-between;
         align-items: center;
         height: 2.5em;
+        z-index: 10;
     }
 
 
@@ -3075,30 +3091,30 @@
     .events-view-row {
         display: flex;
         align-items: center;
-        padding: 0.75rem 1rem;
+        padding: 0.4rem 1rem;
         cursor: pointer;
         gap: 0.75rem;
-        min-height: 3rem;
+        min-height: 2rem;
     }
 
     .events-view-avatar {
         flex-shrink: 0;
-        width: 2rem;
-        height: 2rem;
+        width: 1.5rem;
+        height: 1.5rem;
         display: flex;
         align-items: center;
         justify-content: center;
     }
 
     .avatar-placeholder {
-        width: 2rem;
-        height: 2rem;
+        width: 1.5rem;
+        height: 1.5rem;
         border-radius: 50%;
         background: var(--button-bg);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.8rem;
+        font-size: 0.7rem;
     }
 
     .events-view-info {
@@ -3106,7 +3122,7 @@
         width: 12rem;
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: 0.1rem;
     }
 
     .events-view-author {
@@ -3145,7 +3161,21 @@
         font-size: 0.9rem;
         line-height: 1.3;
         word-break: break-word;
-        padding: 0 0.5rem;
+    }
+
+    .event-timestamp {
+        font-size: 0.75rem;
+        color: var(--text-color);
+        opacity: 0.7;
+        margin-bottom: 0.25rem;
+        font-weight: 500;
+    }
+
+    .event-content-single-line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
     }
 
     .delete-btn {
@@ -3153,10 +3183,15 @@
         background: none;
         border: none;
         cursor: pointer;
-        padding: 0.25rem;
+        padding: 0.2rem;
         border-radius: 0.25rem;
         transition: background-color 0.2s;
-        font-size: 0.9rem;
+        font-size: 1.6rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.5rem;
+        height: 1.5rem;
     }
 
     .delete-btn:hover {
@@ -3362,7 +3397,21 @@
         font-size: 0.9rem;
         line-height: 1.3;
         word-break: break-word;
-        padding: 0 0.5rem;
+    }
+
+    .search-result-content .event-timestamp {
+        font-size: 0.75rem;
+        color: var(--text-color);
+        opacity: 0.7;
+        margin-bottom: 0.25rem;
+        font-weight: 500;
+    }
+
+    .search-result-content .event-content-single-line {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
     }
 
     .search-result-details {
@@ -3409,6 +3458,48 @@
     }
 
     
+    @media (max-width: 1280px) {
+        .sidebar {
+            width: 60px;
+        }
+        
+        .main-content {
+            left: 60px;
+        }
+        
+        .events-view-container {
+            left: 60px;
+        }
+        
+        .search-results-view {
+            left: 60px;
+        }
+        
+        .tab-label {
+            display: none;
+        }
+        
+        .tab {
+            justify-content: center;
+            padding: 0 0.5rem;
+        }
+        
+        .tab-icon {
+            width: 2em;
+            height: 2em;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.25rem;
+            background-color: var(--bg-color);
+        }
+        
+        .tab.active .tab-icon {
+            background-color: var(--primary);
+            color: white;
+        }
+    }
+
     @media (max-width: 640px) {
         .settings-drawer {
             width: 100%;
