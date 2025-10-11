@@ -2,6 +2,7 @@
     import LoginModal from './LoginModal.svelte';
     import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, fetchEventById, fetchDeleteEventsByTarget, nostrClient, NostrClient } from './nostr.js';
     import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+    import { publishEventWithAuth } from './websocket-auth.js';
     
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -57,6 +58,9 @@
     let sprocketMessageType = 'info';
     let sprocketEnabled = false;
     let sprocketUploadFile = null;
+
+    // Compose tab state
+    let composeEventJson = '';
 
     // Kind name mapping based on repository kind definitions
     const kindNames = {
@@ -170,6 +174,51 @@
         expandedEvents = expandedEvents; // Trigger reactivity
     }
 
+    async function copyEventToClipboard(eventData, clickEvent) {
+        try {
+            // Create minified JSON (no indentation)
+            const minifiedJson = JSON.stringify(eventData);
+            await navigator.clipboard.writeText(minifiedJson);
+            
+            // Show temporary feedback
+            const button = clickEvent.target.closest('.copy-json-btn');
+            if (button) {
+                const originalText = button.textContent;
+                button.textContent = '✅';
+                button.style.backgroundColor = '#4CAF50';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.backgroundColor = '';
+                }, 2000);
+            }
+        } catch (error) {
+            console.error('Failed to copy to clipboard:', error);
+            // Fallback for older browsers
+            try {
+                const textArea = document.createElement('textarea');
+                textArea.value = JSON.stringify(eventData);
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                const button = clickEvent.target.closest('.copy-json-btn');
+                if (button) {
+                    const originalText = button.textContent;
+                    button.textContent = '✅';
+                    button.style.backgroundColor = '#4CAF50';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.backgroundColor = '';
+                    }, 2000);
+                }
+            } catch (fallbackError) {
+                console.error('Fallback copy also failed:', fallbackError);
+                alert('Failed to copy to clipboard. Please copy manually.');
+            }
+        }
+    }
+
     async function handleToggleChange() {
         // Toggle state is already updated by bind:checked
         console.log('Toggle changed, showOnlyMyEvents:', showOnlyMyEvents);
@@ -237,6 +286,21 @@
             console.log('Signed delete event:', signedDeleteEvent);
             console.log('Signed delete event pubkey:', signedDeleteEvent.pubkey);
             console.log('Delete event tags:', signedDeleteEvent.tags);
+            
+            // Publish to the ORLY relay using WebSocket authentication
+            const relayUrl = `wss://${window.location.host}`;
+            
+            try {
+                const result = await publishEventWithAuth(relayUrl, signedDeleteEvent, userSigner, userPubkey);
+                
+                if (result.success) {
+                    console.log('Delete event published successfully to ORLY relay');
+                } else {
+                    console.error('Failed to publish delete event:', result.reason);
+                }
+            } catch (error) {
+                console.error('Error publishing delete event:', error);
+            }
             
             // Determine if we should publish to external relays
             // Only publish to external relays if:
@@ -820,6 +884,7 @@
         {id: 'export', icon: '📤', label: 'Export'},
         {id: 'import', icon: '💾', label: 'Import', requiresAdmin: true},
         {id: 'events', icon: '📡', label: 'Events'},
+        {id: 'compose', icon: '✏️', label: 'Compose'},
         {id: 'sprocket', icon: '⚙️', label: 'Sprocket', requiresOwner: true},
     ];
 
@@ -1478,6 +1543,106 @@
         
         return base64Event;
     }
+
+    // Compose tab functions
+    function reformatJson() {
+        try {
+            if (!composeEventJson.trim()) {
+                alert('Please enter some JSON to reformat');
+                return;
+            }
+            const parsed = JSON.parse(composeEventJson);
+            composeEventJson = JSON.stringify(parsed, null, 2);
+        } catch (error) {
+            alert('Invalid JSON: ' + error.message);
+        }
+    }
+
+    async function signEvent() {
+        try {
+            if (!composeEventJson.trim()) {
+                alert('Please enter an event to sign');
+                return;
+            }
+            
+            if (!isLoggedIn || !userPubkey) {
+                alert('Please log in to sign events');
+                return;
+            }
+
+            if (!userSigner) {
+                alert('No signer available. Please log in with a valid authentication method.');
+                return;
+            }
+
+            const event = JSON.parse(composeEventJson);
+            
+            // Update event with current user's pubkey and timestamp
+            event.pubkey = userPubkey;
+            event.created_at = Math.floor(Date.now() / 1000);
+            
+            // Remove any existing id and sig to ensure fresh signing
+            delete event.id;
+            delete event.sig;
+            
+            // Sign the event using the real signer
+            const signedEvent = await userSigner.signEvent(event);
+            
+            // Update the compose area with the signed event
+            composeEventJson = JSON.stringify(signedEvent, null, 2);
+            
+            // Show success feedback
+            alert('Event signed successfully!');
+        } catch (error) {
+            console.error('Error signing event:', error);
+            alert('Error signing event: ' + error.message);
+        }
+    }
+
+    async function publishEvent() {
+        try {
+            if (!composeEventJson.trim()) {
+                alert('Please enter an event to publish');
+                return;
+            }
+            
+            if (!isLoggedIn) {
+                alert('Please log in to publish events');
+                return;
+            }
+
+            if (!userSigner) {
+                alert('No signer available. Please log in with a valid authentication method.');
+                return;
+            }
+
+            const event = JSON.parse(composeEventJson);
+            
+            // Validate that the event has required fields
+            if (!event.id || !event.sig) {
+                alert('Event must be signed before publishing. Please click "Sign" first.');
+                return;
+            }
+            
+            // Publish to the ORLY relay using WebSocket (same address as current page)
+            const relayUrl = `wss://${window.location.host}`;
+            
+            // Use the authentication module to publish the event
+            const result = await publishEventWithAuth(relayUrl, event, userSigner, userPubkey);
+            
+            if (result.success) {
+                alert('Event published successfully to ORLY relay!');
+                // Optionally clear the editor after successful publish
+                // composeEventJson = '';
+            } else {
+                alert(`Event publishing failed: ${result.reason || 'Unknown error'}`);
+            }
+            
+        } catch (error) {
+            console.error('Error publishing event:', error);
+            alert('Error publishing event: ' + error.message);
+        }
+    }
 </script>
 
 <!-- Header -->
@@ -1650,7 +1815,12 @@
                                     </div>
                                     {#if expandedEvents.has(event.id)}
                                         <div class="events-view-details">
-                                            <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                            <div class="json-container">
+                                                <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                                <button class="copy-json-btn" on:click|stopPropagation={(e) => copyEventToClipboard(event, e)} title="Copy minified JSON to clipboard">
+                                                    📋
+                                                </button>
+                                            </div>
                                         </div>
                                     {/if}
                                 </div>
@@ -1708,6 +1878,22 @@
                         </div>
                     </div>
                 {/if}
+            </div>
+        {:else if selectedTab === 'compose'}
+            <div class="compose-view">
+                <div class="compose-header">
+                    <button class="compose-btn reformat-btn" on:click={reformatJson}>Reformat</button>
+                    <button class="compose-btn sign-btn" on:click={signEvent}>Sign</button>
+                    <button class="compose-btn publish-btn" on:click={publishEvent}>Publish</button>
+                </div>
+                <div class="compose-editor">
+                    <textarea 
+                        bind:value={composeEventJson} 
+                        class="compose-textarea" 
+                        placeholder="Enter your Nostr event JSON here..."
+                        spellcheck="false"
+                    ></textarea>
+                </div>
             </div>
         {:else if selectedTab === 'sprocket'}
             <div class="sprocket-view">
@@ -1878,7 +2064,12 @@
                                         </div>
                                         {#if expandedEvents.has(event.id)}
                                             <div class="search-result-details">
-                                                <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                                <div class="json-container">
+                                                    <pre class="event-json">{JSON.stringify(event, null, 2)}</pre>
+                                                    <button class="copy-json-btn" on:click|stopPropagation={(e) => copyEventToClipboard(event, e)} title="Copy minified JSON to clipboard">
+                                                        📋
+                                                    </button>
+                                                </div>
                                             </div>
                                         {/if}
                                     </div>
@@ -2873,6 +3064,76 @@
         margin: 0 auto;
     }
 
+    .compose-view {
+        position: fixed;
+        top: 3em;
+        left: 200px;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        flex-direction: column;
+        background: transparent;
+    }
+
+    .compose-header {
+        display: flex;
+        gap: 0.5em;
+        padding: 0.5em;
+        background: transparent;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .compose-btn {
+        padding: 0.5em 1em;
+        border: 1px solid var(--border-color);
+        border-radius: 0.25rem;
+        background: var(--button-bg);
+        color: var(--button-text);
+        cursor: pointer;
+        font-size: 0.9rem;
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .compose-btn:hover {
+        background: var(--button-hover-bg);
+        border-color: var(--button-hover-border);
+    }
+
+    .publish-btn {
+        background: var(--accent-color, #007bff);
+        color: white;
+        border-color: var(--accent-color, #007bff);
+    }
+
+    .publish-btn:hover {
+        background: var(--accent-hover-color, #0056b3);
+        border-color: var(--accent-hover-color, #0056b3);
+    }
+
+    .compose-editor {
+        flex: 1;
+        padding: 0.5em;
+    }
+
+    .compose-textarea {
+        width: 100%;
+        height: 100%;
+        border: 1px solid var(--border-color);
+        border-radius: 0.25rem;
+        background: var(--bg-color);
+        color: var(--text-color);
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+        padding: 1rem;
+        resize: none;
+        outline: none;
+    }
+
+    .compose-textarea:focus {
+        border-color: var(--accent-color, #007bff);
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+    }
+
     .export-view h2, .import-view h2 {
         margin: 0 0 2rem 0;
         color: var(--text-color);
@@ -3241,6 +3502,37 @@
         padding: 1rem;
     }
 
+    .json-container {
+        position: relative;
+    }
+
+    .copy-json-btn {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: var(--button-bg);
+        color: var(--button-text);
+        border: 1px solid var(--border-color);
+        border-radius: 0.25rem;
+        padding: 0.5rem 1rem;
+        font-size: 1.6rem;
+        cursor: pointer;
+        transition: background-color 0.2s, border-color 0.2s;
+        z-index: 10;
+        opacity: 0.8;
+        width: auto;
+        height: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .copy-json-btn:hover {
+        background: var(--button-hover-bg);
+        border-color: var(--button-hover-border);
+        opacity: 1;
+    }
+
     .event-json {
         background: var(--bg-color);
         border: 1px solid var(--border-color);
@@ -3478,6 +3770,10 @@
             left: 60px;
         }
         
+        .compose-view {
+            left: 60px;
+        }
+        
         .search-results-view {
             left: 60px;
         }
@@ -3531,6 +3827,10 @@
         }
 
         .events-view-container {
+            left: 160px;
+        }
+        
+        .compose-view {
             left: 160px;
         }
 
