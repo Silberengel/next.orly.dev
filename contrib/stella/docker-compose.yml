@@ -6,7 +6,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
-    image: silberengel/next-orly:latest
+    image: silberengel/next-orly:v0.14.1
     container_name: orly-relay
     restart: unless-stopped
     ports:
@@ -27,6 +27,9 @@ services:
       # ACL and Spider Configuration
       - ORLY_ACL_MODE=follows
       - ORLY_SPIDER_MODE=follows
+      
+      # Sprocket Configuration
+      - ORLY_SPROCKET_ENABLED=true
 
       # Bootstrap relay URLs for initial sync
       - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io
@@ -84,10 +87,6 @@ services:
 volumes:
   relay_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data
   nginx_logs:
     driver: local
 
