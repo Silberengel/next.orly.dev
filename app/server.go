@@ -31,7 +31,6 @@ type Server struct {
 	mux        *http.ServeMux
 	Config     *config.C
 	Ctx        context.Context
-	remote     string
 	publishers *publish.S
 	Admins     [][]byte
 	Owners     [][]byte
@@ -100,7 +99,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) ServiceURL(req *http.Request) (url string) {
 	proto := req.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
+	switch proto {
+	case "":
 		if req.TLS != nil {
 			proto = "https"
 		} else {
@@ -116,19 +116,17 @@ func (s *Server) ServiceURL(req *http.Request) (url string) {
 
 func (s *Server) WebSocketURL(req *http.Request) (url string) {
 	proto := req.Header.Get("X-Forwarded-Proto")
-	if proto == "" {
+	switch proto {
+	case "":
 		if req.TLS != nil {
 			proto = "wss"
 		} else {
 			proto = "ws"
 		}
-	} else {
-		// Convert HTTP scheme to WebSocket scheme
-		if proto == "https" {
-			proto = "wss"
-		} else if proto == "http" {
-			proto = "ws"
-		}
+	case "https":
+		proto = "wss"
+	case "http":
+		proto = "ws"
 	}
 	host := req.Header.Get("X-Forwarded-Host")
 	if host == "" {
