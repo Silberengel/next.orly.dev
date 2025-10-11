@@ -5,8 +5,8 @@ services:
   orly-relay:
     build:
       context: ../..
-      dockerfile: Dockerfile
-    image: silberengel/next-orly:latest
+      dockerfile: contrib/stella/Dockerfile
+    image: silberengel/next-orly:v0.15.0
     container_name: orly-relay
     restart: unless-stopped
     ports:
@@ -30,6 +30,9 @@ services:
 
       # Bootstrap relay URLs for initial sync
       - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io
+
+      # Sprocket Configuration (disabled by default)
+      - ORLY_SPROCKET_ENABLED=false
 
       # Subscription Settings (optional)
       - ORLY_SUBSCRIPTION_ENABLED=false
@@ -84,10 +87,6 @@ services:
 volumes:
   relay_data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data
   nginx_logs:
     driver: local
 

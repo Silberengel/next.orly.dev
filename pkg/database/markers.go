@@ -1,8 +1,11 @@
 package database
 
 import (
+	"errors"
+
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 )
 
 const (
@@ -12,51 +15,59 @@ const (
 // SetMarker stores an arbitrary marker in the database
 func (d *D) SetMarker(key string, value []byte) (err error) {
 	markerKey := []byte(markerPrefix + key)
-	
+
 	err = d.Update(func(txn *badger.Txn) error {
 		return txn.Set(markerKey, value)
 	})
-	
+
 	return
 }
 
 // GetMarker retrieves an arbitrary marker from the database
 func (d *D) GetMarker(key string) (value []byte, err error) {
 	markerKey := []byte(markerPrefix + key)
-	
+
 	err = d.View(func(txn *badger.Txn) error {
 		item, err := txn.Get(markerKey)
 		if err != nil {
 			return err
 		}
-		
+
 		value, err = item.ValueCopy(nil)
 		return err
 	})
-	
+
 	return
 }
 
 // HasMarker checks if a marker exists in the database
 func (d *D) HasMarker(key string) (exists bool) {
 	markerKey := []byte(markerPrefix + key)
-	
+
 	err := d.View(func(txn *badger.Txn) error {
 		_, err := txn.Get(markerKey)
 		return err
 	})
-	
-	exists = !chk.E(err)
+
+	// Log key not found as info instead of error - it's expected for fresh databases
+	if err != nil {
+		if errors.Is(err, badger.ErrKeyNotFound) {
+			log.I.F("marker not found: %s (fresh database)", key)
+		} else {
+			chk.E(err)
+		}
+	}
+	exists = err == nil
 	return
 }
 
 // DeleteMarker removes a marker from the database
 func (d *D) DeleteMarker(key string) (err error) {
 	markerKey := []byte(markerPrefix + key)
-	
+
 	err = d.Update(func(txn *badger.Txn) error {
 		return txn.Delete(markerKey)
 	})
-	
+
 	return
 }
