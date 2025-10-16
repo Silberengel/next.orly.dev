@@ -39,7 +39,8 @@ type C struct {
 	IPWhitelist         []string      `env:"ORLY_IP_WHITELIST" usage:"comma-separated list of IP addresses to allow access from, matches on prefixes to allow private subnets, eg 10.0.0 = 10.0.0.0/8"`
 	Admins              []string      `env:"ORLY_ADMINS" usage:"comma-separated list of admin npubs"`
 	Owners              []string      `env:"ORLY_OWNERS" usage:"comma-separated list of owner npubs, who have full control of the relay for wipe and restart and other functions"`
-	ACLMode             string        `env:"ORLY_ACL_MODE" usage:"ACL mode: follows,none" default:"none"`
+	ACLMode             string        `env:"ORLY_ACL_MODE" usage:"ACL mode: follows, managed (nip-86), none" default:"none"`
+	AuthRequired        bool          `env:"ORLY_AUTH_REQUIRED" usage:"require authentication for all requests (works with managed ACL)" default:"false"`
 	SpiderMode          string        `env:"ORLY_SPIDER_MODE" usage:"spider mode: none,follows" default:"none"`
 	SpiderFrequency     time.Duration `env:"ORLY_SPIDER_FREQUENCY" usage:"spider frequency in seconds" default:"1h"`
 	BootstrapRelays     []string      `env:"ORLY_BOOTSTRAP_RELAYS" usage:"comma-separated list of bootstrap relay URLs for initial sync"`

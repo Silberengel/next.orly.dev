@@ -147,6 +147,32 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 
 		log.D.F("policy allowed event %0x", env.E.ID)
+
+		// Check ACL policy for managed ACL mode
+		if acl.Registry.Active.Load() == "managed" {
+			allowed, aclErr := acl.Registry.CheckPolicy(env.E)
+			if chk.E(aclErr) {
+				log.E.F("ACL policy check failed: %v", aclErr)
+				if err = Ok.Error(
+					l, env, "ACL policy check failed",
+				); chk.E(err) {
+					return
+				}
+				return
+			}
+
+			if !allowed {
+				log.D.F("ACL policy rejected event %0x", env.E.ID)
+				if err = Ok.Blocked(
+					l, env, "event blocked by ACL policy",
+				); chk.E(err) {
+					return
+				}
+				return
+			}
+
+			log.D.F("ACL policy allowed event %0x", env.E.ID)
+		}
 	}
 
 	// check the event ID is correct
@@ -188,15 +214,28 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	)
 
 	// If ACL mode is "none" and no pubkey is set, use the event's pubkey
+	// But if auth is required, always use the authenticated pubkey
 	var pubkeyForACL []byte
-	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" {
+	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" && !l.Config.AuthRequired {
 		pubkeyForACL = env.E.Pubkey
 		log.I.F(
-			"HandleEvent: ACL mode is 'none', using event pubkey for ACL check: %s",
+			"HandleEvent: ACL mode is 'none' and auth not required, using event pubkey for ACL check: %s",
 			hex.Enc(pubkeyForACL),
 		)
 	} else {
 		pubkeyForACL = l.authedPubkey.Load()
+	}
+
+	// If auth is required but user is not authenticated, deny access
+	if l.Config.AuthRequired && len(l.authedPubkey.Load()) == 0 {
+		log.D.F("HandleEvent: authentication required but user not authenticated")
+		if err = okenvelope.NewFrom(
+			env.Id(), false,
+			reason.AuthRequired.F("authentication required"),
+		).Write(l); chk.E(err) {
+			return
+		}
+		return
 	}
 
 	accessLevel := acl.Registry.GetAccessLevel(pubkeyForACL, l.remote)
@@ -257,6 +296,30 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			log.D.F("handle event: sending challenge to %s", l.remote)
 			if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 				Write(l); chk.E(err) {
+				return
+			}
+			return
+		case "blocked":
+			log.D.F(
+				"handle event: sending 'OK,false,blocked...' to %s",
+				l.remote,
+			)
+			if err = okenvelope.NewFrom(
+				env.Id(), false,
+				reason.AuthRequired.F("IP address blocked"),
+			).Write(l); chk.E(err) {
+				return
+			}
+			return
+		case "banned":
+			log.D.F(
+				"handle event: sending 'OK,false,banned...' to %s",
+				l.remote,
+			)
+			if err = okenvelope.NewFrom(
+				env.Id(), false,
+				reason.AuthRequired.F("pubkey banned"),
+			).Write(l); chk.E(err) {
 				return
 			}
 			return

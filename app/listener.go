@@ -8,6 +8,8 @@ import (
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/utils/atomic"
 )
 
@@ -103,4 +105,17 @@ func (l *Listener) Write(p []byte) (n int, err error) {
 	}
 
 	return
+}
+
+// getManagedACL returns the managed ACL instance if available
+func (l *Listener) getManagedACL() *database.ManagedACL {
+	// Get the managed ACL instance from the ACL registry
+	for _, aclInstance := range acl.Registry.ACL {
+		if aclInstance.Type() == "managed" {
+			if managed, ok := aclInstance.(*acl.Managed); ok {
+				return managed.GetManagedACL()
+			}
+		}
+	}
+	return nil
 }

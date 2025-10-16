@@ -207,6 +207,10 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/sprocket/versions", s.handleSprocketVersions)
 	s.mux.HandleFunc("/api/sprocket/delete-version", s.handleSprocketDeleteVersion)
 	s.mux.HandleFunc("/api/sprocket/config", s.handleSprocketConfig)
+	// NIP-86 management endpoint
+	s.mux.HandleFunc("/api/nip86", s.handleNIP86Management)
+	// ACL mode endpoint
+	s.mux.HandleFunc("/api/acl-mode", s.handleACLMode)
 }
 
 // handleFavicon serves orly-favicon.png as favicon.ico
@@ -914,6 +918,30 @@ func (s *Server) handleSprocketConfig(w http.ResponseWriter, r *http.Request) {
 		Enabled bool `json:"enabled"`
 	}{
 		Enabled: s.Config.SprocketEnabled,
+	}
+
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write(jsonData)
+}
+
+// handleACLMode returns the current ACL mode
+func (s *Server) handleACLMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	response := struct {
+		ACLMode string `json:"acl_mode"`
+	}{
+		ACLMode: acl.Registry.Type(),
 	}
 
 	jsonData, err := json.Marshal(response)

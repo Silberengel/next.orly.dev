@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,7 +20,7 @@ import (
 	"next.orly.dev/pkg/encoders/envelopes/reqenvelope"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
-	"next.orly.dev/pkg/encoders/hex"
+	hexenc "next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/reason"
 	"next.orly.dev/pkg/encoders/tag"
@@ -43,8 +44,8 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			)
 		},
 	)
-	// send a challenge to the client to auth if an ACL is active
-	if acl.Registry.Active.Load() != "none" {
+	// send a challenge to the client to auth if an ACL is active or auth is required
+	if acl.Registry.Active.Load() != "none" || l.Config.AuthRequired {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 			Write(l); chk.E(err) {
 			return
@@ -52,6 +53,18 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	}
 	// check permissions of user
 	accessLevel := acl.Registry.GetAccessLevel(l.authedPubkey.Load(), l.remote)
+
+	// If auth is required but user is not authenticated, deny access
+	if l.Config.AuthRequired && len(l.authedPubkey.Load()) == 0 {
+		if err = closedenvelope.NewFrom(
+			env.Subscription,
+			reason.AuthRequired.F("authentication required"),
+		).Write(l); chk.E(err) {
+			return
+		}
+		return
+	}
+
 	switch accessLevel {
 	case "none":
 		// For REQ denial, send a CLOSED with auth-required reason (NIP-01)
@@ -211,7 +224,7 @@ privCheck:
 			pTags := ev.Tags.GetAll([]byte("p"))
 			for _, pTag := range pTags {
 				var pt []byte
-				if pt, err = hex.Dec(string(pTag.Value())); chk.E(err) {
+				if pt, err = hexenc.Dec(string(pTag.Value())); chk.E(err) {
 					continue
 				}
 				if utils.FastEqual(pt, pk) {
@@ -261,13 +274,46 @@ privCheck:
 		}
 		events = policyFilteredEvents
 	}
+
+	// Apply managed ACL filtering for read access if managed ACL is active
+	if acl.Registry.Active.Load() == "managed" {
+		var aclFilteredEvents event.S
+		for _, ev := range events {
+			// Check if event is banned
+			eventID := hex.EncodeToString(ev.ID)
+			if banned, err := l.getManagedACL().IsEventBanned(eventID); err == nil && banned {
+				log.D.F("managed ACL filtered out banned event %s", hexenc.Enc(ev.ID))
+				continue
+			}
+
+			// Check if event author is banned
+			authorHex := hex.EncodeToString(ev.Pubkey)
+			if banned, err := l.getManagedACL().IsPubkeyBanned(authorHex); err == nil && banned {
+				log.D.F("managed ACL filtered out event %s from banned pubkey %s", hexenc.Enc(ev.ID), authorHex)
+				continue
+			}
+
+			// Check if event kind is allowed (only if allowed kinds are configured)
+			if allowed, err := l.getManagedACL().IsKindAllowed(int(ev.Kind)); err == nil && !allowed {
+				allowedKinds, err := l.getManagedACL().ListAllowedKinds()
+				if err == nil && len(allowedKinds) > 0 {
+					log.D.F("managed ACL filtered out event %s with disallowed kind %d", hexenc.Enc(ev.ID), ev.Kind)
+					continue
+				}
+			}
+
+			aclFilteredEvents = append(aclFilteredEvents, ev)
+		}
+		events = aclFilteredEvents
+	}
+
 	seen := make(map[string]struct{})
 	for _, ev := range events {
 		log.T.C(
 			func() string {
 				return fmt.Sprintf(
 					"REQ %s: sending EVENT id=%s kind=%d", env.Subscription,
-					hex.Enc(ev.ID), ev.Kind,
+					hexenc.Enc(ev.ID), ev.Kind,
 				)
 			},
 		)
@@ -286,7 +332,7 @@ privCheck:
 			return
 		}
 		// track the IDs we've sent (use hex encoding for stable key)
-		seen[hex.Enc(ev.ID)] = struct{}{}
+		seen[hexenc.Enc(ev.ID)] = struct{}{}
 	}
 	// write the EOSE to signal to the client that all events found have been
 	// sent.
@@ -311,7 +357,7 @@ privCheck:
 			// remove the IDs that we already sent
 			var notFounds [][]byte
 			for _, id := range f.Ids.T {
-				if _, ok := seen[hex.Enc(id)]; ok {
+				if _, ok := seen[hexenc.Enc(id)]; ok {
 					continue
 				}
 				notFounds = append(notFounds, id)

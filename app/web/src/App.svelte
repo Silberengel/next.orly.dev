@@ -1,5 +1,6 @@
 <script>
     import LoginModal from './LoginModal.svelte';
+    import ManagedACL from './ManagedACL.svelte';
     import { initializeNostrClient, fetchUserProfile, fetchAllEvents, fetchUserEvents, searchEvents, fetchEventById, fetchDeleteEventsByTarget, nostrClient, NostrClient } from './nostr.js';
     import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
     import { publishEventWithAuth } from './websocket-auth.js';
@@ -58,6 +59,9 @@
     let sprocketMessageType = 'info';
     let sprocketEnabled = false;
     let sprocketUploadFile = null;
+    
+    // ACL mode
+    let aclMode = '';
 
     // Compose tab state
     let composeEventJson = '';
@@ -497,6 +501,7 @@
             
             // Fetch user role for already logged in users
             fetchUserRole();
+            fetchACLMode();
         }
         
         // Load persistent app state
@@ -885,6 +890,7 @@
         {id: 'import', icon: '💾', label: 'Import', requiresAdmin: true},
         {id: 'events', icon: '📡', label: 'Events'},
         {id: 'compose', icon: '✏️', label: 'Compose'},
+        {id: 'managed-acl', icon: '🛡️', label: 'Managed ACL', requiresOwner: true},
         {id: 'sprocket', icon: '⚙️', label: 'Sprocket', requiresOwner: true},
     ];
 
@@ -900,10 +906,32 @@
         if (tab.id === 'sprocket' && !sprocketEnabled) {
             return false;
         }
+        // Hide managed ACL tab if not in managed mode
+        if (tab.id === 'managed-acl' && aclMode !== 'managed') {
+            return false;
+        }
+        // Debug logging for managed ACL tab
+        if (tab.id === 'managed-acl') {
+            console.log('Managed ACL tab check:', {
+                isLoggedIn,
+                userRole,
+                requiresOwner: tab.requiresOwner,
+                aclMode
+            });
+        }
         return true;
     });
     
     $: tabs = [...filteredBaseTabs, ...searchTabs];
+    
+    // Debug logging for tabs
+    $: console.log('Tabs debug:', {
+        isLoggedIn,
+        userRole,
+        aclMode,
+        filteredBaseTabs: filteredBaseTabs.map(t => t.id),
+        allTabs: tabs.map(t => t.id)
+    });
 
     function selectTab(tabId) {
         selectedTab = tabId;
@@ -962,6 +990,7 @@
         
         // Fetch user role/permissions
         await fetchUserRole();
+        await fetchACLMode();
     }
     
     function handleLogout() {
@@ -1154,6 +1183,7 @@
                 const data = await response.json();
                 userRole = data.permission || '';
                 console.log('User role loaded:', userRole);
+                console.log('Is owner?', userRole === 'owner');
             } else {
                 console.error('Failed to fetch user role:', response.status);
                 userRole = '';
@@ -1161,6 +1191,23 @@
         } catch (error) {
             console.error('Error fetching user role:', error);
             userRole = '';
+        }
+    }
+    
+    async function fetchACLMode() {
+        try {
+            const response = await fetch('/api/acl-mode');
+            if (response.ok) {
+                const data = await response.json();
+                aclMode = data.acl_mode || '';
+                console.log('ACL mode loaded:', aclMode);
+            } else {
+                console.error('Failed to fetch ACL mode:', response.status);
+                aclMode = '';
+            }
+        } catch (error) {
+            console.error('Error fetching ACL mode:', error);
+            aclMode = '';
         }
     }
 
@@ -1895,6 +1942,25 @@
                     ></textarea>
                 </div>
             </div>
+        {:else if selectedTab === 'managed-acl'}
+            <div class="managed-acl-view">
+                <h2>Managed ACL Configuration</h2>
+                {#if aclMode !== 'managed'}
+                    <div class="acl-mode-warning">
+                        <h3>⚠️ Managed ACL Mode Not Active</h3>
+                        <p>To use the Managed ACL interface, you need to set the ACL mode to "managed" in your relay configuration.</p>
+                        <p>Current ACL mode: <strong>{aclMode || 'unknown'}</strong></p>
+                        <p>Please set <code>ORLY_ACL_MODE=managed</code> in your environment variables and restart the relay.</p>
+                    </div>
+                {:else if isLoggedIn && userRole === 'owner'}
+                    <ManagedACL {userSigner} {userPubkey} />
+                {:else}
+                    <div class="access-denied">
+                        <p>Please log in with owner permissions to access managed ACL configuration.</p>
+                        <button class="login-btn" on:click={openLoginModal}>Log In</button>
+                    </div>
+                {/if}
+            </div>
         {:else if selectedTab === 'sprocket'}
             <div class="sprocket-view">
                 <h2>Sprocket Script Management</h2>
@@ -2353,6 +2419,33 @@
 
     .login-btn:hover {
         background-color: #45a049;
+    }
+    
+    .acl-mode-warning {
+        padding: 20px;
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        border-radius: 8px;
+        color: #856404;
+        margin: 20px 0;
+    }
+    
+    .acl-mode-warning h3 {
+        margin: 0 0 15px 0;
+        color: #856404;
+    }
+    
+    .acl-mode-warning p {
+        margin: 10px 0;
+        line-height: 1.5;
+    }
+    
+    .acl-mode-warning code {
+        background-color: #f8f9fa;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        color: #495057;
     }
 
     /* App Container */
