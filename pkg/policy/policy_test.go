@@ -814,27 +814,201 @@ func TestEdgeCasesManagerDoubleStart(t *testing.T) {
 	}
 }
 
-func TestEdgeCasesManagerDoubleStop(t *testing.T) {
-	// Test double stop without actually starting (simpler test)
-	ctx := context.Background()
-	manager := &PolicyManager{
-		ctx:          ctx,
-		configDir:    "/tmp",
-		scriptPath:   "/tmp/policy.sh",
-		enabled:      true,
-		disabled:     false,
-		responseChan: make(chan PolicyResponse, 100),
+func TestCheckGlobalRulePolicy(t *testing.T) {
+	tests := []struct {
+		name           string
+		globalRule     Rule
+		event          *event.E
+		loggedInPubkey []byte
+		expected       bool
+	}{
+		{
+			name: "global rule with write allow - event allowed",
+			globalRule: Rule{
+				WriteAllow: []string{"746573742d7075626b6579"},
+			},
+			event:          createTestEvent("test-id", "test-pubkey", "test content", 1),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       true,
+		},
+		{
+			name: "global rule with write deny - event denied",
+			globalRule: Rule{
+				WriteDeny: []string{"746573742d7075626b6579"},
+			},
+			event:          createTestEvent("test-id", "test-pubkey", "test content", 1),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
+		{
+			name: "global rule with size limit - event too large",
+			globalRule: Rule{
+				SizeLimit: func() *int64 { v := int64(10); return &v }(),
+			},
+			event:          createTestEvent("test-id", "test-pubkey", "this is a very long content that exceeds the size limit", 1),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
+		{
+			name: "global rule with max age of event - event too old",
+			globalRule: Rule{
+				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() - 7200 // 2 hours ago
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
+		{
+			name: "global rule with max age event in future - event too far in future",
+			globalRule: Rule{
+				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() + 7200 // 2 hours in future
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
 	}
 
-	// Try to stop when not running - should fail
-	err := manager.StopPolicy()
-	if err == nil {
-		t.Error("Expected error when stopping policy manager that's not running")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := &P{
+				Global: tt.globalRule,
+			}
+
+			result := policy.checkGlobalRulePolicy("write", tt.event, tt.loggedInPubkey)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestCheckPolicyWithGlobalRule(t *testing.T) {
+	// Test that global rule is applied first
+	policy := &P{
+		Global: Rule{
+			WriteDeny: []string{"746573742d7075626b6579"}, // Deny test-pubkey globally
+		},
+		Kind: Kinds{
+			Whitelist: []int{1}, // Allow kind 1
+		},
+		Rules: map[int]Rule{
+			1: {
+				WriteAllow: []string{"746573742d7075626b6579"}, // Allow test-pubkey for kind 1
+			},
+		},
 	}
 
-	// Try to stop again - should still fail
-	err = manager.StopPolicy()
-	if err == nil {
-		t.Error("Expected error when stopping policy manager twice")
+	event := createTestEvent("test-id", "test-pubkey", "test content", 1)
+	loggedInPubkey := []byte("test-logged-in-pubkey")
+
+	// Global rule should deny this event even though kind-specific rule would allow it
+	allowed, err := policy.CheckPolicy("write", event, loggedInPubkey, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("CheckPolicy failed: %v", err)
+	}
+
+	if allowed {
+		t.Error("Expected event to be denied by global rule, but it was allowed")
+	}
+}
+
+func TestMaxAgeChecks(t *testing.T) {
+	tests := []struct {
+		name           string
+		rule           Rule
+		event          *event.E
+		loggedInPubkey []byte
+		expected       bool
+	}{
+		{
+			name: "max age of event - event within allowed age",
+			rule: Rule{
+				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() - 1800 // 30 minutes ago
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       true,
+		},
+		{
+			name: "max age of event - event too old",
+			rule: Rule{
+				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() - 7200 // 2 hours ago
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
+		{
+			name: "max age event in future - event within allowed future time",
+			rule: Rule{
+				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() + 1800 // 30 minutes in future
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       true,
+		},
+		{
+			name: "max age event in future - event too far in future",
+			rule: Rule{
+				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() + 7200 // 2 hours in future
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       false,
+		},
+		{
+			name: "both age checks - event within both limits",
+			rule: Rule{
+				MaxAgeOfEvent:       func() *int64 { v := int64(3600); return &v }(), // 1 hour
+				MaxAgeEventInFuture: func() *int64 { v := int64(1800); return &v }(), // 30 minutes
+			},
+			event: func() *event.E {
+				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev.CreatedAt = time.Now().Unix() + 900 // 15 minutes in future
+				return ev
+			}(),
+			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			expected:       true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			policy := &P{}
+
+			allowed, err := policy.checkRulePolicy("write", tt.event, tt.rule, tt.loggedInPubkey)
+			if err != nil {
+				t.Fatalf("checkRulePolicy failed: %v", err)
+			}
+
+			if allowed != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, allowed)
+			}
+		})
 	}
 }

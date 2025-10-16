@@ -96,6 +96,8 @@ cmd/benchmark/data
 !*.tsx
 !bun.lock
 !*.svelte
+!.github/**
+!.github/workflows/**
 # ...even if they are in subdirectories
 !*/
 /blocklist.json

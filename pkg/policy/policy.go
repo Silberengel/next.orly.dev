@@ -60,6 +60,10 @@ type Rule struct {
 	Privileged bool `json:"privileged,omitempty"`
 	// RateLimit is the amount of data can be written to the relay per second by the authenticated pubkey. If 0, there is no rate limit. This is applied via the use of an EWMA of the event publication history on the authenticated connection
 	RateLimit *int64 `json:"rate_limit,omitempty"`
+	// MaxAgeOfEvent is the offset in seconds that is the oldest timestamp allowed for an event's created_at time. If 0, there is no maximum age. Events must have a created_at time if this is set, and it must be no more than this value in the past compared to the current time.
+	MaxAgeOfEvent *int64 `json:"max_age_of_event,omitempty"`
+	// MaxAgeEventInFuture is the offset in seconds that is the newest timestamp allowed for an event's created_at time ahead of the current time.
+	MaxAgeEventInFuture *int64 `json:"max_age_event_in_future,omitempty"`
 }
 
 // PolicyEvent represents an event with additional context for policy scripts
@@ -131,8 +135,10 @@ type P struct {
 	Kind Kinds `json:"kind"`
 	// Rules is a map of rules for criteria that must be met for the event to be allowed to be written to the relay.
 	Rules map[int]Rule `json:"rules"`
+	// Global is a rule set that applies to all events.
+	Global Rule `json:"global"`
 	// Manager handles policy script execution
-	Manager *PolicyManager
+	Manager *PolicyManager `json:"-"`
 }
 
 // New creates a new policy from JSON configuration
@@ -215,7 +221,12 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 		return false, fmt.Errorf("event cannot be nil")
 	}
 
-	// First check kinds white/blacklist
+	// First check global rule filter (applies to all events)
+	if !p.checkGlobalRulePolicy(access, ev, loggedInPubkey) {
+		return false, nil
+	}
+
+	// Then check kinds white/blacklist
 	if !p.checkKindsPolicy(ev.Kind) {
 		return false, nil
 	}
@@ -223,7 +234,7 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 	// Get rule for this kind
 	rule, hasRule := p.Rules[int(ev.Kind)]
 	if !hasRule {
-		// No specific rule for this kind, allow if kinds policy passed
+		// No specific rule for this kind, allow if global and kinds policy passed
 		return true, nil
 	}
 
@@ -258,6 +269,17 @@ func (p *P) checkKindsPolicy(kind uint16) bool {
 	}
 
 	return true
+}
+
+// checkGlobalRulePolicy checks if the event passes the global rule filter
+func (p *P) checkGlobalRulePolicy(access string, ev *event.E, loggedInPubkey []byte) bool {
+	// Apply global rule filtering
+	allowed, err := p.checkRulePolicy(access, ev, p.Global, loggedInPubkey)
+	if err != nil {
+		log.E.F("global rule policy check failed: %v", err)
+		return false
+	}
+	return allowed
 }
 
 // checkRulePolicy applies rule-based filtering (pubkey lists, size limits, etc.)
@@ -338,6 +360,24 @@ func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubke
 			return false, nil // Must have expiry if MaxExpiry is set
 		}
 		// TODO: Parse and validate expiry time
+	}
+
+	// Check MaxAgeOfEvent (maximum age of event in seconds)
+	if rule.MaxAgeOfEvent != nil && *rule.MaxAgeOfEvent > 0 {
+		currentTime := time.Now().Unix()
+		maxAllowedTime := currentTime - *rule.MaxAgeOfEvent
+		if ev.CreatedAt < maxAllowedTime {
+			return false, nil // Event is too old
+		}
+	}
+
+	// Check MaxAgeEventInFuture (maximum time event can be in the future in seconds)
+	if rule.MaxAgeEventInFuture != nil && *rule.MaxAgeEventInFuture > 0 {
+		currentTime := time.Now().Unix()
+		maxFutureTime := currentTime + *rule.MaxAgeEventInFuture
+		if ev.CreatedAt > maxFutureTime {
+			return false, nil // Event is too far in the future
+		}
 	}
 
 	// Check privileged events

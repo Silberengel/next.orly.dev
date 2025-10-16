@@ -1,9 +1,33 @@
 {
   "kind": {
-    "whitelist": [1, 3, 5, 7, 9735],
+    "whitelist": [0, 1, 3, 4, 5, 6, 7, 40, 41, 42, 43, 44, 9735],
     "blacklist": []
   },
+  "global": {
+    "description": "Global security rules applied to all events",
+    "write_allow": [],
+    "write_deny": [],
+    "read_allow": [],
+    "read_deny": [],
+    "size_limit": 100000,
+    "content_limit": 50000,
+    "max_age_of_event": 86400,
+    "max_age_event_in_future": 300,
+    "privileged": false
+  },
   "rules": {
+    "0": {
+      "description": "Metadata events - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 16000,
+      "content_limit": 8000,
+      "max_age_of_event": 604800,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
     "1": {
       "description": "Text notes - allow all authenticated users",
       "write_allow": [],
@@ -11,31 +35,142 @@
       "read_allow": [],
       "read_deny": [],
       "size_limit": 32000,
-      "content_limit": 10000
+      "content_limit": 10000,
+      "max_age_of_event": 3600,
+      "max_age_event_in_future": 60,
+      "privileged": false
     },
     "3": {
-      "description": "Contacts - only allow specific users",
-      "write_allow": ["npub1example1", "npub1example2"],
-      "write_deny": [],
-      "read_allow": [],
-      "read_deny": [],
-      "script": "policy.sh"
-    },
-    "5": {
-      "description": "Deletion events - require authentication",
+      "description": "Contact lists - allow all authenticated users",
       "write_allow": [],
       "write_deny": [],
       "read_allow": [],
       "read_deny": [],
+      "size_limit": 50000,
+      "content_limit": 20000,
+      "max_age_of_event": 2592000,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "4": {
+      "description": "Direct messages - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 16000,
+      "content_limit": 8000,
+      "max_age_of_event": 604800,
+      "max_age_event_in_future": 60,
       "privileged": true
     },
-    "9735": {
-      "description": "Zap receipts - allow all",
+    "5": {
+      "description": "Event deletion - allow all authenticated users",
       "write_allow": [],
       "write_deny": [],
       "read_allow": [],
       "read_deny": [],
-      "size_limit": 10000
+      "size_limit": 8000,
+      "content_limit": 4000,
+      "max_age_of_event": 86400,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "6": {
+      "description": "Reposts - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 8000,
+      "content_limit": 4000,
+      "max_age_of_event": 3600,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "7": {
+      "description": "Reaction events - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 8000,
+      "content_limit": 4000,
+      "max_age_of_event": 3600,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "40": {
+      "description": "Channel creation - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 16000,
+      "content_limit": 8000,
+      "max_age_of_event": 604800,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "41": {
+      "description": "Channel metadata - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 16000,
+      "content_limit": 8000,
+      "max_age_of_event": 604800,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "42": {
+      "description": "Channel messages - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 32000,
+      "content_limit": 10000,
+      "max_age_of_event": 3600,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "43": {
+      "description": "Channel hide message - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 8000,
+      "content_limit": 4000,
+      "max_age_of_event": 86400,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "44": {
+      "description": "Channel mute user - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 8000,
+      "content_limit": 4000,
+      "max_age_of_event": 604800,
+      "max_age_event_in_future": 60,
+      "privileged": false
+    },
+    "9735": {
+      "description": "Zap receipts - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 16000,
+      "content_limit": 8000,
+      "max_age_of_event": 3600,
+      "max_age_event_in_future": 60,
+      "privileged": false
     }
   }
 }
