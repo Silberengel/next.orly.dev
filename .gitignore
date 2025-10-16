@@ -98,6 +98,7 @@ cmd/benchmark/data
 !*.svelte
 !.github/**
 !.github/workflows/**
+!app/web/dist/**
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
