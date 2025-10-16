@@ -140,6 +140,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 		// Map to track specific event IDs that have been deleted
 		deletedEventIds := make(map[string]bool)
 		// Query for deletion events separately if we have authors in the filter
+		// We always need to fetch deletion events to build deletion maps, even if
+		// they're not explicitly requested in the kind filter
 		if f.Authors != nil && f.Authors.Len() > 0 {
 			// Create a filter for deletion events with the same authors
 			deletionFilter := &filter.F{
@@ -407,9 +409,21 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				// )
 			}
 
-			// Skip events with kind 5 (Deletion) unless explicitly requested
-			if ev.Kind == kind.Deletion.K && !includeDeleteEvents {
-				continue
+			// Skip events with kind 5 (Deletion) unless explicitly requested in the filter
+			if ev.Kind == kind.Deletion.K {
+				// Check if kind 5 (deletion) is explicitly requested in the filter
+				kind5Requested := false
+				if f.Kinds != nil && f.Kinds.Len() > 0 {
+					for i := 0; i < f.Kinds.Len(); i++ {
+						if f.Kinds.K[i].K == kind.Deletion.K {
+							kind5Requested = true
+							break
+						}
+					}
+				}
+				if !kind5Requested {
+					continue
+				}
 			}
 			// Check if this event's ID is in the filter
 			isIdInFilter := false
@@ -466,7 +480,6 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					// If there is a deletion timestamp and this event is older than the deletion,
 					// and this event is not specifically requested by ID, skip it
 					if delTs, ok := deletionMap[dValue]; ok && ev.CreatedAt < delTs && !isIdInFilter {
-						log.T.F("Debug: Event deleted by a-tag (older than delete) - skipping")
 						continue
 					}
 				}

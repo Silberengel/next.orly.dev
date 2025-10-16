@@ -11,9 +11,9 @@ import (
 	"errors"
 	"io"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonopts"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 // NOTE: The logic for decoding is complicated by the fact that reading from

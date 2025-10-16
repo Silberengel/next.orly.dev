@@ -13,8 +13,8 @@ import (
 	"slices"
 	"sync"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 // NOTE: Value is analogous to v1 json.RawMessage.

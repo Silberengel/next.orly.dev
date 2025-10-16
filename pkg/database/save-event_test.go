@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sort"
 	"testing"
 	"time"
 
@@ -44,17 +45,12 @@ func TestSaveEvents(t *testing.T) {
 	scanner := bufio.NewScanner(bytes.NewBuffer(examples.Cache))
 	scanner.Buffer(make([]byte, 0, 1_000_000_000), 1_000_000_000)
 
-	// Count the number of events processed
-	eventCount := 0
-
+	// Collect all events first
+	var events []*event.E
 	var original int
-	var kc, vc int
-	now := time.Now()
-	// Process each event
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
-		// log.T.F("%d bytes of raw JSON", len(b))
 		original += len(b)
 		ev := event.New()
 
@@ -63,6 +59,20 @@ func TestSaveEvents(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		events = append(events, ev)
+	}
+
+	// Sort events by timestamp to ensure addressable events are processed in order
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt < events[j].CreatedAt
+	})
+
+	// Count the number of events processed
+	eventCount := 0
+	var kc, vc int
+	now := time.Now()
+	// Process each event in chronological order
+	for _, ev := range events {
 		// Save the event to the database
 		var k, v int
 		if _, err = db.SaveEvent(ctx, ev); err != nil {

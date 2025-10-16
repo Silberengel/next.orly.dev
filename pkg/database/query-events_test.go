@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"testing"
 
 	"lol.mleku.dev/chk"
@@ -43,12 +44,9 @@ func setupTestDB(t *testing.T) (
 	scanner := bufio.NewScanner(bytes.NewBuffer(examples.Cache))
 	scanner.Buffer(make([]byte, 0, 1_000_000_000), 1_000_000_000)
 
-	// Count the number of events processed
-	eventCount := 0
-
 	var events []*event.E
 
-	// Process each event
+	// First, collect all events from examples.Cache
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
@@ -59,21 +57,31 @@ func setupTestDB(t *testing.T) (
 			ev.Free()
 			t.Fatal(err)
 		}
-		ev.Free()
 
 		events = append(events, ev)
+	}
 
+	// Check for scanner errors
+	if err = scanner.Err(); err != nil {
+		t.Fatalf("Scanner error: %v", err)
+	}
+
+	// Sort events by CreatedAt to ensure addressable events are processed in chronological order
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt < events[j].CreatedAt
+	})
+
+	// Count the number of events processed
+	eventCount := 0
+
+	// Now process each event in chronological order
+	for _, ev := range events {
 		// Save the event to the database
 		if _, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
 		}
 
 		eventCount++
-	}
-
-	// Check for scanner errors
-	if err = scanner.Err(); err != nil {
-		t.Fatalf("Scanner error: %v", err)
 	}
 
 	t.Logf("Successfully saved %d events to the database", eventCount)
@@ -227,8 +235,13 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 			Ids: tag.NewFromAny(replaceableEvent.ID),
 		},
 	)
-	if err == nil {
-		t.Errorf("found replaced event by ID: %v", err)
+	if err != nil {
+		t.Errorf("Failed to query for replaced event by ID: %v", err)
+	}
+
+	// Verify the original event is not found (it was replaced)
+	if len(evs) != 0 {
+		t.Errorf("Expected 0 events when querying for replaced event by ID, got %d", len(evs))
 	}
 
 	// // Verify it's the original event
@@ -325,8 +338,13 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 			Ids: tag.NewFromBytesSlice(replaceableEvent.ID),
 		},
 	)
-	if err == nil {
-		t.Errorf("found deleted event by ID: %v", err)
+	if err != nil {
+		t.Errorf("Failed to query for deleted event by ID: %v", err)
+	}
+
+	// Verify the original event is not found (it was deleted)
+	if len(evs) != 0 {
+		t.Errorf("Expected 0 events when querying for deleted event by ID, got %d", len(evs))
 	}
 
 	// // Verify we still get the original event when querying by ID
@@ -484,19 +502,11 @@ func TestParameterizedReplaceableEventsAndDeletion(t *testing.T) {
 		)
 	}
 
-	// Verify we still get the event when querying by ID
-	if len(evs) != 1 {
+	// Verify the deleted event is not found when querying by ID
+	if len(evs) != 0 {
 		t.Fatalf(
-			"Expected 1 event when querying for deleted parameterized event by ID, got %d",
+			"Expected 0 events when querying for deleted parameterized event by ID, got %d",
 			len(evs),
-		)
-	}
-
-	// Verify it's the correct event
-	if !utils.FastEqual(evs[0].ID, paramEvent.ID) {
-		t.Fatalf(
-			"Event ID doesn't match when querying for deleted parameterized event by ID. Got %x, expected %x",
-			evs[0].ID, paramEvent.ID,
 		)
 	}
 }

@@ -11,9 +11,9 @@ import (
 	"io"
 	"strings"
 
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
-	"encoding/json/jsontext"
+	"next.orly.dev/pkg/json/internal"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/jsontext"
 )
 
 // export exposes internal functionality of the "jsontext" package.

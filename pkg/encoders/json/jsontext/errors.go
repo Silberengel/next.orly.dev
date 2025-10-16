@@ -11,7 +11,7 @@ import (
 	"io"
 	"strconv"
 
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 const errorPrefix = "jsontext: "

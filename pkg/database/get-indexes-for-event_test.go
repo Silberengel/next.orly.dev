@@ -82,9 +82,9 @@ func testBasicEvent(t *testing.T) {
 		t.Fatalf("GetIndexesForEvent failed: %v", err)
 	}
 
-	// Verify the number of indexes (should be 6 for a basic event without tags)
-	if len(idxs) != 6 {
-		t.Fatalf("Expected 6 indexes, got %d", len(idxs))
+	// Verify the number of indexes (should be 8 for a basic event without tags: 6 base + 2 word indexes from content)
+	if len(idxs) != 8 {
+		t.Fatalf("Expected 8 indexes, got %d", len(idxs))
 	}
 
 	// Create and verify the expected indexes
@@ -193,10 +193,10 @@ func testEventWithTags(t *testing.T) {
 		t.Fatalf("GetIndexesForEvent failed: %v", err)
 	}
 
-	// Verify the number of indexes (should be 14 for an event with 2 tags)
-	// 6 basic indexes + 4 indexes per tag (TagPubkey, Tag, TagKind, TagKindPubkey)
-	if len(idxs) != 14 {
-		t.Fatalf("Expected 14 indexes, got %d", len(idxs))
+	// Verify the number of indexes (should be 20 for an event with 2 tags)
+	// 6 basic indexes + 2 word indexes from content + 4 indexes per tag (TagPubkey, Tag, TagKind, TagKindPubkey) + word indexes from tag fields
+	if len(idxs) != 20 {
+		t.Fatalf("Expected 20 indexes, got %d", len(idxs))
 	}
 
 	// Create and verify the basic indexes (same as in testBasicEvent)

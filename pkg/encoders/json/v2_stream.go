@@ -10,8 +10,8 @@ import (
 	"bytes"
 	"io"
 
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"next.orly.dev/pkg/json/jsontext"
+	jsonv2 "next.orly.dev/pkg/json/v2"
 )
 
 // A Decoder reads and decodes JSON values from an input stream.

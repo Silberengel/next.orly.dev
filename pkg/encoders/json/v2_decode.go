@@ -15,9 +15,9 @@ import (
 	"reflect"
 	"strconv"
 
-	"encoding/json/internal/jsonwire"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"next.orly.dev/pkg/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/jsontext"
+	jsonv2 "next.orly.dev/pkg/json/v2"
 )
 
 // Unmarshal parses the JSON-encoded data and stores the result

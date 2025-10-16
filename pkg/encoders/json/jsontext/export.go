@@ -9,7 +9,7 @@ package jsontext
 import (
 	"io"
 
-	"encoding/json/internal"
+	"next.orly.dev/pkg/json/internal"
 )
 
 // Internal is for internal use only.

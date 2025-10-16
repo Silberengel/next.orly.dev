@@ -7,8 +7,8 @@
 package jsontext
 
 import (
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 // AppendQuote appends a double-quoted JSON string literal representing src

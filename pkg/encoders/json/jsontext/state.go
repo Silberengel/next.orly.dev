@@ -14,7 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 // ErrDuplicateName indicates that a JSON token could not be

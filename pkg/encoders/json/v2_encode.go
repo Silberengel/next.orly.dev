@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"strconv"
 
-	jsonv2 "encoding/json/v2"
+	jsonv2 "next.orly.dev/pkg/json/v2"
 )
 
 // Marshal returns the JSON encoding of v.

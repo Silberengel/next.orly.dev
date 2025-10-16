@@ -177,10 +177,10 @@ package json
 import (
 	"encoding"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonopts"
+	"next.orly.dev/pkg/json/jsontext"
+	jsonv2 "next.orly.dev/pkg/json/v2"
 )
 
 // Reference encoding, jsonv2, and jsontext packages to assist pkgsite

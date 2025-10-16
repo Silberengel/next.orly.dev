@@ -7,8 +7,8 @@
 package jsonopts
 
 import (
-	"encoding/json/internal"
-	"encoding/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal"
+	"next.orly.dev/pkg/json/internal/jsonflags"
 )
 
 // Options is the common options type shared across json packages.

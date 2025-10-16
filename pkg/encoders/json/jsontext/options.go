@@ -9,9 +9,9 @@ package jsontext
 import (
 	"strings"
 
-	"encoding/json/internal/jsonflags"
-	"encoding/json/internal/jsonopts"
-	"encoding/json/internal/jsonwire"
+	"next.orly.dev/pkg/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonopts"
+	"next.orly.dev/pkg/json/internal/jsonwire"
 )
 
 // Options configures [NewEncoder], [Encoder.Reset], [NewDecoder],

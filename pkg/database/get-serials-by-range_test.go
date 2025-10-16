@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sort"
 	"testing"
 
 	"lol.mleku.dev/chk"
@@ -41,13 +42,10 @@ func TestGetSerialsByRange(t *testing.T) {
 	scanner := bufio.NewScanner(bytes.NewBuffer(examples.Cache))
 	scanner.Buffer(make([]byte, 0, 1_000_000_000), 1_000_000_000)
 
-	// Count the number of events processed
-	eventCount := 0
-
 	var events []*event.E
 	var eventSerials = make(map[string]*types.Uint40) // Map event ID (hex) to serial
 
-	// Process each event
+	// First, collect all events from examples.Cache
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
@@ -58,10 +56,25 @@ func TestGetSerialsByRange(t *testing.T) {
 			ev.Free()
 			t.Fatal(err)
 		}
-		ev.Free()
 
 		events = append(events, ev)
+	}
 
+	// Check for scanner errors
+	if err = scanner.Err(); err != nil {
+		t.Fatalf("Scanner error: %v", err)
+	}
+
+	// Sort events by CreatedAt to ensure addressable events are processed in chronological order
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt < events[j].CreatedAt
+	})
+
+	// Count the number of events processed
+	eventCount := 0
+
+	// Now process each event in chronological order
+	for _, ev := range events {
 		// Save the event to the database
 		if _, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
@@ -80,11 +93,6 @@ func TestGetSerialsByRange(t *testing.T) {
 		}
 
 		eventCount++
-	}
-
-	// Check for scanner errors
-	if err = scanner.Err(); err != nil {
-		t.Fatalf("Scanner error: %v", err)
 	}
 
 	t.Logf("Successfully saved %d events to the database", eventCount)

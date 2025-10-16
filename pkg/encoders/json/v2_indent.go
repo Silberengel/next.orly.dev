@@ -10,7 +10,7 @@ import (
 	"bytes"
 	"strings"
 
-	"encoding/json/jsontext"
+	"next.orly.dev/pkg/json/jsontext"
 )
 
 // HTMLEscape appends to dst the JSON-encoded src with <, >, &, U+2028 and U+2029

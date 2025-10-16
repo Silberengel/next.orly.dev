@@ -13,7 +13,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"encoding/json/internal/jsonflags"
+	"next.orly.dev/pkg/json/internal/jsonflags"
 )
 
 // escapeASCII reports whether the ASCII character needs to be escaped.

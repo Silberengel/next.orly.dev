@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"encoding/json/internal"
-	"encoding/json/jsontext"
-	jsonv2 "encoding/json/v2"
+	"next.orly.dev/pkg/json/internal"
+	"next.orly.dev/pkg/json/jsontext"
+	jsonv2 "next.orly.dev/pkg/json/v2"
 )
 
 // Inject functionality into v2 to properly handle v1 types.

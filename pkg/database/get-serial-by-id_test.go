@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sort"
 	"testing"
 
 	"lol.mleku.dev/chk"
@@ -35,12 +36,8 @@ func TestGetSerialById(t *testing.T) {
 	scanner := bufio.NewScanner(bytes.NewBuffer(examples.Cache))
 	scanner.Buffer(make([]byte, 0, 1_000_000_000), 1_000_000_000)
 
-	// Count the number of events processed
-	eventCount := 0
-
-	var events []*event.E
-
-	// Process each event
+	// Collect all events first
+	var allEvents []*event.E
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
@@ -51,8 +48,25 @@ func TestGetSerialById(t *testing.T) {
 			ev.Free()
 			t.Fatal(err)
 		}
-		ev.Free()
 
+		allEvents = append(allEvents, ev)
+	}
+
+	// Check for scanner errors
+	if err = scanner.Err(); err != nil {
+		t.Fatalf("Scanner error: %v", err)
+	}
+
+	// Sort events by timestamp to ensure addressable events are processed in chronological order
+	sort.Slice(allEvents, func(i, j int) bool {
+		return allEvents[i].CreatedAt < allEvents[j].CreatedAt
+	})
+
+	// Now process the sorted events
+	eventCount := 0
+	var events []*event.E
+
+	for _, ev := range allEvents {
 		events = append(events, ev)
 
 		// Save the event to the database
@@ -61,11 +75,6 @@ func TestGetSerialById(t *testing.T) {
 		}
 
 		eventCount++
-	}
-
-	// Check for scanner errors
-	if err = scanner.Err(); err != nil {
-		t.Fatalf("Scanner error: %v", err)
 	}
 
 	t.Logf("Successfully saved %d events to the database", eventCount)
@@ -92,11 +101,11 @@ func TestGetSerialById(t *testing.T) {
 	}
 
 	serial, err = db.GetSerialById(nonExistentId)
-	if err != nil {
-		t.Fatalf("Expected no error for non-existent ID, but got: %v", err)
+	if err == nil {
+		t.Fatalf("Expected error for non-existent ID, but got none")
 	}
 
-	// For non-existent Ids, the function should return nil serial
+	// For non-existent Ids, the function should return nil serial and an error
 	if serial != nil {
 		t.Fatalf("Expected nil serial for non-existent ID, but got: %v", serial)
 	}
