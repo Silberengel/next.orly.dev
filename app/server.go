@@ -22,6 +22,7 @@ import (
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/protocol/httpauth"
 	"next.orly.dev/pkg/protocol/publish"
@@ -46,6 +47,7 @@ type Server struct {
 
 	paymentProcessor *PaymentProcessor
 	sprocketManager  *SprocketManager
+	policyManager    *policy.P
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

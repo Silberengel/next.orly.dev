@@ -11,6 +11,7 @@ import (
 	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
+	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/publish"
 )
 
@@ -60,6 +61,9 @@ func Run(
 
 	// Initialize sprocket manager
 	l.sprocketManager = NewSprocketManager(ctx, cfg.AppName, cfg.SprocketEnabled)
+
+	// Initialize policy manager
+	l.policyManager = policy.NewWithManager(ctx, cfg.AppName, cfg.PolicyEnabled)
 	// Initialize the user interface
 	l.UserInterface()
 

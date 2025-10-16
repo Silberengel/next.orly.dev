@@ -1,0 +1,41 @@
+{
+  "kind": {
+    "whitelist": [1, 3, 5, 7, 9735],
+    "blacklist": []
+  },
+  "rules": {
+    "1": {
+      "description": "Text notes - allow all authenticated users",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 32000,
+      "content_limit": 10000
+    },
+    "3": {
+      "description": "Contacts - only allow specific users",
+      "write_allow": ["npub1example1", "npub1example2"],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "script": "policy.sh"
+    },
+    "5": {
+      "description": "Deletion events - require authentication",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "privileged": true
+    },
+    "9735": {
+      "description": "Zap receipts - allow all",
+      "write_allow": [],
+      "write_deny": [],
+      "read_allow": [],
+      "read_deny": [],
+      "size_limit": 10000
+    }
+  }
+}

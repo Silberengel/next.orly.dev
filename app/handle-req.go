@@ -240,6 +240,27 @@ privCheck:
 		}
 	}
 	events = tmp
+
+	// Apply policy filtering for read access if policy is enabled
+	if l.policyManager != nil && l.policyManager.Manager != nil && l.policyManager.Manager.IsEnabled() {
+		var policyFilteredEvents event.S
+		for _, ev := range events {
+			allowed, policyErr := l.policyManager.CheckPolicy("read", ev, l.authedPubkey.Load(), l.remote)
+			if chk.E(policyErr) {
+				log.E.F("policy check failed for read: %v", policyErr)
+				// Default to allow on policy error
+				policyFilteredEvents = append(policyFilteredEvents, ev)
+				continue
+			}
+
+			if allowed {
+				policyFilteredEvents = append(policyFilteredEvents, ev)
+			} else {
+				log.D.F("policy filtered out event %0x for read access", ev.ID)
+			}
+		}
+		events = policyFilteredEvents
+	}
 	seen := make(map[string]struct{})
 	for _, ev := range events {
 		log.T.C(

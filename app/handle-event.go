@@ -109,6 +109,46 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			// Default to accept for unknown actions
 		}
 	}
+
+	// Check if policy is enabled and process event through it
+	if l.policyManager != nil && l.policyManager.Manager != nil && l.policyManager.Manager.IsEnabled() {
+		if l.policyManager.Manager.IsDisabled() {
+			// Policy is disabled due to failure - reject all events
+			log.W.F("policy is disabled, rejecting event %0x", env.E.ID)
+			if err = Ok.Error(
+				l, env,
+				"policy disabled - events rejected until policy is restored",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		// Check policy for write access
+		allowed, policyErr := l.policyManager.CheckPolicy("write", env.E, l.authedPubkey.Load(), l.remote)
+		if chk.E(policyErr) {
+			log.E.F("policy check failed: %v", policyErr)
+			if err = Ok.Error(
+				l, env, "policy check failed",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		if !allowed {
+			log.D.F("policy rejected event %0x", env.E.ID)
+			if err = Ok.Blocked(
+				l, env, "event blocked by policy",
+			); chk.E(err) {
+				return
+			}
+			return
+		}
+
+		log.D.F("policy allowed event %0x", env.E.ID)
+	}
+
 	// check the event ID is correct
 	calculatedId := env.E.GetIDBytes()
 	if !utils.FastEqual(calculatedId, env.E.ID) {

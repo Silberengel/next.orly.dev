@@ -119,3 +119,4 @@ pkg/database/testrealy
 /ctxproxy.config.yml
 cmd/benchmark/external/**
 app/web/dist/**
+private*
