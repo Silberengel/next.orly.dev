@@ -239,18 +239,18 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 		t.Errorf("Failed to query for replaced event by ID: %v", err)
 	}
 
-	// Verify the original event is not found (it was replaced)
-	if len(evs) != 0 {
-		t.Errorf("Expected 0 events when querying for replaced event by ID, got %d", len(evs))
+	// Verify the original event is still found (it's kept but not returned in general queries)
+	if len(evs) != 1 {
+		t.Errorf("Expected 1 event when querying for replaced event by ID, got %d", len(evs))
 	}
 
-	// // Verify it's the original event
-	// if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
-	// 	t.Errorf(
-	// 		"Event ID doesn't match when querying for replaced event. Got %x, expected %x",
-	// 		evs[0].ID, replaceableEvent.ID,
-	// 	)
-	// }
+	// Verify it's the original event
+	if !utils.FastEqual(evs[0].ID, replaceableEvent.ID) {
+		t.Errorf(
+			"Event ID doesn't match when querying for replaced event. Got %x, expected %x",
+			evs[0].ID, replaceableEvent.ID,
+		)
+	}
 
 	// Query for all events of this kind and pubkey
 	kindFilter := kind.NewS(kind.ProfileMetadata)
@@ -293,14 +293,24 @@ func TestReplaceableEventsAndDeletion(t *testing.T) {
 	deletionEvent.Sign(sign)
 
 	// Add an e-tag referencing the replaceable event
+	t.Logf("Replaceable event ID: %x", replaceableEvent.ID)
 	*deletionEvent.Tags = append(
 		*deletionEvent.Tags,
-		tag.NewFromAny([]byte{'e'}, []byte(hex.Enc(replaceableEvent.ID))),
+		tag.NewFromAny("e", hex.Enc(replaceableEvent.ID)),
 	)
 
 	// Save the deletion event
 	if _, err = db.SaveEvent(ctx, deletionEvent); err != nil {
 		t.Fatalf("Failed to save deletion event: %v", err)
+	}
+
+	// Debug: Check if the deletion event was saved
+	t.Logf("Deletion event ID: %x", deletionEvent.ID)
+	t.Logf("Deletion event pubkey: %x", deletionEvent.Pubkey)
+	t.Logf("Deletion event kind: %d", deletionEvent.Kind)
+	t.Logf("Deletion event tags count: %d", deletionEvent.Tags.Len())
+	for i, tag := range *deletionEvent.Tags {
+		t.Logf("Deletion event tag[%d]: %v", i, tag.T)
 	}
 
 	// Query for all events of this kind and pubkey again

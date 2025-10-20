@@ -9,6 +9,7 @@ import (
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
@@ -44,10 +45,9 @@ func (d *D) GetSerialsFromFilter(f *filter.F) (
 
 // WouldReplaceEvent checks if the provided event would replace existing events
 // based on Nostr's replaceable or parameterized replaceable semantics. It
-// returns true along with the serials of events that should be replaced if the
-// candidate is newer-or-equal. If an existing event is newer, it returns
-// (false, serials, ErrOlderThanExisting). If no conflicts exist, it returns
-// (false, nil, nil).
+// returns true if the candidate is newer-or-equal than existing events.
+// If an existing event is newer, it returns (false, nil, ErrOlderThanExisting).
+// If no conflicts exist, it returns (false, nil, nil).
 func (d *D) WouldReplaceEvent(ev *event.E) (bool, types.Uint40s, error) {
 	// Only relevant for replaceable or parameterized replaceable kinds
 	if !(kind.IsReplaceable(ev.Kind) || kind.IsParameterizedReplaceable(ev.Kind)) {
@@ -96,9 +96,9 @@ func (d *D) WouldReplaceEvent(ev *event.E) (bool, types.Uint40s, error) {
 		}
 	}
 	if shouldReplace {
-		return true, sers, nil
+		return true, nil, nil
 	}
-	return false, sers, ErrOlderThanExisting
+	return false, nil, ErrOlderThanExisting
 }
 
 // SaveEvent saves an event to the database, generating all the necessary indexes.
@@ -135,11 +135,10 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 		err = fmt.Errorf("blocked: %s", err.Error())
 		return
 	}
-	// check for replacement (separated check vs deletion)
+	// check for replacement - only validate, don't delete old events
 	if kind.IsReplaceable(ev.Kind) || kind.IsParameterizedReplaceable(ev.Kind) {
-		var sers types.Uint40s
 		var werr error
-		if replaced, sers, werr = d.WouldReplaceEvent(ev); werr != nil {
+		if replaced, _, werr = d.WouldReplaceEvent(ev); werr != nil {
 			if errors.Is(werr, ErrOlderThanExisting) {
 				if kind.IsReplaceable(ev.Kind) {
 					err = errors.New("blocked: event is older than existing replaceable event")
@@ -156,17 +155,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 			// any other error
 			return
 		}
-		if replaced {
-			for _, s := range sers {
-				var oldEv *event.E
-				if oldEv, err = d.FetchEventBySerial(s); chk.E(err) {
-					continue
-				}
-				if err = d.DeleteEventBySerial(c, s, oldEv); chk.E(err) {
-					continue
-				}
-			}
-		}
+		// Note: replaced flag is kept for compatibility but old events are no longer deleted
 	}
 	// Get the next sequence number for the event
 	var serial uint64
@@ -178,6 +167,7 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 	if idxs, err = GetIndexesForEvent(ev, serial); chk.E(err) {
 		return
 	}
+	log.T.F("SaveEvent: generated %d indexes for event %x (kind %d)", len(idxs), ev.ID, ev.Kind)
 	// Start a transaction to save the event and all its indexes
 	err = d.Update(
 		func(txn *badger.Txn) (err error) {

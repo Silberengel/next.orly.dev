@@ -99,7 +99,7 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 
 			// skip events that have been deleted by a proper deletion event
 			if derr := d.CheckForDeleted(ev, nil); derr != nil {
-				// log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", idHex, derr)
+				log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", idHex, derr)
 				continue
 			}
 
@@ -114,6 +114,10 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				return evs[i].CreatedAt > evs[j].CreatedAt
 			},
 		)
+		// Apply limit after processing
+		if f.Limit != nil && len(evs) > int(*f.Limit) {
+			evs = evs[:*f.Limit]
+		}
 	} else {
 		// non-IDs path
 		var idPkTs []*store.IdPkTs
@@ -298,36 +302,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					}
 					// Mark the specific event ID as deleted
 					deletedEventIds[hex.Enc(targetEv.ID)] = true
-					// If the event is replaceable, mark it as deleted, but only
-					// for events older than this one
-					if kind.IsReplaceable(targetEv.Kind) {
-						key := hex.Enc(targetEv.Pubkey) + ":" + strconv.Itoa(int(targetEv.Kind))
-						// We will still use deletionsByKindPubkey, but we'll
-						// check timestamps in the second pass
-						deletionsByKindPubkey[key] = true
-					} else if kind.IsParameterizedReplaceable(targetEv.Kind) {
-						// For parameterized replaceable events, we need to
-						// consider the 'd' tag
-						key := hex.Enc(targetEv.Pubkey) + ":" + strconv.Itoa(int(targetEv.Kind))
-
-						// Get the 'd' tag value
-						dTag := targetEv.Tags.GetFirst([]byte("d"))
-						var dValue string
-						if dTag != nil && dTag.Len() > 1 {
-							dValue = string(dTag.Value())
-						} else {
-							// If no 'd' tag, use empty string
-							dValue = ""
-						}
-						// Initialize the inner map if it doesn't exist
-						if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
-							deletionsByKindPubkeyDTag[key] = make(map[string]int64)
-						}
-						// Record the newest delete timestamp for this d-tag
-						if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
-							deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
-						}
-					}
+					// Note: For e-tag deletions, we only mark the specific event as deleted,
+					// not all events of the same kind/pubkey
 				}
 			}
 		}
@@ -437,9 +413,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 			// Check if this specific event has been deleted
 			eventIdHex := hex.Enc(ev.ID)
-			if deletedEventIds[eventIdHex] && !isIdInFilter {
-				// Skip this event if it has been specifically deleted and is
-				// not in the filter
+			if deletedEventIds[eventIdHex] {
+				// Skip this event if it has been specifically deleted
 				continue
 			}
 			if kind.IsReplaceable(ev.Kind) {
@@ -524,6 +499,10 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				return evs[i].CreatedAt > evs[j].CreatedAt
 			},
 		)
+		// Apply limit after processing replaceable/addressable events
+		if f.Limit != nil && len(evs) > int(*f.Limit) {
+			evs = evs[:*f.Limit]
+		}
 		// delete the expired events in a background thread
 		go func() {
 			for i, ser := range expDeletes {
