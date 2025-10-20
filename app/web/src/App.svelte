@@ -75,6 +75,59 @@
     // Compose tab state
     let composeEventJson = "";
 
+    // Recovery tab state
+    let recoverySelectedKind = null;
+    let recoveryCustomKind = "";
+    let recoveryEvents = [];
+    let isLoadingRecovery = false;
+    let recoveryHasMore = true;
+    let recoveryOldestTimestamp = null;
+    let recoveryNewestTimestamp = null;
+
+    // Replaceable kinds for the recovery dropdown
+    const replaceableKinds = [
+        { value: 0, label: "Profile Metadata (0)" },
+        { value: 3, label: "Follow List (3)" },
+        { value: 10000, label: "Relay List Metadata (10000)" },
+        { value: 10001, label: "Mute List (10001)" },
+        { value: 10002, label: "Pin List (10002)" },
+        { value: 10003, label: "Bookmark List (10003)" },
+        { value: 10004, label: "Communities List (10004)" },
+        { value: 10005, label: "Public Chats List (10005)" },
+        { value: 10006, label: "Blocked Relays List (10006)" },
+        { value: 10007, label: "Search Relays List (10007)" },
+        { value: 10015, label: "Interests List (10015)" },
+        { value: 10030, label: "Emoji Sets (10030)" },
+        { value: 30000, label: "Categorized People List (30000)" },
+        { value: 30001, label: "Categorized Bookmark List (30001)" },
+        { value: 30002, label: "Relay Sets (30002)" },
+        { value: 30003, label: "Bookmark Sets (30003)" },
+        { value: 30004, label: "Curation Sets (30004)" },
+        { value: 30008, label: "Profile Badges (30008)" },
+        { value: 30009, label: "Badge Definition (30009)" },
+        { value: 30015, label: "Interest Sets (30015)" },
+        { value: 30017, label: "Stall Definition (30017)" },
+        { value: 30018, label: "Product Definition (30018)" },
+        { value: 30019, label: "Marketplace UI/UX (30019)" },
+        { value: 30020, label: "Product Sold as Auction (30020)" },
+        { value: 30023, label: "Article (30023)" },
+        { value: 30024, label: "Draft Long-form Content (30024)" },
+        { value: 30030, label: "Emoji Sets (30030)" },
+        { value: 30078, label: "Application Specific Data (30078)" },
+        { value: 30311, label: "Live Event (30311)" },
+        { value: 30315, label: "User Statuses (30315)" },
+        { value: 30402, label: "Classified Listing (30402)" },
+        { value: 30403, label: "Draft Classified Listing (30403)" },
+        { value: 31922, label: "Date-based Calendar Event (31922)" },
+        { value: 31923, label: "Time-based Calendar Event (31923)" },
+        { value: 31924, label: "Calendar (31924)" },
+        { value: 31925, label: "Calendar Event RSVP (31925)" },
+        { value: 31989, label: "Handler Recommendation (31989)" },
+        { value: 31990, label: "Handler Information (31990)" },
+        { value: 32123, label: "WaveLake Track (32123)" },
+        { value: 34550, label: "Community Definition (34550)" },
+    ];
+
     // Kind name mapping based on repository kind definitions
     const kindNames = {
         0: "ProfileMetadata",
@@ -595,6 +648,137 @@
             .replace(/'/g, "&#39;");
     }
 
+    // Recovery tab functions
+    async function loadRecoveryEvents() {
+        const kindToUse = recoveryCustomKind
+            ? parseInt(recoveryCustomKind)
+            : recoverySelectedKind;
+        if (!kindToUse || !isLoggedIn) return;
+
+        console.log(
+            "Loading recovery events for kind:",
+            kindToUse,
+            "user:",
+            userPubkey,
+        );
+        isLoadingRecovery = true;
+        try {
+            // Always fetch all versions for replaceable kinds, then filter in the UI
+            const filters = {
+                kinds: [kindToUse],
+                authors: [userPubkey],
+                limit: 100,
+                tags: [["show_all_versions", "true"]], // Always get all versions
+            };
+
+            if (recoveryOldestTimestamp) {
+                filters.until = recoveryOldestTimestamp;
+            }
+
+            console.log("Recovery filters:", filters);
+            const events = await fetchAllEvents(filters);
+            console.log("Recovery events received:", events.length);
+            console.log(
+                "Recovery events kinds:",
+                events.map((e) => e.kind),
+            );
+
+            if (recoveryOldestTimestamp) {
+                // Append to existing events
+                recoveryEvents = [...recoveryEvents, ...events];
+            } else {
+                // Replace events
+                recoveryEvents = events;
+            }
+
+            if (events.length > 0) {
+                recoveryOldestTimestamp = Math.min(
+                    ...events.map((e) => e.created_at),
+                );
+                recoveryHasMore = events.length === 100;
+            } else {
+                recoveryHasMore = false;
+            }
+        } catch (error) {
+            console.error("Failed to load recovery events:", error);
+        } finally {
+            isLoadingRecovery = false;
+        }
+    }
+
+    async function repostEvent(event) {
+        if (!isLoggedIn || !userSigner) {
+            alert("Please log in to repost events");
+            return;
+        }
+
+        try {
+            // Create a new event with the same content but current timestamp
+            const newEvent = {
+                kind: event.kind,
+                content: event.content,
+                tags: event.tags,
+                created_at: Math.floor(Date.now() / 1000),
+                pubkey: userPubkey,
+            };
+
+            // Sign and publish the event
+            const result = await publishEventWithAuth(
+                DEFAULT_RELAYS[0],
+                newEvent,
+                userSigner,
+                userPubkey,
+            );
+
+            if (result.success) {
+                alert("Event reposted successfully!");
+                // Reload the recovery events to show the new current version
+                recoveryEvents = [];
+                recoveryOldestTimestamp = null;
+                await loadRecoveryEvents();
+            } else {
+                alert("Failed to repost event");
+            }
+        } catch (error) {
+            console.error("Failed to repost event:", error);
+            alert("Failed to repost event: " + error.message);
+        }
+    }
+
+    function selectRecoveryKind(kind) {
+        recoverySelectedKind = kind;
+        recoveryCustomKind = ""; // Clear custom kind when selecting from dropdown
+        recoveryEvents = [];
+        recoveryOldestTimestamp = null;
+        recoveryHasMore = true;
+        loadRecoveryEvents();
+    }
+
+    function handleCustomKindInput() {
+        if (recoveryCustomKind) {
+            recoverySelectedKind = null; // Clear dropdown selection when using custom
+            recoveryEvents = [];
+            recoveryOldestTimestamp = null;
+            recoveryHasMore = true;
+            loadRecoveryEvents();
+        }
+    }
+
+    function isCurrentVersion(event) {
+        // Find all events with the same kind and pubkey
+        const sameKindEvents = recoveryEvents.filter(
+            (e) => e.kind === event.kind && e.pubkey === event.pubkey,
+        );
+
+        // Check if this event has the highest timestamp
+        const maxTimestamp = Math.max(
+            ...sameKindEvents.map((e) => e.created_at),
+        );
+        return event.created_at === maxTimestamp;
+    }
+
+    // Always show all versions - no filtering needed
+
     $: aboutHtml = userProfile?.about
         ? escapeHtml(userProfile.about).replace(/\n{2,}/g, "<br>")
         : "";
@@ -1073,6 +1257,7 @@
         { id: "import", icon: "💾", label: "Import", requiresAdmin: true },
         { id: "events", icon: "📡", label: "Events" },
         { id: "compose", icon: "✏️", label: "Compose" },
+        { id: "recovery", icon: "🔄", label: "Recovery" },
         {
             id: "managed-acl",
             icon: "🛡️",
@@ -2581,6 +2766,150 @@
                         <button class="login-btn" on:click={openLoginModal}
                             >Log In</button
                         >
+                    </div>
+                {/if}
+            </div>
+        {:else if selectedTab === "recovery"}
+            <div class="recovery-tab">
+                <div class="recovery-header">
+                    <h2>🔄 Event Recovery</h2>
+                    <p>Search and recover old versions of replaceable events</p>
+                </div>
+
+                <div class="recovery-controls">
+                    <div class="kind-selector">
+                        <label for="recovery-kind">Select Event Kind:</label>
+                        <select
+                            id="recovery-kind"
+                            bind:value={recoverySelectedKind}
+                            on:change={() =>
+                                selectRecoveryKind(recoverySelectedKind)}
+                        >
+                            <option value={null}
+                                >Choose a replaceable kind...</option
+                            >
+                            {#each replaceableKinds as kind}
+                                <option value={kind.value}>{kind.label}</option>
+                            {/each}
+                        </select>
+                    </div>
+
+                    <div class="custom-kind-input">
+                        <label for="custom-kind"
+                            >Or enter custom kind number:</label
+                        >
+                        <input
+                            id="custom-kind"
+                            type="number"
+                            bind:value={recoveryCustomKind}
+                            on:input={handleCustomKindInput}
+                            placeholder="e.g., 10001"
+                            min="0"
+                        />
+                    </div>
+                </div>
+
+                {#if recoverySelectedKind || recoveryCustomKind}
+                    <div class="recovery-results">
+                        {#if isLoadingRecovery}
+                            <div class="loading">Loading events...</div>
+                        {:else if recoveryEvents.length === 0}
+                            <div class="no-events">
+                                No events found for this kind
+                            </div>
+                        {:else}
+                            <div class="events-list">
+                                {#each recoveryEvents as event}
+                                    {@const isCurrent = isCurrentVersion(event)}
+                                    <div
+                                        class="event-item"
+                                        class:old-version={!isCurrent}
+                                    >
+                                        <div class="event-header">
+                                            <span class="event-kind"
+                                                >Kind {event.kind}</span
+                                            >
+                                            <span class="event-timestamp">
+                                                {new Date(
+                                                    event.created_at * 1000,
+                                                ).toLocaleString()}
+                                            </span>
+                                            {#if !isCurrent}
+                                                <button
+                                                    class="repost-button"
+                                                    on:click={() =>
+                                                        repostEvent(event)}
+                                                >
+                                                    🔄 Repost
+                                                </button>
+                                            {/if}
+                                        </div>
+
+                                        <div class="event-content">
+                                            {#if event.kind === 0}
+                                                <!-- Profile metadata -->
+                                                {#if event.content}
+                                                    <div
+                                                        class="profile-content"
+                                                    >
+                                                        <pre>{JSON.stringify(
+                                                                JSON.parse(
+                                                                    event.content,
+                                                                ),
+                                                                null,
+                                                                2,
+                                                            )}</pre>
+                                                    </div>
+                                                {/if}
+                                            {:else if event.kind === 3}
+                                                <!-- Follow list -->
+                                                <div class="follow-list">
+                                                    <p>
+                                                        Follows {event.tags.filter(
+                                                            (t) => t[0] === "p",
+                                                        ).length} people
+                                                    </p>
+                                                    <div class="follow-tags">
+                                                        {#each event.tags.filter((t) => t[0] === "p") as tag}
+                                                            <span
+                                                                class="pubkey-tag"
+                                                                >{tag[1].substring(
+                                                                    0,
+                                                                    8,
+                                                                )}...</span
+                                                            >
+                                                        {/each}
+                                                    </div>
+                                                </div>
+                                            {:else}
+                                                <!-- Generic content -->
+                                                <div class="generic-content">
+                                                    <pre>{event.content}</pre>
+                                                </div>
+                                            {/if}
+                                        </div>
+
+                                        <div class="event-tags">
+                                            {#each event.tags as tag}
+                                                <span class="tag"
+                                                    >{tag[0]}: {tag[1]}</span
+                                                >
+                                            {/each}
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+
+                            {#if recoveryHasMore}
+                                <button
+                                    class="load-more"
+                                    on:click={loadRecoveryEvents}
+                                    disabled={isLoadingRecovery}
+                                >
+                                    Load More Events
+                                </button>
+                            {/if}
+                        {/if}
                     </div>
                 {/if}
             </div>
@@ -4609,5 +4938,232 @@
         .search-result-content {
             font-size: 0.8rem;
         }
+    }
+
+    /* Recovery Tab Styles */
+    .recovery-tab {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .recovery-header {
+        margin-bottom: 30px;
+        text-align: center;
+    }
+
+    .recovery-header h2 {
+        margin: 0 0 10px 0;
+        color: var(--text-color);
+    }
+
+    .recovery-header p {
+        margin: 0;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .recovery-controls {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        margin-bottom: 30px;
+        padding: 20px;
+        background: var(--bg-color);
+        border-radius: 8px;
+        flex-wrap: wrap;
+    }
+
+    .kind-selector {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .kind-selector label {
+        font-weight: 500;
+        color: var(--text-color);
+    }
+
+    .kind-selector select {
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-color);
+        color: var(--text-color);
+        min-width: 300px;
+    }
+
+    .custom-kind-input {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+
+    .custom-kind-input label {
+        font-weight: 500;
+        color: var(--text-color);
+    }
+
+    .custom-kind-input input {
+        padding: 8px 12px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background: var(--bg-color);
+        color: var(--text-color);
+        min-width: 200px;
+    }
+
+    .custom-kind-input input::placeholder {
+        color: var(--text-color);
+        opacity: 0.6;
+    }
+
+    .recovery-results {
+        margin-top: 20px;
+    }
+
+    .loading,
+    .no-events {
+        text-align: center;
+        padding: 40px;
+        color: var(--text-color);
+        opacity: 0.7;
+    }
+
+    .events-list {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .event-item {
+        background: var(--bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 20px;
+        transition: all 0.2s ease;
+    }
+
+    .event-item.old-version {
+        opacity: 0.7;
+        border-color: #ffc107;
+        background: rgba(255, 193, 7, 0.1);
+    }
+
+    .event-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .event-kind {
+        font-weight: 600;
+        color: var(--primary);
+    }
+
+    .event-timestamp {
+        color: var(--text-color);
+        font-size: 0.9em;
+        opacity: 0.7;
+    }
+
+    .repost-button {
+        background: var(--primary);
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background 0.2s ease;
+    }
+
+    .repost-button:hover {
+        background: #00acc1;
+    }
+
+    .event-content {
+        margin-bottom: 15px;
+    }
+
+    .profile-content pre,
+    .generic-content pre {
+        background: var(--bg-color);
+        padding: 15px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-size: 0.9em;
+        margin: 0;
+        border: 1px solid var(--border-color);
+    }
+
+    .follow-list p {
+        margin: 0 0 10px 0;
+        font-weight: 500;
+        color: var(--text-color);
+    }
+
+    .follow-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .pubkey-tag {
+        background: var(--bg-color);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.8em;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+    }
+
+    .event-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .tag {
+        background: var(--bg-color);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.8em;
+        color: var(--text-color);
+        opacity: 0.7;
+        border: 1px solid var(--border-color);
+    }
+
+    .load-more {
+        width: 100%;
+        padding: 12px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1em;
+        margin-top: 20px;
+        transition: background 0.2s ease;
+    }
+
+    .load-more:hover:not(:disabled) {
+        background: #00acc1;
+    }
+
+    .load-more:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    /* Dark theme adjustments for recovery tab */
+    :global(body.dark-theme) .event-item.old-version {
+        background: rgba(255, 193, 7, 0.1);
+        border-color: #ffc107;
     }
 </style>

@@ -10,6 +10,8 @@ import (
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/database"
+	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/utils/atomic"
 )
 
@@ -118,4 +120,14 @@ func (l *Listener) getManagedACL() *database.ManagedACL {
 		}
 	}
 	return nil
+}
+
+// QueryEvents queries events using the database QueryEvents method
+func (l *Listener) QueryEvents(ctx context.Context, f *filter.F) (event.S, error) {
+	return l.D.QueryEvents(ctx, f)
+}
+
+// QueryAllVersions queries events using the database QueryAllVersions method
+func (l *Listener) QueryAllVersions(ctx context.Context, f *filter.F) (event.S, error) {
+	return l.D.QueryAllVersions(ctx, f)
 }

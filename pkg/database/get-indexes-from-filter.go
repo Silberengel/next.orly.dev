@@ -10,6 +10,7 @@ import (
 	"next.orly.dev/pkg/database/indexes"
 	types2 "next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/tag"
 )
 
 type Range struct {
@@ -145,21 +146,28 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 		caEnd.Set(uint64(math.MaxInt64))
 	}
 
+	// Filter out special tags that shouldn't affect index selection
+	var filteredTags *tag.S
 	if f.Tags != nil && f.Tags.Len() > 0 {
-		// sort the tags so they are in iteration order (reverse)
-		tmp := *f.Tags
-		sort.Slice(
-			tmp, func(i, j int) bool {
-				return bytes.Compare(tmp[i].Key(), tmp[j].Key()) > 0
-			},
-		)
+		filteredTags = tag.NewSWithCap(f.Tags.Len())
+		for _, t := range *f.Tags {
+			// Skip the special "show_all_versions" tag
+			if bytes.Equal(t.Key(), []byte("show_all_versions")) {
+				continue
+			}
+			filteredTags.Append(t)
+		}
+		// sort the filtered tags so they are in iteration order (reverse)
+		if filteredTags.Len() > 0 {
+			sort.Sort(filteredTags)
+		}
 	}
 
 	// TagKindPubkey tkp
-	if f.Kinds != nil && f.Kinds.Len() > 0 && f.Authors != nil && f.Authors.Len() > 0 && f.Tags != nil && f.Tags.Len() > 0 {
+	if f.Kinds != nil && f.Kinds.Len() > 0 && f.Authors != nil && f.Authors.Len() > 0 && filteredTags != nil && filteredTags.Len() > 0 {
 		for _, k := range f.Kinds.ToUint16() {
 			for _, author := range f.Authors.T {
-				for _, t := range *f.Tags {
+				for _, t := range *filteredTags {
 					// accept single-letter keys like "e" or filter-style keys like "#e"
 					if t.Len() >= 2 && (len(t.Key()) == 1 || (len(t.Key()) == 2 && t.Key()[0] == '#')) {
 						kind := new(types2.Uint16)
@@ -206,9 +214,9 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	}
 
 	// TagKind tkc
-	if f.Kinds != nil && f.Kinds.Len() > 0 && f.Tags != nil && f.Tags.Len() > 0 {
+	if f.Kinds != nil && f.Kinds.Len() > 0 && filteredTags != nil && filteredTags.Len() > 0 {
 		for _, k := range f.Kinds.ToUint16() {
-			for _, t := range *f.Tags {
+			for _, t := range *filteredTags {
 				if t.Len() >= 2 && (len(t.Key()) == 1 || (len(t.Key()) == 2 && t.Key()[0] == '#')) {
 					kind := new(types2.Uint16)
 					kind.Set(k)
@@ -249,9 +257,9 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	}
 
 	// TagPubkey tpc
-	if f.Authors != nil && f.Authors.Len() > 0 && f.Tags != nil && f.Tags.Len() > 0 {
+	if f.Authors != nil && f.Authors.Len() > 0 && filteredTags != nil && filteredTags.Len() > 0 {
 		for _, author := range f.Authors.T {
-			for _, t := range *f.Tags {
+			for _, t := range *filteredTags {
 				if t.Len() >= 2 && (len(t.Key()) == 1 || (len(t.Key()) == 2 && t.Key()[0] == '#')) {
 					var p *types2.PubHash
 					log.I.S(author)
@@ -293,8 +301,8 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	}
 
 	// Tag tc-
-	if f.Tags != nil && f.Tags.Len() > 0 && (f.Authors == nil || f.Authors.Len() == 0) && (f.Kinds == nil || f.Kinds.Len() == 0) {
-		for _, t := range *f.Tags {
+	if filteredTags != nil && filteredTags.Len() > 0 && (f.Authors == nil || f.Authors.Len() == 0) && (f.Kinds == nil || f.Kinds.Len() == 0) {
+		for _, t := range *filteredTags {
 			if t.Len() >= 2 && (len(t.Key()) == 1 || (len(t.Key()) == 2 && t.Key()[0] == '#')) {
 				keyBytes := t.Key()
 				key := new(types2.Letter)
@@ -353,7 +361,7 @@ func GetIndexesFromFilter(f *filter.F) (idxs []Range, err error) {
 	}
 
 	// Kind kc-
-	if f.Kinds != nil && f.Kinds.Len() > 0 && (f.Authors == nil || f.Authors.Len() == 0) && (f.Tags == nil || f.Tags.Len() == 0) {
+	if f.Kinds != nil && f.Kinds.Len() > 0 && (f.Authors == nil || f.Authors.Len() == 0) && (filteredTags == nil || filteredTags.Len() == 0) {
 		for _, k := range f.Kinds.ToUint16() {
 			kind := new(types2.Uint16)
 			kind.Set(k)

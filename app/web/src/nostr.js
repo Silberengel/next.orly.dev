@@ -308,7 +308,9 @@ export async function fetchAllEvents(options = {}) {
     limit = 100,
     since = null,
     until = null,
-    authors = null
+    authors = null,
+    kinds = null,
+    tags = null
   } = options;
 
   const filters = {};
@@ -316,6 +318,8 @@ export async function fetchAllEvents(options = {}) {
   if (since) filters.since = since;
   if (until) filters.until = until;
   if (authors) filters.authors = authors;
+  if (kinds) filters.kinds = kinds;
+  if (tags) filters.tags = tags;
   
   // Don't specify kinds filter - this will include all events including delete events (kind 5)
   

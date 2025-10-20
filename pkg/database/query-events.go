@@ -38,10 +38,17 @@ func CheckExpiration(ev *event.E) (expired bool) {
 func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	evs event.S, err error,
 ) {
-	return d.QueryEventsWithOptions(c, f, true)
+	return d.QueryEventsWithOptions(c, f, true, false)
 }
 
-func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool) (
+// QueryAllVersions queries events and returns all versions of replaceable events
+func (d *D) QueryAllVersions(c context.Context, f *filter.F) (
+	evs event.S, err error,
+) {
+	return d.QueryEventsWithOptions(c, f, true, true)
+}
+
+func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool, showAllVersions bool) (
 	evs event.S, err error,
 ) {
 	// if there is Ids in the query, this overrides anything else
@@ -428,6 +435,9 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				if deletionsByKindPubkey[key] && !isIdInFilter {
 					// This replaceable event has been deleted, skip it
 					continue
+				} else if showAllVersions {
+					// If showAllVersions is true, treat replaceable events as regular events
+					regularEvents = append(regularEvents, ev)
 				} else {
 					// Normal replaceable event handling
 					existing, exists := replaceableEvents[key]
@@ -459,20 +469,25 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					}
 				}
 
-				// Initialize the inner map if it doesn't exist
-				if _, exists := paramReplaceableEvents[key]; !exists {
-					paramReplaceableEvents[key] = make(map[string]*event.E)
-				}
+				if showAllVersions {
+					// If showAllVersions is true, treat parameterized replaceable events as regular events
+					regularEvents = append(regularEvents, ev)
+				} else {
+					// Initialize the inner map if it doesn't exist
+					if _, exists := paramReplaceableEvents[key]; !exists {
+						paramReplaceableEvents[key] = make(map[string]*event.E)
+					}
 
-				// Check if we already have an event with this 'd' tag value
-				existing, exists := paramReplaceableEvents[key][dValue]
-				// Only keep the newer event, regardless of processing order
-				if !exists {
-					// No existing event, add this one
-					paramReplaceableEvents[key][dValue] = ev
-				} else if ev.CreatedAt > existing.CreatedAt {
-					// This event is newer than the existing one, replace it
-					paramReplaceableEvents[key][dValue] = ev
+					// Check if we already have an event with this 'd' tag value
+					existing, exists := paramReplaceableEvents[key][dValue]
+					// Only keep the newer event, regardless of processing order
+					if !exists {
+						// No existing event, add this one
+						paramReplaceableEvents[key][dValue] = ev
+					} else if ev.CreatedAt > existing.CreatedAt {
+						// This event is newer than the existing one, replace it
+						paramReplaceableEvents[key][dValue] = ev
+					}
 				}
 				// If this event is older than the existing one, ignore it
 			} else {
@@ -528,7 +543,7 @@ func (d *D) QueryDeleteEventsByTargetId(c context.Context, targetEventId []byte)
 	}
 
 	// Query for the delete events
-	if evs, err = d.QueryEventsWithOptions(c, f, true); chk.E(err) {
+	if evs, err = d.QueryEventsWithOptions(c, f, true, false); chk.E(err) {
 		return
 	}
 
