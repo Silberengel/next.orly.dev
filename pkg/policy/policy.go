@@ -684,8 +684,8 @@ func (pm *PolicyManager) ProcessEvent(evt *PolicyEvent) (*PolicyResponse, error)
 		return nil, fmt.Errorf("failed to serialize event: %v", err)
 	}
 
-	// Send the event JSON to the policy script
-	if _, err := stdin.Write(eventJSON); chk.E(err) {
+	// Send the event JSON to the policy script (newline-terminated for shell-readers)
+	if _, err := stdin.Write(append(eventJSON, '\n')); chk.E(err) {
 		return nil, fmt.Errorf("failed to write event to policy: %v", err)
 	}
 
@@ -734,13 +734,9 @@ func (pm *PolicyManager) readResponses() {
 
 // logOutput logs the output from stdout and stderr
 func (pm *PolicyManager) logOutput(stdout, stderr io.ReadCloser) {
-	defer stdout.Close()
 	defer stderr.Close()
 
-	go func() {
-		io.Copy(os.Stdout, stdout)
-	}()
-
+	// Only log stderr, stdout is used by readResponses
 	go func() {
 		io.Copy(os.Stderr, stderr)
 	}()
