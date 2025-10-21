@@ -737,9 +737,19 @@ func (pp *PaymentProcessor) CreateWelcomeNote(userPubkey []byte) error {
 		return fmt.Errorf("failed to encode relay npub: %w", err)
 	}
 
-	// Create the welcome note content with nostr:npub link
+	// Get user npub for personalized greeting
+	userNpub, err := bech32encoding.BinToNpub(userPubkey)
+	if err != nil {
+		return fmt.Errorf("failed to encode user npub: %w", err)
+	}
+
+	// Create the welcome note content with privacy notice and personalized greeting
 	content := fmt.Sprintf(
-		`Welcome to the relay! 🎉
+		`This note is only visible to you
+
+Hi nostr:%s
+
+Welcome to the relay! 🎉
 
 You have a FREE 30-day trial that started when you first logged in.
 
@@ -759,7 +769,7 @@ Relay: nostr:%s
 
 Log in to the relay dashboard to access your configuration at: %s
 
-Enjoy your time on the relay!`, monthlyPrice, monthlyPrice,
+Enjoy your time on the relay!`, string(userNpub), monthlyPrice, monthlyPrice,
 		string(relayNpubForContent), pp.getDashboardURL(),
 	)
 
@@ -784,11 +794,8 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice,
 	// Add "private" tag with authorized npubs (user and relay)
 	var authorizedNpubs []string
 
-	// Add user npub
-	userNpub, err := bech32encoding.BinToNpub(userPubkey)
-	if err == nil {
-		authorizedNpubs = append(authorizedNpubs, string(userNpub))
-	}
+	// Add user npub (already encoded above)
+	authorizedNpubs = append(authorizedNpubs, string(userNpub))
 
 	// Add relay npub
 	relayNpub, err := bech32encoding.BinToNpub(sign.Pub())
