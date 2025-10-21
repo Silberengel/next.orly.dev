@@ -349,6 +349,8 @@ Log in to the relay dashboard to access your configuration at: %s`,
 	if len(authorizedNpubs) > 0 {
 		privateTagValue := strings.Join(authorizedNpubs, ",")
 		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+		// Add protected "-" tag to mark this event as protected
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("-", ""))
 	}
 
 	// Add a special tag to mark this as an expiry warning
@@ -465,6 +467,8 @@ Log in to the relay dashboard to access your configuration at: %s`,
 	if len(authorizedNpubs) > 0 {
 		privateTagValue := strings.Join(authorizedNpubs, ",")
 		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+		// Add protected "-" tag to mark this event as protected
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("-", ""))
 	}
 
 	// Add a special tag to mark this as a trial reminder
@@ -691,6 +695,8 @@ func (pp *PaymentProcessor) createPaymentNote(
 	if len(authorizedNpubs) > 0 {
 		privateTagValue := strings.Join(authorizedNpubs, ",")
 		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+		// Add protected "-" tag to mark this event as protected
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("-", ""))
 	}
 
 	// Sign and save the event
@@ -794,6 +800,8 @@ Enjoy your time on the relay!`, monthlyPrice, monthlyPrice,
 	if len(authorizedNpubs) > 0 {
 		privateTagValue := strings.Join(authorizedNpubs, ",")
 		*ev.Tags = append(*ev.Tags, tag.NewFromAny("private", privateTagValue))
+		// Add protected "-" tag to mark this event as protected
+		*ev.Tags = append(*ev.Tags, tag.NewFromAny("-", ""))
 	}
 
 	// Add a special tag to mark this as a welcome note
