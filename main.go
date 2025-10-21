@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pkg/profile"
@@ -21,6 +23,7 @@ import (
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/spider"
+	"next.orly.dev/pkg/utils/interrupt"
 	"next.orly.dev/pkg/version"
 )
 
@@ -83,16 +86,31 @@ func main() {
 		log.I.F("enabling HTTP pprof server to support web viewer")
 		cfg.PprofHTTP = true
 	}
+	// Ensure profiling is stopped on interrupts (SIGINT/SIGTERM) as well as on normal exit
+	var profileStopOnce sync.Once
+	profileStop := func() {}
 	switch cfg.Pprof {
 	case "cpu":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.CPUProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("cpu profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.CPUProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("cpu profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "memory":
 		if cfg.PprofPath != "" {
@@ -100,10 +118,22 @@ func main() {
 				profile.MemProfile, profile.MemProfileRate(32),
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("memory profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("memory profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "allocation":
 		if cfg.PprofPath != "" {
@@ -111,30 +141,66 @@ func main() {
 				profile.MemProfileAllocs, profile.MemProfileRate(32),
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("allocation profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileAllocs)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("allocation profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "heap":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.MemProfileHeap, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("heap profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileHeap)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("heap profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "mutex":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.MutexProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("mutex profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MutexProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("mutex profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "threadcreate":
 		if cfg.PprofPath != "" {
@@ -142,33 +208,75 @@ func main() {
 				profile.ThreadcreationProfile,
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("threadcreate profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.ThreadcreationProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("threadcreate profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "goroutine":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.GoroutineProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("goroutine profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.GoroutineProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("goroutine profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 	case "block":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.BlockProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("block profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.BlockProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(func() {
+					prof.Stop()
+					log.I.F("block profiling stopped and flushed")
+				})
+			}
+			defer profileStop()
 		}
 
 	}
+
+	// Register a handler so profiling is stopped when an interrupt is received
+	interrupt.AddHandler(func() {
+		log.I.F("interrupt received: stopping profiling")
+		profileStop()
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	var db *database.D
 	if db, err = database.New(
@@ -277,7 +385,7 @@ func main() {
 
 	quit := app.Run(ctx, cfg, db)
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	for {
 		select {
 		case <-sigs:
@@ -296,5 +404,5 @@ func main() {
 			return
 		}
 	}
-	log.I.F("exiting")
+	// log.I.F("exiting")
 }
