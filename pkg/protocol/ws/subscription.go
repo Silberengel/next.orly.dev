@@ -171,6 +171,7 @@ func (sub *Subscription) Close() {
 	if sub.Client.IsConnected() {
 		closeMsg := closeenvelope.NewFrom(sub.id)
 		closeb := closeMsg.Marshal(nil)
+		log.T.F("WS.Subscription.Close: outbound CLOSE to %s: %s", sub.Client.URL, string(closeb))
 		<-sub.Client.Write(closeb)
 	}
 }
@@ -191,6 +192,7 @@ func (sub *Subscription) Fire() (err error) {
 		"WS.Subscription.Fire: sending REQ id=%s filters=%d bytes=%d",
 		sub.GetID(), len(*sub.Filters), len(reqb),
 	)
+	log.T.F("WS.Subscription.Fire: outbound REQ to %s: %s", sub.Client.URL, string(reqb))
 	if err = <-sub.Client.Write(reqb); err != nil {
 		err = fmt.Errorf("failed to write: %w", err)
 		log.T.F(

@@ -357,7 +357,7 @@ func (s *Spider) queryRelayForEvents(
 			Authors: tag.NewFromBytesSlice(chunk...),
 			Since:   timestamp.FromUnix(startTime.Unix()),
 			Until:   timestamp.FromUnix(endTime.Unix()),
-			Limit:   func() *uint { l := uint(1000); return &l }(), // Limit to avoid overwhelming
+			Limit:   func() *uint { l := uint(500); return &l }(), // Limit to avoid overwhelming
 		}
 
 		// Subscribe to get events for this chunk

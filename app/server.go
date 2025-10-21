@@ -54,6 +54,16 @@ func (s *Server) isIPBlacklisted(remote string) bool {
 	// Extract IP from remote address (e.g., "192.168.1.1:12345" -> "192.168.1.1")
 	remoteIP := strings.Split(remote, ":")[0]
 
+	// Check static IP blacklist from config first
+	if len(s.Config.IPBlacklist) > 0 {
+		for _, blocked := range s.Config.IPBlacklist {
+			// Allow simple prefix matching for subnets (e.g., "192.168" matches 192.168.0.0/16)
+			if blocked != "" && strings.HasPrefix(remoteIP, blocked) {
+				return true
+			}
+		}
+	}
+
 	// Check if managed ACL is available and active
 	if s.Config.ACLMode == "managed" {
 		for _, aclInstance := range acl.Registry.ACL {

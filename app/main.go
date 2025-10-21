@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -18,11 +20,14 @@ import (
 func Run(
 	ctx context.Context, cfg *config.C, db *database.D,
 ) (quit chan struct{}) {
+	quit = make(chan struct{})
+	var once sync.Once
+
 	// shutdown handler
 	go func() {
 		<-ctx.Done()
 		log.I.F("shutting down")
-		close(quit)
+		once.Do(func() { close(quit) })
 	}()
 	// get the admins
 	var err error
@@ -112,9 +117,37 @@ func Run(
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	log.I.F("starting listener on http://%s", addr)
+
+	// Create HTTP server for graceful shutdown
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: l,
+	}
+
 	go func() {
-		chk.E(http.ListenAndServe(addr, l))
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.E.F("HTTP server error: %v", err)
+		}
 	}()
-	quit = make(chan struct{})
+
+	// Graceful shutdown handler
+	go func() {
+		<-ctx.Done()
+		log.I.F("shutting down HTTP server gracefully")
+
+		// Create shutdown context with timeout
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelShutdown()
+
+		// Shutdown the server gracefully
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.E.F("HTTP server shutdown error: %v", err)
+		} else {
+			log.I.F("HTTP server shutdown completed")
+		}
+
+		once.Do(func() { close(quit) })
+	}()
+
 	return
 }

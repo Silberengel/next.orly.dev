@@ -178,6 +178,33 @@ func (f *Follows) adminRelays() (urls []string) {
 	copy(admins, f.admins)
 	f.followsMx.RUnlock()
 	seen := make(map[string]struct{})
+	// Build a set of normalized self relay addresses to avoid self-connections
+	selfSet := make(map[string]struct{})
+	selfHosts := make(map[string]struct{})
+	if f.cfg != nil && len(f.cfg.RelayAddresses) > 0 {
+		for _, a := range f.cfg.RelayAddresses {
+			n := string(normalize.URL(a))
+			if n == "" {
+				continue
+			}
+			selfSet[n] = struct{}{}
+			// Also record hostname (without port) for robust matching
+			// Accept simple splitting; normalize.URL ensures scheme://host[:port]
+			host := n
+			if i := strings.Index(host, "://"); i >= 0 {
+				host = host[i+3:]
+			}
+			if j := strings.Index(host, "/"); j >= 0 {
+				host = host[:j]
+			}
+			if k := strings.Index(host, ":"); k >= 0 {
+				host = host[:k]
+			}
+			if host != "" {
+				selfHosts[host] = struct{}{}
+			}
+		}
+	}
 
 	// First, try to get relay URLs from admin kind 10002 events
 	for _, adm := range admins {
@@ -208,6 +235,26 @@ func (f *Follows) adminRelays() (urls []string) {
 				if n == "" {
 					continue
 				}
+				// Skip if this URL is one of our configured self relay addresses or hosts
+				if _, isSelf := selfSet[n]; isSelf {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				// Host match
+				host := n
+				if i := strings.Index(host, "://"); i >= 0 {
+					host = host[i+3:]
+				}
+				if j := strings.Index(host, "/"); j >= 0 {
+					host = host[:j]
+				}
+				if k := strings.Index(host, ":"); k >= 0 {
+					host = host[:k]
+				}
+				if _, isSelfHost := selfHosts[host]; isSelfHost {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
 				if _, ok := seen[n]; ok {
 					continue
 				}
@@ -226,6 +273,26 @@ func (f *Follows) adminRelays() (urls []string) {
 				n := string(normalize.URL(relay))
 				if n == "" {
 					log.W.F("invalid bootstrap relay URL: %s", relay)
+					continue
+				}
+				// Skip if this URL is one of our configured self relay addresses or hosts
+				if _, isSelf := selfSet[n]; isSelf {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				// Host match
+				host := n
+				if i := strings.Index(host, "://"); i >= 0 {
+					host = host[i+3:]
+				}
+				if j := strings.Index(host, "/"); j >= 0 {
+					host = host[:j]
+				}
+				if k := strings.Index(host, ":"); k >= 0 {
+					host = host[:k]
+				}
+				if _, isSelfHost := selfHosts[host]; isSelfHost {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
 					continue
 				}
 				if _, ok := seen[n]; ok {
@@ -359,14 +426,16 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 				f3 := &filter.F{
 					Authors: tag.NewFromBytesSlice(authors...),
 					Since:   oneMonthAgo,
-					Limit:   values.ToUintPointer(1000),
+					Limit:   values.ToUintPointer(500),
 				}
 				*ff = append(*ff, f1, f2, f3)
 				// Use a subscription ID for event sync (no follow lists)
 				subID := "event-sync"
 				req := reqenvelope.NewFrom([]byte(subID), ff)
+				reqBytes := req.Marshal(nil)
+				log.T.F("follows syncer: outbound REQ to %s: %s", u, string(reqBytes))
 				if err = c.Write(
-					ctx, websocket.MessageText, req.Marshal(nil),
+					ctx, websocket.MessageText, reqBytes,
 				); chk.E(err) {
 					log.W.F(
 						"follows syncer: failed to send event REQ to %s: %v", u, err,
@@ -623,7 +692,9 @@ func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
 	// Use a specific subscription ID for follow list fetching
 	subID := "follow-lists-fetch"
 	req := reqenvelope.NewFrom([]byte(subID), ff)
-	if err = c.Write(ctx, websocket.MessageText, req.Marshal(nil)); chk.E(err) {
+	reqBytes := req.Marshal(nil)
+	log.T.F("follows syncer: outbound REQ to %s: %s", relayURL, string(reqBytes))
+	if err = c.Write(ctx, websocket.MessageText, reqBytes); chk.E(err) {
 		log.W.F("follows syncer: failed to send follow list REQ to %s: %v", relayURL, err)
 		return
 	}

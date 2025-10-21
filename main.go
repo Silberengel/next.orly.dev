@@ -282,11 +282,14 @@ func main() {
 		select {
 		case <-sigs:
 			fmt.Printf("\r")
-			cancel()
+			log.I.F("received shutdown signal, starting graceful shutdown")
+			cancel() // This will trigger HTTP server shutdown
+			<-quit   // Wait for HTTP server to shut down
 			chk.E(db.Close())
 			log.I.F("exiting")
 			return
 		case <-quit:
+			log.I.F("application quit signal received")
 			cancel()
 			chk.E(db.Close())
 			log.I.F("exiting")

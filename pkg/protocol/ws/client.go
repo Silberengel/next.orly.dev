@@ -263,6 +263,7 @@ func (r *Client) ConnectWithTLS(
 			case wr := <-r.writeQueue:
 				// all write requests will go through this to prevent races
 				// log.D.F("{%s} sending %v\n", r.URL, string(wr.msg))
+				log.T.F("WS.Client: outbound message to %s: %s", r.URL, string(wr.msg))
 				if err = r.Connection.WriteMessage(
 					r.connectionContext, wr.msg,
 				); err != nil {

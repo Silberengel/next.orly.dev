@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/dgraph-io/badger/v4"
@@ -52,18 +53,29 @@ func New(
 	}
 
 	opts := badger.DefaultOptions(d.dataDir)
-	// Use sane defaults to avoid excessive memory usage during startup.
-	// Badger's default BlockSize is small (e.g., 4KB). Overriding it to very large values
-	// can cause massive allocations and OOM panics during deployments.
-	// Set BlockCacheSize to a moderate value and keep BlockSize small.
-	opts.BlockCacheSize = int64(256 * units.Mb) // 256 MB cache
-	opts.BlockSize = 4 * units.Kb               // 4 KB block size
+	// Configure caches based on environment to better match workload.
+	// Defaults aim for higher hit ratios under read-heavy workloads while remaining safe.
+	var blockCacheMB = 512 // default 512 MB
+	var indexCacheMB = 256 // default 256 MB
+	if v := os.Getenv("ORLY_DB_BLOCK_CACHE_MB"); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			blockCacheMB = n
+		}
+	}
+	if v := os.Getenv("ORLY_DB_INDEX_CACHE_MB"); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			indexCacheMB = n
+		}
+	}
+	opts.BlockCacheSize = int64(blockCacheMB * units.Mb)
+	opts.IndexCacheSize = int64(indexCacheMB * units.Mb)
+	opts.BlockSize = 4 * units.Kb // 4 KB block size
 	// Prevent huge allocations during table building and memtable flush.
 	// Badger's TableBuilder buffer is sized by BaseTableSize; ensure it's small.
-	opts.BaseTableSize = 64 * units.Mb           // 64 MB per table (default ~2MB, increased for fewer files but safe)
-	opts.MemTableSize = 64 * units.Mb            // 64 MB memtable to match table size
+	opts.BaseTableSize = 64 * units.Mb // 64 MB per table (default ~2MB, increased for fewer files but safe)
+	opts.MemTableSize = 64 * units.Mb  // 64 MB memtable to match table size
 	// Keep value log files to a moderate size as well
-	opts.ValueLogFileSize = 256 * units.Mb       // 256 MB value log files
+	opts.ValueLogFileSize = 256 * units.Mb // 256 MB value log files
 	opts.CompactL0OnClose = true
 	opts.LmaxCompaction = true
 	opts.Compression = options.None
