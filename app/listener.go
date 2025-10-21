@@ -12,6 +12,7 @@ import (
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/atomic"
 )
 
@@ -132,4 +133,26 @@ func (l *Listener) QueryEvents(ctx context.Context, f *filter.F) (event.S, error
 // QueryAllVersions queries events using the database QueryAllVersions method
 func (l *Listener) QueryAllVersions(ctx context.Context, f *filter.F) (event.S, error) {
 	return l.D.QueryAllVersions(ctx, f)
+}
+
+// canSeePrivateEvent checks if the authenticated user can see an event with a private tag
+func (l *Listener) canSeePrivateEvent(authedPubkey, privatePubkey []byte) (canSee bool) {
+	// If no authenticated user, deny access
+	if len(authedPubkey) == 0 {
+		return false
+	}
+
+	// If the authenticated user matches the private tag pubkey, allow access
+	if len(privatePubkey) > 0 && utils.FastEqual(authedPubkey, privatePubkey) {
+		return true
+	}
+
+	// Check if user is an admin or owner (they can see all private events)
+	accessLevel := acl.Registry.GetAccessLevel(authedPubkey, l.remote)
+	if accessLevel == "admin" || accessLevel == "owner" {
+		return true
+	}
+
+	// Default deny
+	return false
 }

@@ -431,6 +431,44 @@ privCheck:
 		allEvents = aclFilteredEvents
 	}
 
+	// Apply private tag filtering - only show events with "private" tags to authorized users
+	var privateFilteredEvents event.S
+	authedPubkey := l.authedPubkey.Load()
+	for _, ev := range allEvents {
+		// Check if event has private tags
+		hasPrivateTag := false
+		var privatePubkey []byte
+
+		if ev.Tags != nil && ev.Tags.Len() > 0 {
+			for _, t := range *ev.Tags {
+				if t.Len() >= 2 {
+					keyBytes := t.Key()
+					if len(keyBytes) == 7 && string(keyBytes) == "private" {
+						hasPrivateTag = true
+						privatePubkey = t.Value()
+						break
+					}
+				}
+			}
+		}
+
+		// If no private tag, include the event
+		if !hasPrivateTag {
+			privateFilteredEvents = append(privateFilteredEvents, ev)
+			continue
+		}
+
+		// Event has private tag - check if user is authorized to see it
+		canSeePrivate := l.canSeePrivateEvent(authedPubkey, privatePubkey)
+		if canSeePrivate {
+			privateFilteredEvents = append(privateFilteredEvents, ev)
+			log.D.F("private tag: allowing event %s for authorized user", hexenc.Enc(ev.ID))
+		} else {
+			log.D.F("private tag: filtering out event %s from unauthorized user", hexenc.Enc(ev.ID))
+		}
+	}
+	allEvents = privateFilteredEvents
+
 	seen := make(map[string]struct{})
 	for _, ev := range allEvents {
 		log.T.C(

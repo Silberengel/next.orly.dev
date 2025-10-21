@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
@@ -211,68 +212,96 @@ func (p *P) Deliver(ev *event.E) {
 						break
 					}
 				}
- 		}
- 		if !allowed {
- 			log.D.F("subscription delivery DENIED for privileged event %s to %s (auth mismatch)", 
- 				hex.Enc(ev.ID), d.sub.remote)
- 			// Skip delivery for this subscriber
- 			continue
- 		}
- 	}
-	
- 	var res *eventenvelope.Result
- 	if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
- 		log.E.F("failed to create event envelope for %s to %s: %v", 
- 			hex.Enc(ev.ID), d.sub.remote, err)
- 		continue
- 	}
-	
- 	// Log delivery attempt
- 	msgData := res.Marshal(nil)
- 	log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s", 
- 		hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
-	
- 	// Use a separate context with timeout for writes to prevent race conditions
- 	// where the publisher context gets cancelled while writing events
- 	writeCtx, cancel := context.WithTimeout(
- 		context.Background(), DefaultWriteTimeout,
- 	)
- 	defer cancel()
+			}
+			if !allowed {
+				log.D.F("subscription delivery DENIED for privileged event %s to %s (auth mismatch)",
+					hex.Enc(ev.ID), d.sub.remote)
+				// Skip delivery for this subscriber
+				continue
+			}
+		}
 
- 	deliveryStart := time.Now()
- 	if err = d.w.Write(
- 		writeCtx, websocket.MessageText, msgData,
- 	); err != nil {
- 		deliveryDuration := time.Since(deliveryStart)
-		
- 		// Log detailed failure information
- 		log.E.F("subscription delivery FAILED: event=%s to=%s sub=%s duration=%v error=%v", 
- 			hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
-		
- 		// Check for timeout specifically
- 		if writeCtx.Err() != nil {
- 			log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)", 
- 				hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
- 		}
-		
- 		// Log connection cleanup
- 		log.D.F("removing failed subscriber connection: %s", d.sub.remote)
-		
- 		// On error, remove the subscriber connection safely
- 		p.removeSubscriber(d.w)
- 		_ = d.w.CloseNow()
- 		continue
- 	}
-	
- 	deliveryDuration := time.Since(deliveryStart)
- 	log.D.F("subscription delivery SUCCESS: event=%s to=%s sub=%s duration=%v len=%d", 
- 		hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, len(msgData))
-	
- 	// Log slow deliveries for performance monitoring
- 	if deliveryDuration > time.Millisecond*50 {
- 		log.D.F("SLOW subscription delivery: event=%s to=%s duration=%v (>50ms)", 
- 			hex.Enc(ev.ID), d.sub.remote, deliveryDuration)
- 	}
+		// Check for private tags - only deliver to authorized users
+		if ev.Tags != nil && ev.Tags.Len() > 0 {
+			hasPrivateTag := false
+			var privatePubkey []byte
+
+			for _, t := range *ev.Tags {
+				if t.Len() >= 2 {
+					keyBytes := t.Key()
+					if len(keyBytes) == 7 && string(keyBytes) == "private" {
+						hasPrivateTag = true
+						privatePubkey = t.Value()
+						break
+					}
+				}
+			}
+
+			if hasPrivateTag {
+				canSeePrivate := p.canSeePrivateEvent(d.sub.AuthedPubkey, privatePubkey, d.sub.remote)
+				if !canSeePrivate {
+					log.D.F("subscription delivery DENIED for private event %s to %s (unauthorized)",
+						hex.Enc(ev.ID), d.sub.remote)
+					continue
+				}
+				log.D.F("subscription delivery ALLOWED for private event %s to %s (authorized)",
+					hex.Enc(ev.ID), d.sub.remote)
+			}
+		}
+
+		var res *eventenvelope.Result
+		if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
+			log.E.F("failed to create event envelope for %s to %s: %v",
+				hex.Enc(ev.ID), d.sub.remote, err)
+			continue
+		}
+
+		// Log delivery attempt
+		msgData := res.Marshal(nil)
+		log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s",
+			hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
+
+		// Use a separate context with timeout for writes to prevent race conditions
+		// where the publisher context gets cancelled while writing events
+		writeCtx, cancel := context.WithTimeout(
+			context.Background(), DefaultWriteTimeout,
+		)
+		defer cancel()
+
+		deliveryStart := time.Now()
+		if err = d.w.Write(
+			writeCtx, websocket.MessageText, msgData,
+		); err != nil {
+			deliveryDuration := time.Since(deliveryStart)
+
+			// Log detailed failure information
+			log.E.F("subscription delivery FAILED: event=%s to=%s sub=%s duration=%v error=%v",
+				hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
+
+			// Check for timeout specifically
+			if writeCtx.Err() != nil {
+				log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)",
+					hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
+			}
+
+			// Log connection cleanup
+			log.D.F("removing failed subscriber connection: %s", d.sub.remote)
+
+			// On error, remove the subscriber connection safely
+			p.removeSubscriber(d.w)
+			_ = d.w.CloseNow()
+			continue
+		}
+
+		deliveryDuration := time.Since(deliveryStart)
+		log.D.F("subscription delivery SUCCESS: event=%s to=%s sub=%s duration=%v len=%d",
+			hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, len(msgData))
+
+		// Log slow deliveries for performance monitoring
+		if deliveryDuration > time.Millisecond*50 {
+			log.D.F("SLOW subscription delivery: event=%s to=%s duration=%v (>50ms)",
+				hex.Enc(ev.ID), d.sub.remote, deliveryDuration)
+		}
 	}
 }
 
@@ -298,4 +327,26 @@ func (p *P) removeSubscriber(ws *websocket.Conn) {
 	defer p.Mx.Unlock()
 	clear(p.Map[ws])
 	delete(p.Map, ws)
+}
+
+// canSeePrivateEvent checks if the authenticated user can see an event with a private tag
+func (p *P) canSeePrivateEvent(authedPubkey, privatePubkey []byte, remote string) (canSee bool) {
+	// If no authenticated user, deny access
+	if len(authedPubkey) == 0 {
+		return false
+	}
+
+	// If the authenticated user matches the private tag pubkey, allow access
+	if len(privatePubkey) > 0 && utils.FastEqual(authedPubkey, privatePubkey) {
+		return true
+	}
+
+	// Check if user is an admin or owner (they can see all private events)
+	accessLevel := acl.Registry.GetAccessLevel(authedPubkey, remote)
+	if accessLevel == "admin" || accessLevel == "owner" {
+		return true
+	}
+
+	// Default deny
+	return false
 }
