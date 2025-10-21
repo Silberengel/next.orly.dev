@@ -17,6 +17,7 @@ The policy configuration is loaded from `$HOME/.config/ORLY/policy.json`. See `d
 
 ```json
 {
+  "default_policy": "allow",
   "kind": {
     "whitelist": [1, 3, 5, 7, 9735],
     "blacklist": []
@@ -48,6 +49,17 @@ The policy configuration is loaded from `$HOME/.config/ORLY/policy.json`. See `d
 }
 ```
 
+### Default Policy
+
+The `default_policy` field determines the default behavior when no specific rules deny an event:
+
+- `"allow"` (default): Events are allowed unless explicitly denied by rules
+- `"deny"`: Events are denied unless explicitly allowed by rules
+
+This applies to:
+- Events of whitelisted kinds that have no specific rules
+- Events that pass all other policy checks but have no explicit allow/deny decision
+
 ### Policy Evaluation Order
 
 The policy system evaluates events in the following order:
@@ -56,6 +68,7 @@ The policy system evaluates events in the following order:
 2. **Kinds Filtering** - Whitelist/blacklist by event kind
 3. **Kind-specific Rules** - Rules for specific event kinds
 4. **Script Rules** - Custom script logic (if enabled)
+5. **Default Policy** - Applied when no rules make a decision
 
 ### Global Rules
 
@@ -173,17 +186,41 @@ When policy is enabled, every EVENT envelope is checked using `CheckPolicy("writ
 
 When policy is enabled, every event returned in REQ responses is filtered using `CheckPolicy("read", event, loggedInPubkey, ipAddress)` before being sent to the client. The same evaluation order applies for read access.
 
-## Error Handling
+## Script Resilience
 
-- If policy script fails or times out, events are allowed by default
-- If policy configuration is invalid, default policy (allow all) is used
-- Policy script failures are logged but don't block relay operation
+The policy system is designed to be resilient to script failures:
+
+### Automatic Recovery
+- Policy scripts are automatically restarted if they crash or fail to load
+- The system continuously monitors script health and attempts recovery every 60 seconds (1 minute)
+- Script failures don't disable the entire policy system
+
+### Fallback Behavior
+When a policy script fails or is not running:
+- Events that would have been processed by the script fall back to the `default_policy`
+- The system logs which policy rule is inactive and the fallback behavior
+- Other policy rules (global, kinds, non-script rules) continue to function normally
+
+### Error Handling
+
+- If policy script fails or times out, events fall back to `default_policy` setting
+- If policy configuration is invalid, default policy (allow all) is used  
+- Policy script failures are logged with specific rule information but don't block relay operation
 
 ## Monitoring
 
-Policy decisions are logged at debug level:
+Policy decisions and script health are logged:
+
+### Policy Decisions
 - `policy allowed event <id>`
 - `policy rejected event <id>`
+
+### Script Health
+- `policy rule for kind <N> is inactive (script not running), falling back to default policy (<policy>)`
+- `policy rule for kind <N> failed (script processing error: <error>), falling back to default policy (<policy>)`
+- `policy rule for kind <N> returned unknown action '<action>', falling back to default policy (<policy>)`
+- `policy script not found at <path>, will retry periodically`
+- `policy script crashed - events will fall back to default policy until restart`
 - `policy filtered out event <id> for read access`
 
 ## Best Practices

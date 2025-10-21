@@ -593,9 +593,6 @@ func TestNewWithManager(t *testing.T) {
 		t.Error("Expected policy manager to not be running initially")
 	}
 
-	if policy.Manager.IsDisabled() {
-		t.Error("Expected policy manager to not be disabled initially")
-	}
 }
 
 func TestPolicyManagerLifecycle(t *testing.T) {
@@ -609,7 +606,6 @@ func TestPolicyManagerLifecycle(t *testing.T) {
 		configDir:    "/tmp",
 		scriptPath:   "/tmp/policy.sh",
 		enabled:      true,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100),
 	}
 
@@ -620,10 +616,6 @@ func TestPolicyManagerLifecycle(t *testing.T) {
 
 	if manager.IsRunning() {
 		t.Error("Expected policy manager to not be running initially")
-	}
-
-	if manager.IsDisabled() {
-		t.Error("Expected policy manager to not be disabled initially")
 	}
 
 	// Test starting with non-existent script (should fail gracefully)
@@ -650,7 +642,6 @@ func TestPolicyManagerProcessEvent(t *testing.T) {
 		configDir:    "/tmp",
 		scriptPath:   "/tmp/policy.sh",
 		enabled:      true,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100),
 	}
 
@@ -778,7 +769,6 @@ func TestEdgeCasesManagerWithInvalidScript(t *testing.T) {
 		configDir:    tempDir,
 		scriptPath:   scriptPath,
 		enabled:      true,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100),
 	}
 
@@ -797,7 +787,6 @@ func TestEdgeCasesManagerDoubleStart(t *testing.T) {
 		configDir:    "/tmp",
 		scriptPath:   "/tmp/policy.sh",
 		enabled:      true,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100),
 	}
 
@@ -1010,5 +999,339 @@ func TestMaxAgeChecks(t *testing.T) {
 				t.Errorf("Expected %v, got %v", tt.expected, allowed)
 			}
 		})
+	}
+}
+
+func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
+	// Create a policy with a script rule but no running manager, default policy is "allow"
+	policy := &P{
+		DefaultPolicy: "allow",
+		Rules: map[int]Rule{
+			1: {
+				Description: "script rule",
+				Script:      "policy.sh",
+			},
+		},
+		Manager: &PolicyManager{
+			enabled:   true,
+			isRunning: false, // Script is not running
+		},
+	}
+
+	// Create test event
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event when script is configured but not running (falls back to default "allow")
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed when script is not running (should fall back to default policy 'allow')")
+	}
+
+	// Test with default policy "deny"
+	policy.DefaultPolicy = "deny"
+	allowed2, err2 := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err2 != nil {
+		t.Errorf("Unexpected error: %v", err2)
+	}
+	if allowed2 {
+		t.Error("Expected event to be denied when script is not running and default policy is 'deny'")
+	}
+}
+
+func TestDefaultPolicyAllow(t *testing.T) {
+	// Test default policy "allow" behavior
+	policy := &P{
+		DefaultPolicy: "allow",
+		Kind:          Kinds{},
+		Rules:         map[int]Rule{}, // No specific rules
+	}
+
+	// Create test event for kind 1 (no specific rule exists)
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event with default policy "allow"
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed with default_policy 'allow'")
+	}
+}
+
+func TestDefaultPolicyDeny(t *testing.T) {
+	// Test default policy "deny" behavior
+	policy := &P{
+		DefaultPolicy: "deny",
+		Kind:          Kinds{},
+		Rules:         map[int]Rule{}, // No specific rules
+	}
+
+	// Create test event for kind 1 (no specific rule exists)
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should deny the event with default policy "deny"
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if allowed {
+		t.Error("Expected event to be denied with default_policy 'deny'")
+	}
+}
+
+func TestDefaultPolicyEmpty(t *testing.T) {
+	// Test empty default policy (should default to "allow")
+	policy := &P{
+		DefaultPolicy: "",
+		Kind:          Kinds{},
+		Rules:         map[int]Rule{}, // No specific rules
+	}
+
+	// Create test event for kind 1 (no specific rule exists)
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event with empty default policy (defaults to "allow")
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed with empty default_policy (should default to 'allow')")
+	}
+}
+
+func TestDefaultPolicyInvalid(t *testing.T) {
+	// Test invalid default policy (should default to "allow")
+	policy := &P{
+		DefaultPolicy: "invalid",
+		Kind:          Kinds{},
+		Rules:         map[int]Rule{}, // No specific rules
+	}
+
+	// Create test event for kind 1 (no specific rule exists)
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event with invalid default policy (defaults to "allow")
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed with invalid default_policy (should default to 'allow')")
+	}
+}
+
+func TestDefaultPolicyWithSpecificRule(t *testing.T) {
+	// Test that specific rules override default policy
+	policy := &P{
+		DefaultPolicy: "deny", // Default is deny
+		Kind:          Kinds{},
+		Rules: map[int]Rule{
+			1: {
+				Description: "allow kind 1",
+				WriteAllow:  []string{}, // Allow all for kind 1
+			},
+		},
+	}
+
+	// Create test event for kind 1 (has specific rule)
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event because specific rule allows it, despite default policy being "deny"
+	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed by specific rule, despite default_policy 'deny'")
+	}
+
+	// Create test event for kind 2 (no specific rule exists)
+	testEvent2 := createTestEvent("test-event-id-2", "test-pubkey", "test content", 2)
+
+	// Should deny the event because no specific rule and default policy is "deny"
+	allowed2, err2 := policy.CheckPolicy("write", testEvent2, []byte("test-pubkey"), "127.0.0.1")
+	if err2 != nil {
+		t.Errorf("Unexpected error: %v", err2)
+	}
+	if allowed2 {
+		t.Error("Expected event to be denied with default_policy 'deny' for kind without specific rule")
+	}
+}
+
+func TestNewPolicyDefaultsToAllow(t *testing.T) {
+	// Test that New() function sets default policy to "allow"
+	policy, err := New([]byte(`{}`))
+	if err != nil {
+		t.Fatalf("Failed to create policy: %v", err)
+	}
+
+	if policy.DefaultPolicy != "allow" {
+		t.Errorf("Expected default policy to be 'allow', got '%s'", policy.DefaultPolicy)
+	}
+}
+
+func TestNewPolicyWithDefaultPolicyJSON(t *testing.T) {
+	// Test loading default policy from JSON
+	jsonConfig := `{"default_policy": "deny"}`
+	policy, err := New([]byte(jsonConfig))
+	if err != nil {
+		t.Fatalf("Failed to create policy: %v", err)
+	}
+
+	if policy.DefaultPolicy != "deny" {
+		t.Errorf("Expected default policy to be 'deny', got '%s'", policy.DefaultPolicy)
+	}
+}
+
+func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
+	// Test that script processing failures fall back to default policy
+	// We'll test this by using a manager that's not running (simulating failure)
+	policy := &P{
+		DefaultPolicy: "allow",
+		Rules: map[int]Rule{
+			1: {
+				Description: "script rule",
+				Script:      "policy.sh",
+			},
+		},
+		Manager: &PolicyManager{
+			enabled:   true,
+			isRunning: false, // Script is not running (simulating failure)
+		},
+	}
+
+	// Create test event
+	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+
+	// Should allow the event when script is not running (falls back to default "allow")
+	allowed, err := policy.checkScriptPolicy("write", testEvent, "policy.sh", []byte("test-pubkey"), "127.0.0.1")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	if !allowed {
+		t.Error("Expected event to be allowed when script is not running (should fall back to default policy 'allow')")
+	}
+
+	// Test with default policy "deny"
+	policy.DefaultPolicy = "deny"
+	allowed2, err2 := policy.checkScriptPolicy("write", testEvent, "policy.sh", []byte("test-pubkey"), "127.0.0.1")
+	if err2 != nil {
+		t.Errorf("Unexpected error: %v", err2)
+	}
+	if allowed2 {
+		t.Error("Expected event to be denied when script is not running and default policy is 'deny'")
+	}
+}
+
+func TestDefaultPolicyLogicWithRules(t *testing.T) {
+	// Test that default policy logic works correctly with rules
+
+	// Test 1: default_policy "deny" - should only allow if rule explicitly allows
+	policy1 := &P{
+		DefaultPolicy: "deny",
+		Kind: Kinds{
+			Whitelist: []int{1, 2, 3}, // Allow kinds 1, 2, 3
+		},
+		Rules: map[int]Rule{
+			1: {
+				Description: "allow all for kind 1",
+				WriteAllow:  []string{}, // Empty means allow all
+			},
+			2: {
+				Description: "deny specific pubkey for kind 2",
+				WriteDeny:   []string{"64656e6965642d7075626b6579"}, // hex of "denied-pubkey"
+			},
+			// No rule for kind 3
+		},
+	}
+
+	// Kind 1: has rule that allows all - should be allowed
+	event1 := createTestEvent("test-1", "test-pubkey", "content", 1)
+	allowed1, err1 := policy1.CheckPolicy("write", event1, []byte("test-pubkey"), "127.0.0.1")
+	if err1 != nil {
+		t.Errorf("Unexpected error for kind 1: %v", err1)
+	}
+	if !allowed1 {
+		t.Error("Expected kind 1 to be allowed (rule allows all)")
+	}
+
+	// Kind 2: has rule that denies specific pubkey - should be allowed for other pubkeys
+	event2 := createTestEvent("test-2", "test-pubkey", "content", 2)
+	allowed2, err2 := policy1.CheckPolicy("write", event2, []byte("test-pubkey"), "127.0.0.1")
+	if err2 != nil {
+		t.Errorf("Unexpected error for kind 2: %v", err2)
+	}
+	if !allowed2 {
+		t.Error("Expected kind 2 to be allowed for non-denied pubkey")
+	}
+
+	// Kind 2: denied pubkey should be denied
+	event2Denied := createTestEvent("test-2-denied", "denied-pubkey", "content", 2)
+	allowed2Denied, err2Denied := policy1.CheckPolicy("write", event2Denied, []byte("test-pubkey"), "127.0.0.1")
+	if err2Denied != nil {
+		t.Errorf("Unexpected error for kind 2 denied: %v", err2Denied)
+	}
+	if allowed2Denied {
+		t.Error("Expected kind 2 to be denied for denied pubkey")
+	}
+
+	// Kind 3: whitelisted but no rule - should follow default policy (deny)
+	event3 := createTestEvent("test-3", "test-pubkey", "content", 3)
+	allowed3, err3 := policy1.CheckPolicy("write", event3, []byte("test-pubkey"), "127.0.0.1")
+	if err3 != nil {
+		t.Errorf("Unexpected error for kind 3: %v", err3)
+	}
+	if allowed3 {
+		t.Error("Expected kind 3 to be denied (no rule, default policy is deny)")
+	}
+
+	// Test 2: default_policy "allow" - should allow unless rule explicitly denies
+	policy2 := &P{
+		DefaultPolicy: "allow",
+		Kind: Kinds{
+			Whitelist: []int{1, 2, 3}, // Allow kinds 1, 2, 3
+		},
+		Rules: map[int]Rule{
+			1: {
+				Description: "deny specific pubkey for kind 1",
+				WriteDeny:   []string{"64656e6965642d7075626b6579"}, // hex of "denied-pubkey"
+			},
+			// No rules for kind 2, 3
+		},
+	}
+
+	// Kind 1: has rule that denies specific pubkey - should be allowed for other pubkeys
+	event1Allow := createTestEvent("test-1-allow", "test-pubkey", "content", 1)
+	allowed1Allow, err1Allow := policy2.CheckPolicy("write", event1Allow, []byte("test-pubkey"), "127.0.0.1")
+	if err1Allow != nil {
+		t.Errorf("Unexpected error for kind 1 allow: %v", err1Allow)
+	}
+	if !allowed1Allow {
+		t.Error("Expected kind 1 to be allowed for non-denied pubkey")
+	}
+
+	// Kind 1: denied pubkey should be denied
+	event1Deny := createTestEvent("test-1-deny", "denied-pubkey", "content", 1)
+	allowed1Deny, err1Deny := policy2.CheckPolicy("write", event1Deny, []byte("test-pubkey"), "127.0.0.1")
+	if err1Deny != nil {
+		t.Errorf("Unexpected error for kind 1 deny: %v", err1Deny)
+	}
+	if allowed1Deny {
+		t.Error("Expected kind 1 to be denied for denied pubkey")
+	}
+
+	// Kind 2: whitelisted but no rule - should follow default policy (allow)
+	event2Allow := createTestEvent("test-2-allow", "test-pubkey", "content", 2)
+	allowed2Allow, err2Allow := policy2.CheckPolicy("write", event2Allow, []byte("test-pubkey"), "127.0.0.1")
+	if err2Allow != nil {
+		t.Errorf("Unexpected error for kind 2 allow: %v", err2Allow)
+	}
+	if !allowed2Allow {
+		t.Error("Expected kind 2 to be allowed (no rule, default policy is allow)")
 	}
 }

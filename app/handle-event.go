@@ -112,17 +112,6 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 
 	// Check if policy is enabled and process event through it
 	if l.policyManager != nil && l.policyManager.Manager != nil && l.policyManager.Manager.IsEnabled() {
-		if l.policyManager.Manager.IsDisabled() {
-			// Policy is disabled due to failure - reject all events
-			log.W.F("policy is disabled, rejecting event %0x", env.E.ID)
-			if err = Ok.Error(
-				l, env,
-				"policy disabled - events rejected until policy is restored",
-			); chk.E(err) {
-				return
-			}
-			return
-		}
 
 		// Check policy for write access
 		allowed, policyErr := l.policyManager.CheckPolicy("write", env.E, l.authedPubkey.Load(), l.remote)

@@ -101,7 +101,6 @@ done
 		configDir:    tempDir,
 		scriptPath:   scriptPath,
 		enabled:      true,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100),
 	}
 

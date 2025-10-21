@@ -20,7 +20,9 @@ import (
 	"next.orly.dev/pkg/encoders/hex"
 )
 
-// Kinds defines the filter for events by kind; the whitelist overrides the blacklist if it has any fields, and the blacklist is ignored (implicitly all not-whitelisted are blacklisted)
+// Kinds defines whitelist and blacklist policies for event kinds.
+// Whitelist takes precedence over blacklist - if whitelist is present, only whitelisted kinds are allowed.
+// If only blacklist is present, all kinds except blacklisted ones are allowed.
 type Kinds struct {
 	// Whitelist is a list of event kinds that are allowed to be written to the relay. If any are present, implicitly all others are denied.
 	Whitelist []int `json:"whitelist,omitempty"`
@@ -28,13 +30,16 @@ type Kinds struct {
 	Blacklist []int `json:"blacklist,omitempty"`
 }
 
-// Rule is a rule for an event kind.
+// Rule defines policy criteria for a specific event kind.
 //
-// If Script is present, it overrides all other criteria.
+// Rules are evaluated in the following order:
+// 1. If Script is present and running, it determines the outcome
+// 2. If Script fails or is not running, falls back to default_policy
+// 3. Otherwise, all specified criteria are evaluated as AND operations
 //
-// The criteria have mutual exclude semantics on pubkey white/blacklists, if whitelist has any fields, blacklist is ignored (implicitly all not-whitelisted are blacklisted).
-//
-// The other criteria are evaluated as AND operations, everything specified must match for the event to be allowed to be written to the relay.
+// For pubkey allow/deny lists: whitelist takes precedence over blacklist.
+// If whitelist has entries, only whitelisted pubkeys are allowed.
+// If only blacklist has entries, all pubkeys except blacklisted ones are allowed.
 type Rule struct {
 	// Description is a human-readable description of the rule.
 	Description string `json:"description"`
@@ -66,14 +71,16 @@ type Rule struct {
 	MaxAgeEventInFuture *int64 `json:"max_age_event_in_future,omitempty"`
 }
 
-// PolicyEvent represents an event with additional context for policy scripts
+// PolicyEvent represents an event with additional context for policy scripts.
+// It embeds the Nostr event and adds authentication and network context.
 type PolicyEvent struct {
 	*event.E
 	LoggedInPubkey string `json:"logged_in_pubkey,omitempty"`
 	IPAddress      string `json:"ip_address,omitempty"`
 }
 
-// MarshalJSON implements custom JSON marshaling for PolicyEvent
+// MarshalJSON implements custom JSON marshaling for PolicyEvent.
+// It safely serializes the embedded event and additional context fields.
 func (pe *PolicyEvent) MarshalJSON() ([]byte, error) {
 	if pe.E == nil {
 		return json.Marshal(map[string]interface{}{
@@ -104,14 +111,17 @@ func (pe *PolicyEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(safeEvent)
 }
 
-// PolicyResponse represents a response from the policy script
+// PolicyResponse represents a response from the policy script.
+// The script should return JSON with these fields to indicate its decision.
 type PolicyResponse struct {
 	ID     string `json:"id"`
 	Action string `json:"action"` // accept, reject, or shadowReject
 	Msg    string `json:"msg"`    // NIP-20 response message (only used for reject)
 }
 
-// PolicyManager handles policy script execution and management
+// PolicyManager handles policy script execution and management.
+// It manages the lifecycle of policy scripts, handles communication with them,
+// and provides resilient operation with automatic restart capabilities.
 type PolicyManager struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -122,14 +132,15 @@ type PolicyManager struct {
 	mutex         sync.RWMutex
 	isRunning     bool
 	enabled       bool
-	disabled      bool // true when policy is disabled due to failure
 	stdin         io.WriteCloser
 	stdout        io.ReadCloser
 	stderr        io.ReadCloser
 	responseChan  chan PolicyResponse
 }
 
-// P is a policy for a relay's ACL.
+// P represents a complete policy configuration for a Nostr relay.
+// It defines access control rules, kind filtering, and default behavior.
+// Policies are evaluated in order: global rules, kind filtering, specific rules, then default policy.
 type P struct {
 	// Kind is policies for accepting or rejecting events by kind number.
 	Kind Kinds `json:"kind"`
@@ -137,22 +148,47 @@ type P struct {
 	Rules map[int]Rule `json:"rules"`
 	// Global is a rule set that applies to all events.
 	Global Rule `json:"global"`
+	// DefaultPolicy determines the default behavior when no rules deny an event ("allow" or "deny", defaults to "allow")
+	DefaultPolicy string `json:"default_policy"`
 	// Manager handles policy script execution
 	Manager *PolicyManager `json:"-"`
 }
 
-// New creates a new policy from JSON configuration
+// New creates a new policy from JSON configuration.
+// If policyJSON is empty, returns a policy with default settings.
+// The default_policy field defaults to "allow" if not specified.
 func New(policyJSON []byte) (p *P, err error) {
-	p = &P{}
+	p = &P{
+		DefaultPolicy: "allow", // Set default value
+	}
 	if len(policyJSON) > 0 {
 		if err = json.Unmarshal(policyJSON, p); chk.E(err) {
 			return nil, fmt.Errorf("failed to unmarshal policy JSON: %v", err)
 		}
 	}
+	// Ensure default policy is valid
+	if p.DefaultPolicy == "" {
+		p.DefaultPolicy = "allow"
+	}
 	return
 }
 
-// NewWithManager creates a new policy with a policy manager for script execution
+// getDefaultPolicyAction returns true if the default policy is "allow", false if "deny"
+func (p *P) getDefaultPolicyAction() (allowed bool) {
+	switch p.DefaultPolicy {
+	case "deny":
+		return false
+	case "allow", "":
+		return true
+	default:
+		// Invalid value, default to allow
+		return true
+	}
+}
+
+// NewWithManager creates a new policy with a policy manager for script execution.
+// It initializes the policy manager, loads configuration from files, and starts
+// background processes for script management and periodic health checks.
 func NewWithManager(ctx context.Context, appName string, enabled bool) *P {
 	configDir := filepath.Join(xdg.ConfigHome, appName)
 	scriptPath := filepath.Join(configDir, "policy.sh")
@@ -166,13 +202,13 @@ func NewWithManager(ctx context.Context, appName string, enabled bool) *P {
 		configDir:    configDir,
 		scriptPath:   scriptPath,
 		enabled:      enabled,
-		disabled:     false,
 		responseChan: make(chan PolicyResponse, 100), // Buffered channel for responses
 	}
 
 	// Load policy configuration from JSON file
 	policy := &P{
-		Manager: manager,
+		DefaultPolicy: "allow", // Set default value
+		Manager:       manager,
 	}
 
 	if enabled {
@@ -192,7 +228,8 @@ func NewWithManager(ctx context.Context, appName string, enabled bool) *P {
 	return policy
 }
 
-// LoadFromFile loads policy configuration from a JSON file
+// LoadFromFile loads policy configuration from a JSON file.
+// Returns an error if the file doesn't exist, can't be read, or contains invalid JSON.
 func (p *P) LoadFromFile(configPath string) error {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return fmt.Errorf("policy configuration file does not exist: %s", configPath)
@@ -214,7 +251,10 @@ func (p *P) LoadFromFile(configPath string) error {
 	return nil
 }
 
-// CheckPolicy checks if an event is allowed to be written to the relay based on the policy. The access parameter is either "write" or "read", write is for accepting events and read is for filtering events to send back to the client.
+// CheckPolicy checks if an event is allowed based on the policy configuration.
+// The access parameter should be "write" for accepting events or "read" for filtering events.
+// Returns true if the event is allowed, false if denied, and an error if validation fails.
+// Policy evaluation order: global rules → kind filtering → specific rules → default policy.
 func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAddress string) (allowed bool, err error) {
 	// Handle nil event
 	if ev == nil {
@@ -234,8 +274,8 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 	// Get rule for this kind
 	rule, hasRule := p.Rules[int(ev.Kind)]
 	if !hasRule {
-		// No specific rule for this kind, allow if global and kinds policy passed
-		return true, nil
+		// No specific rule for this kind, use default policy
+		return p.getDefaultPolicyAction(), nil
 	}
 
 	// Check if script is present and enabled
@@ -408,8 +448,9 @@ func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubke
 // checkScriptPolicy runs the policy script to determine if event should be allowed
 func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, loggedInPubkey []byte, ipAddress string) (allowed bool, err error) {
 	if p.Manager == nil || !p.Manager.IsRunning() {
-		// If script is not running, default to allow
-		return true, nil
+		// If script is not running, fall back to default policy
+		log.W.F("policy rule for kind %d is inactive (script not running), falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
+		return p.getDefaultPolicyAction(), nil
 	}
 
 	// Create policy event with additional context
@@ -422,9 +463,9 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	// Process event through policy script
 	response, scriptErr := p.Manager.ProcessEvent(policyEvent)
 	if chk.E(scriptErr) {
-		log.E.F("policy script processing failed: %v", scriptErr)
-		// Default to allow on script failure
-		return true, nil
+		log.E.F("policy rule for kind %d failed (script processing error: %v), falling back to default policy (%s)", ev.Kind, scriptErr, p.DefaultPolicy)
+		// Fall back to default policy on script failure
+		return p.getDefaultPolicyAction(), nil
 	}
 
 	// Handle script response
@@ -436,54 +477,18 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	case "shadowReject":
 		return false, nil // Treat as reject for policy purposes
 	default:
-		log.W.F("unknown policy script action: %s", response.Action)
-		// Default to allow for unknown actions
-		return true, nil
+		log.W.F("policy rule for kind %d returned unknown action '%s', falling back to default policy (%s)", ev.Kind, response.Action, p.DefaultPolicy)
+		// Fall back to default policy for unknown actions
+		return p.getDefaultPolicyAction(), nil
 	}
 }
 
 // PolicyManager methods (similar to SprocketManager)
 
-// disablePolicy disables policy due to failure
-func (pm *PolicyManager) disablePolicy() {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
-	if !pm.disabled {
-		pm.disabled = true
-		log.W.F("policy disabled due to failure - all events will be rejected (script location: %s)", pm.scriptPath)
-	}
-}
-
-// enablePolicy re-enables policy and attempts to start it
-func (pm *PolicyManager) enablePolicy() {
-	pm.mutex.Lock()
-	defer pm.mutex.Unlock()
-
-	if pm.disabled {
-		pm.disabled = false
-		log.I.F("policy re-enabled, attempting to start")
-
-		// Attempt to start policy in background
-		go func() {
-			if _, err := os.Stat(pm.scriptPath); err == nil {
-				if err := pm.StartPolicy(); err != nil {
-					log.E.F("failed to restart policy: %v", err)
-					pm.disablePolicy()
-				} else {
-					log.I.F("policy restarted successfully")
-				}
-			} else {
-				log.W.F("policy script still not found, keeping disabled")
-				pm.disablePolicy()
-			}
-		}()
-	}
-}
-
-// periodicCheck periodically checks if policy script becomes available
+// periodicCheck periodically checks if policy script becomes available and attempts to restart failed scripts.
+// Runs every 60 seconds (1 minute) to provide resilient script management.
 func (pm *PolicyManager) periodicCheck() {
-	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+	ticker := time.NewTicker(60 * time.Second) // Check every 60 seconds (1 minute)
 	defer ticker.Stop()
 
 	for {
@@ -492,27 +497,20 @@ func (pm *PolicyManager) periodicCheck() {
 			return
 		case <-ticker.C:
 			pm.mutex.RLock()
-			disabled := pm.disabled
 			running := pm.isRunning
 			pm.mutex.RUnlock()
 
-			// Only check if policy is disabled or not running
-			if disabled || !running {
+			// Check if policy script is not running and try to start it
+			if !running {
 				if _, err := os.Stat(pm.scriptPath); err == nil {
-					// Script is available, try to enable/restart
-					if disabled {
-						pm.enablePolicy()
-					} else if !running {
-						// Script exists but policy isn't running, try to start
-						go func() {
-							if err := pm.StartPolicy(); err != nil {
-								log.E.F("failed to restart policy: %v", err)
-								pm.disablePolicy()
-							} else {
-								log.I.F("policy restarted successfully")
-							}
-						}()
-					}
+					// Script exists but policy isn't running, try to start
+					go func() {
+						if err := pm.StartPolicy(); err != nil {
+							log.E.F("failed to restart policy: %v, will retry in next cycle", err)
+						} else {
+							log.I.F("policy restarted successfully")
+						}
+					}()
 				}
 			}
 		}
@@ -523,16 +521,17 @@ func (pm *PolicyManager) periodicCheck() {
 func (pm *PolicyManager) startPolicyIfExists() {
 	if _, err := os.Stat(pm.scriptPath); err == nil {
 		if err := pm.StartPolicy(); err != nil {
-			log.E.F("failed to start policy: %v", err)
-			pm.disablePolicy()
+			log.E.F("failed to start policy: %v, will retry periodically", err)
+			// Don't disable policy manager, just log the error and let periodic check retry
 		}
 	} else {
-		log.W.F("policy script not found at %s, disabling policy", pm.scriptPath)
-		pm.disablePolicy()
+		log.W.F("policy script not found at %s, will retry periodically", pm.scriptPath)
+		// Don't disable policy manager, just log and let periodic check retry
 	}
 }
 
-// StartPolicy starts the policy script
+// StartPolicy starts the policy script process.
+// Returns an error if the script doesn't exist, can't be executed, or is already running.
 func (pm *PolicyManager) StartPolicy() error {
 	pm.mutex.Lock()
 	defer pm.mutex.Unlock()
@@ -609,7 +608,8 @@ func (pm *PolicyManager) StartPolicy() error {
 	return nil
 }
 
-// StopPolicy stops the policy script gracefully, with SIGKILL fallback
+// StopPolicy stops the policy script gracefully with SIGTERM, falling back to SIGKILL if needed.
+// Returns an error if the policy is not currently running.
 func (pm *PolicyManager) StopPolicy() error {
 	pm.mutex.Lock()
 	defer pm.mutex.Unlock()
@@ -668,7 +668,8 @@ func (pm *PolicyManager) StopPolicy() error {
 	return nil
 }
 
-// ProcessEvent sends an event to the policy script and waits for a response
+// ProcessEvent sends an event to the policy script and waits for a response.
+// Returns the script's decision or an error if the script is not running or communication fails.
 func (pm *PolicyManager) ProcessEvent(evt *PolicyEvent) (*PolicyResponse, error) {
 	pm.mutex.RLock()
 	if !pm.isRunning || pm.stdin == nil {
@@ -772,35 +773,30 @@ func (pm *PolicyManager) monitorProcess() {
 	pm.currentCancel = nil
 
 	if err != nil {
-		log.E.F("policy process exited with error: %v", err)
-		// Auto-disable policy on failure
-		pm.disabled = true
-		log.W.F("policy disabled due to process failure - all events will be rejected (script location: %s)", pm.scriptPath)
+		log.E.F("policy process exited with error: %v, will retry periodically", err)
+		// Don't disable policy manager, let periodic check handle restart
+		log.W.F("policy script crashed - events will fall back to default policy until restart (script location: %s)", pm.scriptPath)
 	} else {
 		log.I.F("policy process exited normally")
 	}
 }
 
-// IsEnabled returns whether policy is enabled
+// IsEnabled returns whether the policy manager is enabled.
+// This is set during initialization and doesn't change during runtime.
 func (pm *PolicyManager) IsEnabled() bool {
 	return pm.enabled
 }
 
-// IsRunning returns whether policy is currently running
+// IsRunning returns whether the policy script is currently running.
+// This can change during runtime as scripts start, stop, or crash.
 func (pm *PolicyManager) IsRunning() bool {
 	pm.mutex.RLock()
 	defer pm.mutex.RUnlock()
 	return pm.isRunning
 }
 
-// IsDisabled returns whether policy is disabled due to failure
-func (pm *PolicyManager) IsDisabled() bool {
-	pm.mutex.RLock()
-	defer pm.mutex.RUnlock()
-	return pm.disabled
-}
-
-// Shutdown gracefully shuts down the policy manager
+// Shutdown gracefully shuts down the policy manager.
+// It cancels the context and stops any running policy script.
 func (pm *PolicyManager) Shutdown() {
 	pm.cancel()
 	if pm.isRunning {

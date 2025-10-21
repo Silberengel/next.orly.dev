@@ -20,7 +20,7 @@ require (
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067
 	golang.org/x/net v0.44.0
 	honnef.co/go/tools v0.6.1
-	lol.mleku.dev v1.0.3
+	lol.mleku.dev v1.0.4
 	lukechampine.com/frand v1.5.1
 )
 
