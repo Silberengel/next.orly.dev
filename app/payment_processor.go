@@ -781,8 +781,8 @@ Enjoy your time on the relay!`, string(userNpub), monthlyPrice, monthlyPrice,
 	ev.Content = []byte(content)
 	ev.Tags = tag.NewS()
 
-	// Add "p" tag for the user
-	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(userPubkey)))
+	// Add "p" tag for the user with mention in third field
+	*ev.Tags = append(*ev.Tags, tag.NewFromAny("p", hex.Enc(userPubkey), "", "mention"))
 
 	// Add expiration tag (5 days from creation)
 	noteExpiry := time.Now().AddDate(0, 0, 5)
