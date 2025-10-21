@@ -32,7 +32,6 @@ type Server struct {
 	mux        *http.ServeMux
 	Config     *config.C
 	Ctx        context.Context
-	remote     string
 	publishers *publish.S
 	Admins     [][]byte
 	Owners     [][]byte
@@ -48,6 +47,52 @@ type Server struct {
 	paymentProcessor *PaymentProcessor
 	sprocketManager  *SprocketManager
 	policyManager    *policy.P
+}
+
+// isSelfConnection checks if the connection is coming from the relay itself
+func (s *Server) isSelfConnection(remote string) bool {
+	// Check for localhost connections
+	if strings.HasPrefix(remote, "127.0.0.1:") || strings.HasPrefix(remote, "::1:") || strings.HasPrefix(remote, "[::1]:") {
+		return true
+	}
+
+	// Check for connections from the same IP as the server
+	// This handles cases where the relay connects to itself via its public IP
+	if s.Config.Listen != "" {
+		// Extract IP from listen address (e.g., "0.0.0.0" -> "0.0.0.0")
+		listenIP := s.Config.Listen
+		if listenIP == "0.0.0.0" || listenIP == "" {
+			// If listening on all interfaces, check if remote IP matches any local interface
+			// For now, we'll be conservative and only check localhost
+			return false
+		}
+		// Check if remote IP matches the listen IP
+		remoteIP := strings.Split(remote, ":")[0]
+		if remoteIP == listenIP {
+			return true
+		}
+	}
+
+	return false
+}
+
+// isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system
+func (s *Server) isIPBlacklisted(remote string) bool {
+	// Extract IP from remote address (e.g., "192.168.1.1:12345" -> "192.168.1.1")
+	remoteIP := strings.Split(remote, ":")[0]
+
+	// Check if managed ACL is available and active
+	if s.Config.ACLMode == "managed" {
+		for _, aclInstance := range acl.Registry.ACL {
+			if aclInstance.Type() == "managed" {
+				if managed, ok := aclInstance.(*acl.Managed); ok {
+					return managed.IsIPBlocked(remoteIP)
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

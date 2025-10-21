@@ -250,7 +250,7 @@ relay {
     }
 
     # Maximum accepted incoming websocket frame size (should be larger than max event) (restart required)
-    maxWebsocketPayloadSize = 131072
+    maxWebsocketPayloadSize = 104857600
 
     # Websocket-level PING message frequency (should be less than any reverse proxy idle timeouts) (restart required)
     autoPingSeconds = 55
@@ -332,8 +332,8 @@ address = "0.0.0.0"
 messages_per_sec = 0
 subscriptions_per_min = 0
 max_event_bytes = 65535
-max_ws_message_bytes = 131072
-max_ws_frame_bytes = 131072
+max_ws_message_bytes = 104857600
+max_ws_frame_bytes = 104857600
 
 [authorization]
 pubkey_whitelist = []

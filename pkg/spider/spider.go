@@ -23,8 +23,8 @@ import (
 const (
 	OneTimeSpiderSyncMarker = "spider_one_time_sync_completed"
 	SpiderLastScanMarker    = "spider_last_scan_time"
-	// MaxWebSocketMessageSize is the maximum size for WebSocket messages to avoid 32KB limit
-	MaxWebSocketMessageSize = 30 * 1024 // 30KB to be safe
+	// MaxWebSocketMessageSize is the maximum size for WebSocket messages
+	MaxWebSocketMessageSize = 100 * 1024 * 1024 // 100MB
 	// PubkeyHexSize is the size of a hex-encoded pubkey (32 bytes = 64 hex chars)
 	PubkeyHexSize = 64
 )
@@ -34,6 +34,8 @@ type Spider struct {
 	cfg    *config.C
 	ctx    context.Context
 	cancel context.CancelFunc
+	// Configured relay addresses for self-detection
+	relayAddresses []string
 }
 
 func New(
@@ -41,10 +43,11 @@ func New(
 	cancel context.CancelFunc,
 ) *Spider {
 	return &Spider{
-		db:     db,
-		cfg:    cfg,
-		ctx:    ctx,
-		cancel: cancel,
+		db:             db,
+		cfg:            cfg,
+		ctx:            ctx,
+		cancel:         cancel,
+		relayAddresses: cfg.RelayAddresses,
 	}
 }
 
@@ -187,6 +190,7 @@ func (s *Spider) performSync(startTime, endTime time.Time) error {
 	// 4. Query each relay for events from followed pubkeys in the time range
 	eventsFound := 0
 	for _, relayURL := range relayURLs {
+		log.I.F("Spider sync: fetching follow lists from relay %s", relayURL)
 		count, err := s.queryRelayForEvents(
 			relayURL, followedPubkeys, startTime, endTime,
 		)
@@ -194,6 +198,7 @@ func (s *Spider) performSync(startTime, endTime time.Time) error {
 			log.E.F("Spider sync: error querying relay %s: %v", relayURL, err)
 			continue
 		}
+		log.I.F("Spider sync: completed fetching from relay %s, found %d events", relayURL, count)
 		eventsFound += count
 	}
 
@@ -261,6 +266,18 @@ func (s *Spider) discoverRelays(followedPubkeys [][]byte) ([]string, error) {
 				u := string(v.Value())
 				n := string(normalize.URL(u))
 				if n == "" {
+					continue
+				}
+				// Skip if this relay is one of the configured relay addresses
+				skipRelay := false
+				for _, relayAddr := range s.relayAddresses {
+					if n == relayAddr {
+						log.D.F("spider: skipping configured relay address: %s", n)
+						skipRelay = true
+						break
+					}
+				}
+				if skipRelay {
 					continue
 				}
 				if _, ok := seen[n]; ok {

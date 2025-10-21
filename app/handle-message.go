@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"time"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -15,6 +16,25 @@ import (
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
+	// Ignore all messages from self-connections
+	if l.isSelfConnection {
+		log.D.F("ignoring message from self-connection %s", remote)
+		return
+	}
+
+	// Handle blacklisted IPs - discard messages but keep connection open until timeout
+	if l.isBlacklisted {
+		// Check if timeout has been reached
+		if time.Now().After(l.blacklistTimeout) {
+			log.W.F("blacklisted IP %s timeout reached, closing connection", remote)
+			// Close the connection by cancelling the context
+			// The websocket handler will detect this and close the connection
+			return
+		}
+		log.D.F("discarding message from blacklisted IP %s (timeout in %v)", remote, time.Until(l.blacklistTimeout))
+		return
+	}
+
 	msgPreview := string(msg)
 	if len(msgPreview) > 150 {
 		msgPreview = msgPreview[:150] + "..."

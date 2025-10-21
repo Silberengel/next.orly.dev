@@ -21,6 +21,9 @@ const (
 	DefaultPingWait       = DefaultPongWait / 2
 	DefaultWriteTimeout   = 3 * time.Second
 	DefaultMaxMessageSize = 100 * units.Mb
+	// ClientMessageSizeLimit is the maximum message size that clients can handle
+	// This is set to 100MB to allow large messages
+	ClientMessageSizeLimit = 100 * 1024 * 1024 // 100MB
 
 	// CloseMessage denotes a close control message. The optional message
 	// payload contains a numeric code and text. Use the FormatCloseMessage
@@ -84,10 +87,23 @@ whitelist:
 		req:       r,
 		startTime: time.Now(),
 	}
+
+	// Detect self-connections early to avoid sending AUTH challenges
+	listener.isSelfConnection = s.isSelfConnection(remote)
+	if listener.isSelfConnection {
+		log.W.F("detected self-connection from %s, marking connection", remote)
+	}
+
+	// Check for blacklisted IPs
+	listener.isBlacklisted = s.isIPBlacklisted(remote)
+	if listener.isBlacklisted {
+		log.W.F("detected blacklisted IP %s, marking connection for timeout", remote)
+		listener.blacklistTimeout = time.Now().Add(time.Minute) // Timeout after 1 minute
+	}
 	chal := make([]byte, 32)
 	rand.Read(chal)
 	listener.challenge.Store([]byte(hex.Enc(chal)))
-	if s.Config.ACLMode != "none" {
+	if s.Config.ACLMode != "none" && !listener.isSelfConnection {
 		log.D.F("sending AUTH challenge to %s", remote)
 		if err = authenvelope.NewChallengeWith(listener.challenge.Load()).
 			Write(listener); chk.E(err) {
@@ -95,6 +111,8 @@ whitelist:
 			return
 		}
 		log.D.F("AUTH challenge sent successfully to %s", remote)
+	} else if listener.isSelfConnection {
+		log.D.F("skipping AUTH challenge for self-connection from %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
 	go s.Pinger(ctx, conn, ticker, cancel)
@@ -130,6 +148,13 @@ whitelist:
 			return
 		default:
 		}
+
+		// Check if blacklisted connection has timed out
+		if listener.isBlacklisted && time.Now().After(listener.blacklistTimeout) {
+			log.W.F("blacklisted IP %s timeout reached, closing connection", remote)
+			return
+		}
+
 		var typ websocket.MessageType
 		var msg []byte
 		log.T.F("waiting for message from %s", remote)

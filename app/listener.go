@@ -17,13 +17,16 @@ import (
 
 type Listener struct {
 	*Server
-	conn         *websocket.Conn
-	ctx          context.Context
-	remote       string
-	req          *http.Request
-	challenge    atomic.Bytes
-	authedPubkey atomic.Bytes
-	startTime    time.Time
+	conn             *websocket.Conn
+	ctx              context.Context
+	remote           string
+	req              *http.Request
+	challenge        atomic.Bytes
+	authedPubkey     atomic.Bytes
+	startTime        time.Time
+	isSelfConnection bool      // Marker to identify self-connections
+	isBlacklisted    bool      // Marker to identify blacklisted IPs
+	blacklistTimeout time.Time // When to timeout blacklisted connections
 	// Diagnostics: per-connection counters
 	msgCount   int
 	reqCount   int

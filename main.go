@@ -53,32 +53,32 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	var err error
 	var cfg *config.C
- if cfg, err = config.New(); chk.T(err) {
- }
- log.I.F("starting %s %s", cfg.AppName, version.V)
+	if cfg, err = config.New(); chk.T(err) {
+	}
+	log.I.F("starting %s %s", cfg.AppName, version.V)
 
- // Handle 'identity' subcommand: print relay identity secret and pubkey and exit
- if config.IdentityRequested() {
- 	ctx, cancel := context.WithCancel(context.Background())
- 	defer cancel()
- 	var db *database.D
- 	if db, err = database.New(ctx, cancel, cfg.DataDir, cfg.DBLogLevel); chk.E(err) {
- 		os.Exit(1)
- 	}
- 	defer db.Close()
- 	skb, err := db.GetOrCreateRelayIdentitySecret()
- 	if chk.E(err) {
- 		os.Exit(1)
- 	}
- 	pk, err := keys.SecretBytesToPubKeyHex(skb)
- 	if chk.E(err) {
- 		os.Exit(1)
- 	}
- 	fmt.Printf("identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk)
- 	os.Exit(0)
- }
+	// Handle 'identity' subcommand: print relay identity secret and pubkey and exit
+	if config.IdentityRequested() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var db *database.D
+		if db, err = database.New(ctx, cancel, cfg.DataDir, cfg.DBLogLevel); chk.E(err) {
+			os.Exit(1)
+		}
+		defer db.Close()
+		skb, err := db.GetOrCreateRelayIdentitySecret()
+		if chk.E(err) {
+			os.Exit(1)
+		}
+		pk, err := keys.SecretBytesToPubKeyHex(skb)
+		if chk.E(err) {
+			os.Exit(1)
+		}
+		fmt.Printf("identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk)
+		os.Exit(0)
+	}
 
- // If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
+	// If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
 	if cfg.OpenPprofWeb && cfg.Pprof != "" && !cfg.PprofHTTP {
 		log.I.F("enabling HTTP pprof server to support web viewer")
 		cfg.PprofHTTP = true
@@ -220,7 +220,7 @@ func main() {
 
 		// Open the pprof web viewer if enabled
 		if cfg.OpenPprofWeb && cfg.Pprof != "" {
-			pprofURL := fmt.Sprintf("http://localhost:6060/debug/pprof/")
+			pprofURL := "http://localhost:6060/debug/pprof/"
 			go func() {
 				// Wait a moment for the server to start
 				time.Sleep(500 * time.Millisecond)

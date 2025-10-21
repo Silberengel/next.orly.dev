@@ -37,6 +37,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	if _, err = env.Unmarshal(msg); chk.E(err) {
 		return normalize.Error.Errorf(err.Error())
 	}
+
 	log.T.C(
 		func() string {
 			return fmt.Sprintf(
@@ -131,16 +132,18 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			)
 
 			// Process large author lists by breaking them into chunks
-			if f.Authors != nil && f.Authors.Len() > 50 {
+			if f.Authors != nil && f.Authors.Len() > 1000 {
 				log.W.F("REQ %s: breaking down large author list (%d authors) into chunks", env.Subscription, f.Authors.Len())
 
-				// Calculate chunk size based on kinds to avoid OOM
-				chunkSize := 50
+				// Calculate chunk size to stay under message size limits
+				// Each pubkey is 64 hex chars, plus JSON overhead, so ~100 bytes per author
+				// Target ~50MB per chunk to stay well under 100MB limit
+				chunkSize := ClientMessageSizeLimit / 200 // ~500KB per chunk
 				if f.Kinds != nil && f.Kinds.Len() > 0 {
 					// Reduce chunk size if there are multiple kinds to prevent too many index ranges
-					chunkSize = 50 / f.Kinds.Len()
-					if chunkSize < 10 {
-						chunkSize = 10 // Minimum chunk size
+					chunkSize = chunkSize / f.Kinds.Len()
+					if chunkSize < 100 {
+						chunkSize = 100 // Minimum chunk size
 					}
 				}
 

@@ -44,6 +44,8 @@ type Follows struct {
 	follows    [][]byte
 	updated    chan struct{}
 	subsCancel context.CancelFunc
+	// Track last follow list fetch time
+	lastFollowListFetch time.Time
 }
 
 func (f *Follows) Configure(cfg ...any) (err error) {
@@ -240,7 +242,7 @@ func (f *Follows) adminRelays() (urls []string) {
 	return
 }
 
-func (f *Follows) startSubscriptions(ctx context.Context) {
+func (f *Follows) startEventSubscriptions(ctx context.Context) {
 	// build authors list: admins + follows
 	f.followsMx.RLock()
 	authors := make([][]byte, 0, len(f.admins)+len(f.follows))
@@ -257,10 +259,11 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 		log.W.F("follows syncer: no admin relays found in DB (kind 10002) and no bootstrap relays configured")
 		return
 	}
-	log.T.F(
+	log.I.F(
 		"follows syncer: subscribing to %d relays for %d authors", len(urls),
 		len(authors),
 	)
+	log.I.F("follows syncer: starting follow list fetching from relays: %v", urls)
 	for _, u := range urls {
 		u := u
 		go func() {
@@ -336,11 +339,13 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				}
 				backoff = time.Second
 				log.T.F("follows syncer: successfully connected to %s", u)
+				log.I.F("follows syncer: subscribing to events from relay %s", u)
 
-				// send REQ for kind 3 (follow lists), kind 10002 (relay lists), and all events from follows
+				// send REQ for admin follow lists, relay lists, and all events from follows
 				ff := &filter.S{}
+				// Add filter for admin follow lists (kind 3) - for immediate updates
 				f1 := &filter.F{
-					Authors: tag.NewFromBytesSlice(authors...),
+					Authors: tag.NewFromBytesSlice(f.admins...),
 					Kinds:   kind.NewS(kind.New(kind.FollowList.K)),
 					Limit:   values.ToUintPointer(100),
 				}
@@ -357,29 +362,46 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 					Limit:   values.ToUintPointer(1000),
 				}
 				*ff = append(*ff, f1, f2, f3)
-				req := reqenvelope.NewFrom([]byte("follows-sync"), ff)
+				// Use a subscription ID for event sync (no follow lists)
+				subID := "event-sync"
+				req := reqenvelope.NewFrom([]byte(subID), ff)
 				if err = c.Write(
 					ctx, websocket.MessageText, req.Marshal(nil),
 				); chk.E(err) {
 					log.W.F(
-						"follows syncer: failed to send REQ to %s: %v", u, err,
+						"follows syncer: failed to send event REQ to %s: %v", u, err,
 					)
 					_ = c.Close(websocket.StatusInternalError, "write failed")
 					continue
 				}
 				log.T.F(
-					"follows syncer: sent REQ to %s for kind 3, 10002, and all events (last 30 days) from followed users",
+					"follows syncer: sent event REQ to %s for admin follow lists, kind 10002, and all events (last 30 days) from followed users",
 					u,
 				)
-				// read loop
+				// read loop with keepalive
+				keepaliveTicker := time.NewTicker(30 * time.Second)
+				defer keepaliveTicker.Stop()
+
 				for {
 					select {
 					case <-ctx.Done():
 						_ = c.Close(websocket.StatusNormalClosure, "ctx done")
 						return
+					case <-keepaliveTicker.C:
+						// Send ping to keep connection alive
+						if err := c.Ping(ctx); err != nil {
+							log.T.F("follows syncer: ping failed for %s: %v", u, err)
+							break
+						}
+						log.T.F("follows syncer: sent ping to %s", u)
+						continue
 					default:
 					}
-					_, data, err := c.Read(ctx)
+
+					// Set a read timeout to avoid hanging
+					readCtx, readCancel := context.WithTimeout(ctx, 60*time.Second)
+					_, data, err := c.Read(readCtx)
+					readCancel()
 					if err != nil {
 						_ = c.Close(websocket.StatusNormalClosure, "read err")
 						break
@@ -402,12 +424,19 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 						// Process events based on kind
 						switch res.Event.Kind {
 						case kind.FollowList.K:
-							log.T.F(
-								"follows syncer: received kind 3 (follow list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-							// Extract followed pubkeys from 'p' tags in kind 3 events
-							f.extractFollowedPubkeys(res.Event)
+							// Check if this is from an admin and process immediately
+							if f.isAdminPubkey(res.Event.Pubkey) {
+								log.I.F(
+									"follows syncer: received admin follow list from %s on relay %s - processing immediately",
+									hex.EncodeToString(res.Event.Pubkey), u,
+								)
+								f.extractFollowedPubkeys(res.Event)
+							} else {
+								log.T.F(
+									"follows syncer: received follow list from non-admin %s on relay %s - ignoring",
+									hex.EncodeToString(res.Event.Pubkey), u,
+								)
+							}
 						case kind.RelayListMetadata.K:
 							log.T.F(
 								"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
@@ -445,12 +474,23 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 							// )
 						}
 					case eoseenvelope.L:
-						// ignore, continue subscription
+						log.T.F("follows syncer: received EOSE from %s, continuing persistent subscription", u)
+						// Continue the subscription for new events
 					default:
 						// ignore other labels
 					}
 				}
-				// loop reconnect
+				// Connection dropped, reconnect after delay
+				log.W.F("follows syncer: connection to %s dropped, will reconnect in 30 seconds", u)
+
+				// Wait before reconnecting to avoid tight reconnection loops
+				timer := time.NewTimer(30 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					// Continue to reconnect
+				}
 			}
 		}()
 	}
@@ -458,6 +498,11 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 
 func (f *Follows) Syncer() {
 	log.I.F("starting follows syncer")
+
+	// Start periodic follow list fetching
+	go f.startPeriodicFollowListFetching()
+
+	// Start event subscriptions
 	go func() {
 		// start immediately if Configure already ran
 		for {
@@ -478,7 +523,7 @@ func (f *Follows) Syncer() {
 				f.subsCancel = cancel
 				innerCancel = cancel
 				log.I.F("follows syncer: (re)opening subscriptions")
-				f.startSubscriptions(ctx)
+				f.startEventSubscriptions(ctx)
 			}
 			// small sleep to avoid tight loop if updated fires rapidly
 			if innerCancel == nil {
@@ -489,6 +534,148 @@ func (f *Follows) Syncer() {
 	f.updated <- struct{}{}
 }
 
+// startPeriodicFollowListFetching starts periodic fetching of admin follow lists
+func (f *Follows) startPeriodicFollowListFetching() {
+	frequency := f.cfg.FollowListFrequency
+	if frequency == 0 {
+		frequency = time.Hour // Default to 1 hour
+	}
+
+	log.I.F("starting periodic follow list fetching every %v", frequency)
+
+	ticker := time.NewTicker(frequency)
+	defer ticker.Stop()
+
+	// Fetch immediately on startup
+	f.fetchAdminFollowLists()
+
+	for {
+		select {
+		case <-f.Ctx.Done():
+			log.D.F("periodic follow list fetching stopped due to context cancellation")
+			return
+		case <-ticker.C:
+			f.fetchAdminFollowLists()
+		}
+	}
+}
+
+// fetchAdminFollowLists fetches follow lists from admin relays
+func (f *Follows) fetchAdminFollowLists() {
+	log.I.F("follows syncer: fetching admin follow lists")
+
+	urls := f.adminRelays()
+	if len(urls) == 0 {
+		log.W.F("follows syncer: no admin relays found for follow list fetching")
+		return
+	}
+
+	// build authors list: admins only (not follows)
+	f.followsMx.RLock()
+	authors := make([][]byte, len(f.admins))
+	copy(authors, f.admins)
+	f.followsMx.RUnlock()
+
+	if len(authors) == 0 {
+		log.W.F("follows syncer: no admins to fetch follow lists for")
+		return
+	}
+
+	log.I.F("follows syncer: fetching follow lists from %d relays for %d admins", len(urls), len(authors))
+
+	for _, u := range urls {
+		go f.fetchFollowListsFromRelay(u, authors)
+	}
+}
+
+// fetchFollowListsFromRelay fetches follow lists from a specific relay
+func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
+	ctx, cancel := context.WithTimeout(f.Ctx, 30*time.Second)
+	defer cancel()
+
+	// Create proper headers for the WebSocket connection
+	headers := http.Header{}
+	headers.Set("User-Agent", "ORLY-Relay/0.9.2")
+	headers.Set("Origin", "https://orly.dev")
+
+	// Use proper WebSocket dial options
+	dialOptions := &websocket.DialOptions{
+		HTTPHeader: headers,
+	}
+
+	c, _, err := websocket.Dial(ctx, relayURL, dialOptions)
+	if err != nil {
+		log.W.F("follows syncer: failed to connect to %s for follow list fetch: %v", relayURL, err)
+		return
+	}
+	defer c.Close(websocket.StatusNormalClosure, "follow list fetch complete")
+
+	log.I.F("follows syncer: fetching follow lists from relay %s", relayURL)
+
+	// Create filter for follow lists only (kind 3)
+	ff := &filter.S{}
+	f1 := &filter.F{
+		Authors: tag.NewFromBytesSlice(authors...),
+		Kinds:   kind.NewS(kind.New(kind.FollowList.K)),
+		Limit:   values.ToUintPointer(100),
+	}
+	*ff = append(*ff, f1)
+
+	// Use a specific subscription ID for follow list fetching
+	subID := "follow-lists-fetch"
+	req := reqenvelope.NewFrom([]byte(subID), ff)
+	if err = c.Write(ctx, websocket.MessageText, req.Marshal(nil)); chk.E(err) {
+		log.W.F("follows syncer: failed to send follow list REQ to %s: %v", relayURL, err)
+		return
+	}
+
+	log.T.F("follows syncer: sent follow list REQ to %s", relayURL)
+
+	// Read follow list events with timeout
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timeout:
+			log.T.F("follows syncer: timeout reading follow lists from %s", relayURL)
+			return
+		default:
+		}
+
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			log.T.F("follows syncer: error reading follow lists from %s: %v", relayURL, err)
+			return
+		}
+
+		label, rem, err := envelopes.Identify(data)
+		if chk.E(err) {
+			continue
+		}
+
+		switch label {
+		case eventenvelope.L:
+			res, _, err := eventenvelope.ParseResult(rem)
+			if chk.E(err) || res == nil || res.Event == nil {
+				continue
+			}
+
+			// Process follow list events
+			if res.Event.Kind == kind.FollowList.K {
+				log.I.F("follows syncer: received follow list from %s on relay %s",
+					hex.EncodeToString(res.Event.Pubkey), relayURL)
+				f.extractFollowedPubkeys(res.Event)
+			}
+		case eoseenvelope.L:
+			log.T.F("follows syncer: end of follow list events from %s", relayURL)
+			return
+		default:
+			// ignore other labels
+		}
+	}
+}
+
 // GetFollowedPubkeys returns a copy of the followed pubkeys list
 func (f *Follows) GetFollowedPubkeys() [][]byte {
 	f.followsMx.RLock()
@@ -497,6 +684,19 @@ func (f *Follows) GetFollowedPubkeys() [][]byte {
 	followedPubkeys := make([][]byte, len(f.follows))
 	copy(followedPubkeys, f.follows)
 	return followedPubkeys
+}
+
+// isAdminPubkey checks if a pubkey belongs to an admin
+func (f *Follows) isAdminPubkey(pubkey []byte) bool {
+	f.followsMx.RLock()
+	defer f.followsMx.RUnlock()
+
+	for _, admin := range f.admins {
+		if utils.FastEqual(admin, pubkey) {
+			return true
+		}
+	}
+	return false
 }
 
 // extractFollowedPubkeys extracts followed pubkeys from 'p' tags in kind 3 events
