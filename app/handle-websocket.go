@@ -88,12 +88,6 @@ whitelist:
 		startTime: time.Now(),
 	}
 
-	// Detect self-connections early to avoid sending AUTH challenges
-	listener.isSelfConnection = s.isSelfConnection(remote)
-	if listener.isSelfConnection {
-		log.W.F("detected self-connection from %s, marking connection", remote)
-	}
-
 	// Check for blacklisted IPs
 	listener.isBlacklisted = s.isIPBlacklisted(remote)
 	if listener.isBlacklisted {
@@ -103,7 +97,7 @@ whitelist:
 	chal := make([]byte, 32)
 	rand.Read(chal)
 	listener.challenge.Store([]byte(hex.Enc(chal)))
-	if s.Config.ACLMode != "none" && !listener.isSelfConnection {
+	if s.Config.ACLMode != "none" {
 		log.D.F("sending AUTH challenge to %s", remote)
 		if err = authenvelope.NewChallengeWith(listener.challenge.Load()).
 			Write(listener); chk.E(err) {
@@ -111,8 +105,6 @@ whitelist:
 			return
 		}
 		log.D.F("AUTH challenge sent successfully to %s", remote)
-	} else if listener.isSelfConnection {
-		log.D.F("skipping AUTH challenge for self-connection from %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
 	go s.Pinger(ctx, conn, ticker, cancel)

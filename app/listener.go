@@ -24,7 +24,6 @@ type Listener struct {
 	challenge        atomic.Bytes
 	authedPubkey     atomic.Bytes
 	startTime        time.Time
-	isSelfConnection bool      // Marker to identify self-connections
 	isBlacklisted    bool      // Marker to identify blacklisted IPs
 	blacklistTimeout time.Time // When to timeout blacklisted connections
 	// Diagnostics: per-connection counters

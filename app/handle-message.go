@@ -16,12 +16,6 @@ import (
 )
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
-	// Ignore all messages from self-connections
-	if l.isSelfConnection {
-		log.D.F("ignoring message from self-connection %s", remote)
-		return
-	}
-
 	// Handle blacklisted IPs - discard messages but keep connection open until timeout
 	if l.isBlacklisted {
 		// Check if timeout has been reached

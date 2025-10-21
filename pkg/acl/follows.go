@@ -396,88 +396,87 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 						log.T.F("follows syncer: sent ping to %s", u)
 						continue
 					default:
-					}
-
-					// Set a read timeout to avoid hanging
-					readCtx, readCancel := context.WithTimeout(ctx, 60*time.Second)
-					_, data, err := c.Read(readCtx)
-					readCancel()
-					if err != nil {
-						_ = c.Close(websocket.StatusNormalClosure, "read err")
-						break
-					}
-					label, rem, err := envelopes.Identify(data)
-					if chk.E(err) {
-						continue
-					}
-					switch label {
-					case eventenvelope.L:
-						res, _, err := eventenvelope.ParseResult(rem)
-						if chk.E(err) || res == nil || res.Event == nil {
+						// Set a read timeout to avoid hanging
+						readCtx, readCancel := context.WithTimeout(ctx, 60*time.Second)
+						_, data, err := c.Read(readCtx)
+						readCancel()
+						if err != nil {
+							_ = c.Close(websocket.StatusNormalClosure, "read err")
+							break
+						}
+						label, rem, err := envelopes.Identify(data)
+						if chk.E(err) {
 							continue
 						}
-						// verify signature before saving
-						if ok, err := res.Event.Verify(); chk.T(err) || !ok {
-							continue
-						}
+						switch label {
+						case eventenvelope.L:
+							res, _, err := eventenvelope.ParseResult(rem)
+							if chk.E(err) || res == nil || res.Event == nil {
+								continue
+							}
+							// verify signature before saving
+							if ok, err := res.Event.Verify(); chk.T(err) || !ok {
+								continue
+							}
 
-						// Process events based on kind
-						switch res.Event.Kind {
-						case kind.FollowList.K:
-							// Check if this is from an admin and process immediately
-							if f.isAdminPubkey(res.Event.Pubkey) {
-								log.I.F(
-									"follows syncer: received admin follow list from %s on relay %s - processing immediately",
-									hex.EncodeToString(res.Event.Pubkey), u,
-								)
-								f.extractFollowedPubkeys(res.Event)
-							} else {
+							// Process events based on kind
+							switch res.Event.Kind {
+							case kind.FollowList.K:
+								// Check if this is from an admin and process immediately
+								if f.isAdminPubkey(res.Event.Pubkey) {
+									log.I.F(
+										"follows syncer: received admin follow list from %s on relay %s - processing immediately",
+										hex.EncodeToString(res.Event.Pubkey), u,
+									)
+									f.extractFollowedPubkeys(res.Event)
+								} else {
+									log.T.F(
+										"follows syncer: received follow list from non-admin %s on relay %s - ignoring",
+										hex.EncodeToString(res.Event.Pubkey), u,
+									)
+								}
+							case kind.RelayListMetadata.K:
 								log.T.F(
-									"follows syncer: received follow list from non-admin %s on relay %s - ignoring",
+									"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
+									hex.EncodeToString(res.Event.Pubkey), u,
+								)
+							default:
+								// Log all other events from followed users
+								log.T.F(
+									"follows syncer: received kind %d event from %s on relay %s",
+									res.Event.Kind,
 									hex.EncodeToString(res.Event.Pubkey), u,
 								)
 							}
-						case kind.RelayListMetadata.K:
-							log.T.F(
-								"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-						default:
-							// Log all other events from followed users
-							log.T.F(
-								"follows syncer: received kind %d event from %s on relay %s",
-								res.Event.Kind,
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-						}
 
-						if _, err = f.D.SaveEvent(
-							ctx, res.Event,
-						); err != nil {
-							if !strings.HasPrefix(
-								err.Error(), "blocked:",
-							) {
-								log.W.F(
-									"follows syncer: save event failed: %v",
-									err,
-								)
+							if _, err = f.D.SaveEvent(
+								ctx, res.Event,
+							); err != nil {
+								if !strings.HasPrefix(
+									err.Error(), "blocked:",
+								) {
+									log.W.F(
+										"follows syncer: save event failed: %v",
+										err,
+									)
+								}
+								// ignore duplicates and continue
+							} else {
+								// Only dispatch if the event was newly saved (no error)
+								if f.pubs != nil {
+									go f.pubs.Deliver(res.Event)
+								}
+								// log.I.F(
+								// 	"saved new event from follows syncer: %0x",
+								// 	res.Event.ID,
+								// )
 							}
-							// ignore duplicates and continue
-						} else {
-							// Only dispatch if the event was newly saved (no error)
-							if f.pubs != nil {
-								go f.pubs.Deliver(res.Event)
-							}
-							// log.I.F(
-							// 	"saved new event from follows syncer: %0x",
-							// 	res.Event.ID,
-							// )
+						case eoseenvelope.L:
+							log.T.F("follows syncer: received EOSE from %s, continuing persistent subscription", u)
+							// Continue the subscription for new events
+						default:
+							// ignore other labels
 						}
-					case eoseenvelope.L:
-						log.T.F("follows syncer: received EOSE from %s, continuing persistent subscription", u)
-						// Continue the subscription for new events
-					default:
-						// ignore other labels
 					}
 				}
 				// Connection dropped, reconnect after delay
