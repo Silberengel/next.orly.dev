@@ -22,7 +22,6 @@ import (
 	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/spider"
 	"next.orly.dev/pkg/utils/interrupt"
 	"next.orly.dev/pkg/version"
 )
@@ -289,12 +288,6 @@ func main() {
 		os.Exit(1)
 	}
 	acl.Registry.Syncer()
-
-	// Initialize and start spider functionality if enabled
-	spiderCtx, spiderCancel := context.WithCancel(ctx)
-	spiderInstance := spider.New(db, cfg, spiderCtx, spiderCancel)
-	spiderInstance.Start()
-	defer spiderInstance.Stop()
 
 	// Start HTTP pprof server if enabled
 	if cfg.PprofHTTP {

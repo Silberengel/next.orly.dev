@@ -51,7 +51,6 @@ echo "[run-relay-pprof] Starting relay with CPU profiling ..."
   ORLY_PORT=3334 \
   ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku \
   ORLY_ACL_MODE=follows \
-  ORLY_SPIDER_MODE=none \
   ORLY_RELAY_ADDRESSES=test.orly.dev \
   ORLY_IP_BLACKLIST=192.71.213.188 \
   ORLY_HEALTH_PORT="$HEALTH_PORT" \
