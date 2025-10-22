@@ -26,6 +26,7 @@ import (
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/protocol/httpauth"
 	"next.orly.dev/pkg/protocol/publish"
+	"next.orly.dev/pkg/spider"
 )
 
 type Server struct {
@@ -47,6 +48,7 @@ type Server struct {
 	paymentProcessor *PaymentProcessor
 	sprocketManager  *SprocketManager
 	policyManager    *policy.P
+	spiderManager    *spider.Spider
 }
 
 // isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system

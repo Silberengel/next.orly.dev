@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"time"
+	"unicode"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -14,6 +15,42 @@ import (
 	"next.orly.dev/pkg/encoders/envelopes/noticeenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/reqenvelope"
 )
+
+// validateJSONMessage checks if a message contains invalid control characters
+// that would cause JSON parsing to fail
+func validateJSONMessage(msg []byte) (err error) {
+	for i, b := range msg {
+		// Check for invalid control characters in JSON strings
+		if b < 32 && b != '\t' && b != '\n' && b != '\r' {
+			// Allow some control characters that might be valid in certain contexts
+			// but reject form feed (\f), backspace (\b), and other problematic ones
+			switch b {
+			case '\b', '\f', 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+				0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+				0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F:
+				return fmt.Errorf("invalid control character 0x%02X at position %d", b, i)
+			}
+		}
+		// Check for non-printable characters that might indicate binary data
+		if b > 127 && !unicode.IsPrint(rune(b)) {
+			// Allow valid UTF-8 sequences, but be suspicious of random binary data
+			if i < len(msg)-1 {
+				// Quick check: if we see a lot of high-bit characters in sequence,
+				// it might be binary data masquerading as text
+				highBitCount := 0
+				for j := i; j < len(msg) && j < i+10; j++ {
+					if msg[j] > 127 {
+						highBitCount++
+					}
+				}
+				if highBitCount > 7 { // More than 70% high-bit chars in a 10-byte window
+					return fmt.Errorf("suspicious binary data detected at position %d", i)
+				}
+			}
+		}
+	}
+	return
+}
 
 func (l *Listener) HandleMessage(msg []byte, remote string) {
 	// Handle blacklisted IPs - discard messages but keep connection open until timeout
@@ -34,6 +71,17 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 		msgPreview = msgPreview[:150] + "..."
 	}
 	// log.D.F("%s processing message (len=%d): %s", remote, len(msg), msgPreview)
+
+	// Validate message for invalid characters before processing
+	if err := validateJSONMessage(msg); err != nil {
+		log.E.F("%s message validation FAILED (len=%d): %v", remote, len(msg), err)
+		log.T.F("%s invalid message content: %q", remote, msgPreview)
+		// Send error notice to client
+		if noticeErr := noticeenvelope.NewFrom("invalid message format: " + err.Error()).Write(l); noticeErr != nil {
+			log.E.F("%s failed to send validation error notice: %v", remote, noticeErr)
+		}
+		return
+	}
 
 	l.msgCount++
 	var err error

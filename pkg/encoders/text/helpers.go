@@ -114,9 +114,20 @@ func UnmarshalQuoted(b []byte) (content, rem []byte, err error) {
 			//
 			// backspace, tab, newline, form feed or carriage return.
 			case '\b', '\t', '\n', '\f', '\r':
+				pos := len(content) - len(rem)
+				contextStart := pos - 10
+				if contextStart < 0 {
+					contextStart = 0
+				}
+				contextEnd := pos + 10
+				if contextEnd > len(content) {
+					contextEnd = len(content)
+				}
 				err = errorf.E(
-					"invalid character '%s' in quoted string",
+					"invalid character '%s' in quoted string (position %d, context: %q)",
 					NostrEscape(nil, rem[:1]),
+					pos,
+					string(content[contextStart:contextEnd]),
 				)
 				return
 			}

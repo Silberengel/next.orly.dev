@@ -35,6 +35,12 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	// var rem []byte
 	env := reqenvelope.New()
 	if _, err = env.Unmarshal(msg); chk.E(err) {
+		// Provide more specific error context for JSON parsing failures
+		if strings.Contains(err.Error(), "invalid character") {
+			log.E.F("REQ JSON parsing failed from %s: %v", l.remote, err)
+			log.T.F("REQ malformed message from %s: %q", l.remote, string(msg))
+			return normalize.Error.Errorf("malformed REQ message: %s", err.Error())
+		}
 		return normalize.Error.Errorf(err.Error())
 	}
 

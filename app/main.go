@@ -10,11 +10,13 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/publish"
+	"next.orly.dev/pkg/spider"
 )
 
 func Run(
@@ -69,6 +71,48 @@ func Run(
 
 	// Initialize policy manager
 	l.policyManager = policy.NewWithManager(ctx, cfg.AppName, cfg.PolicyEnabled)
+
+	// Initialize spider manager based on mode
+	if cfg.SpiderMode != "none" {
+		if l.spiderManager, err = spider.New(ctx, db, l.publishers, cfg.SpiderMode); chk.E(err) {
+			log.E.F("failed to create spider manager: %v", err)
+		} else {
+			// Set up callbacks for follows mode
+			if cfg.SpiderMode == "follows" {
+				l.spiderManager.SetCallbacks(
+					func() []string {
+						// Get admin relays from follows ACL if available
+						for _, aclInstance := range acl.Registry.ACL {
+							if aclInstance.Type() == "follows" {
+								if follows, ok := aclInstance.(*acl.Follows); ok {
+									return follows.AdminRelays()
+								}
+							}
+						}
+						return nil
+					},
+					func() [][]byte {
+						// Get followed pubkeys from follows ACL if available
+						for _, aclInstance := range acl.Registry.ACL {
+							if aclInstance.Type() == "follows" {
+								if follows, ok := aclInstance.(*acl.Follows); ok {
+									return follows.GetFollowedPubkeys()
+								}
+							}
+						}
+						return nil
+					},
+				)
+			}
+
+			if err = l.spiderManager.Start(); chk.E(err) {
+				log.E.F("failed to start spider manager: %v", err)
+			} else {
+				log.I.F("spider manager started successfully in '%s' mode", cfg.SpiderMode)
+			}
+		}
+	}
+
 	// Initialize the user interface
 	l.UserInterface()
 
@@ -134,6 +178,12 @@ func Run(
 	go func() {
 		<-ctx.Done()
 		log.I.F("shutting down HTTP server gracefully")
+
+		// Stop spider manager if running
+		if l.spiderManager != nil {
+			l.spiderManager.Stop()
+			log.I.F("spider manager stopped")
+		}
 
 		// Create shutdown context with timeout
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
