@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"encoding/json"
+
 	"github.com/dgraph-io/badger/v4"
-	"next.orly.dev/pkg/encoders/json"
 )
 
 type Subscription struct {
@@ -192,7 +193,7 @@ func (d *D) GetPaymentHistory(pubkey []byte) ([]Payment, error) {
 // IsFirstTimeUser checks if a user is logging in for the first time and marks them as seen
 func (d *D) IsFirstTimeUser(pubkey []byte) (bool, error) {
 	key := fmt.Sprintf("firstlogin:%s", hex.EncodeToString(pubkey))
-	
+
 	isFirstTime := false
 	err := d.DB.Update(
 		func(txn *badger.Txn) error {
@@ -212,6 +213,6 @@ func (d *D) IsFirstTimeUser(pubkey []byte) (bool, error) {
 			return err // Return any other error as-is
 		},
 	)
-	
+
 	return isFirstTime, err
 }

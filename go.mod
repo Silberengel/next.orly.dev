@@ -35,7 +35,6 @@ require (
 	github.com/google/flatbuffers v25.9.23+incompatible // indirect
 	github.com/google/pprof v0.0.0-20251002213607-436353cc1ee6 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
-	github.com/nostr-dev-kit/ndk v0.0.0-20251010140307-0653d6e69923 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

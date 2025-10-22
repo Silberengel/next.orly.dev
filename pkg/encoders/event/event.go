@@ -24,9 +24,6 @@ import (
 // encode <, >, and & characters due to legacy bullcrap in the encoding/json
 // library. Either call MarshalJSON directly or use a json.Encoder with html
 // escaping disabled.
-//
-// Or import "next.orly.dev/pkg/encoders/json" and use json.Marshal which is the
-// same as go 1.25 json v1 except with this one stupidity removed.
 type E struct {
 
 	// ID is the SHA256 hash of the canonical encoding of the event in binary
@@ -89,7 +86,7 @@ func (ev *E) Clone() *E {
 		CreatedAt: ev.CreatedAt,
 		Kind:      ev.Kind,
 	}
-	
+
 	// Deep copy all byte slices with independent memory
 	if ev.ID != nil {
 		clone.ID = make([]byte, len(ev.ID))
@@ -107,7 +104,7 @@ func (ev *E) Clone() *E {
 		clone.Sig = make([]byte, len(ev.Sig))
 		copy(clone.Sig, ev.Sig)
 	}
-	
+
 	// Deep copy tags
 	if ev.Tags != nil {
 		clone.Tags = tag.NewS()
@@ -124,7 +121,7 @@ func (ev *E) Clone() *E {
 			}
 		}
 	}
-	
+
 	return clone
 }
 

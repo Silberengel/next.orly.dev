@@ -11,7 +11,7 @@ import (
 	"lukechampine.com/frand"
 	"next.orly.dev/pkg/encoders/event/examples"
 	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/encoders/json"
+	"encoding/json"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/bufpool"
