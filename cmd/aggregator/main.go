@@ -17,6 +17,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
+	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/crypto/sha256"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
@@ -25,6 +26,7 @@ import (
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/interfaces/signer"
 	"next.orly.dev/pkg/protocol/ws"
 )
 
@@ -40,6 +42,11 @@ const (
 	maxRetryDelay  = 60 * time.Second
 	maxRetries     = 5
 	batchSize      = time.Hour * 24 * 7 // 1 week batches
+
+	// Timeout parameters
+	maxRunTime           = 30 * time.Minute // Maximum total runtime
+	relayTimeout         = 5 * time.Minute  // Timeout per relay
+	stuckProgressTimeout = 2 * time.Minute  // Timeout if no progress is made
 )
 
 var relays = []string{
@@ -297,13 +304,57 @@ type Aggregator struct {
 	relayStatesMutex  sync.RWMutex
 	completionTracker *CompletionTracker
 	timeWindows       []TimeWindow
+	// Track actual time range of processed events
+	actualSince *timestamp.T
+	actualUntil *timestamp.T
+	timeMutex   sync.RWMutex
+	// Bloom filter file for loading existing state
+	bloomFilterFile string
+	appendMode      bool
+	// Progress tracking for timeout detection
+	startTime        time.Time
+	lastProgress     int
+	lastProgressTime time.Time
+	progressMutex    sync.RWMutex
+	// Authentication support
+	signer        signer.I // Optional signer for relay authentication
+	hasPrivateKey bool     // Whether we have a private key for auth
 }
 
-func NewAggregator(npub string, since, until *timestamp.T) (agg *Aggregator, err error) {
-	// Decode npub to get pubkey bytes
+func NewAggregator(keyInput string, since, until *timestamp.T, bloomFilterFile string) (agg *Aggregator, err error) {
 	var pubkeyBytes []byte
-	if pubkeyBytes, err = bech32encoding.NpubToBytes(npub); chk.E(err) {
-		return nil, fmt.Errorf("failed to decode npub: %w", err)
+	var signer signer.I
+	var hasPrivateKey bool
+
+	// Determine if input is nsec (private key) or npub (public key)
+	if strings.HasPrefix(keyInput, "nsec") {
+		// Handle nsec (private key) - derive pubkey and enable authentication
+		var secretBytes []byte
+		if secretBytes, err = bech32encoding.NsecToBytes(keyInput); chk.E(err) {
+			return nil, fmt.Errorf("failed to decode nsec: %w", err)
+		}
+
+		// Create signer from private key
+		signer = &p256k.Signer{}
+		if err = signer.InitSec(secretBytes); chk.E(err) {
+			return nil, fmt.Errorf("failed to initialize signer: %w", err)
+		}
+
+		// Get public key from signer
+		pubkeyBytes = signer.Pub()
+		hasPrivateKey = true
+
+		log.I.F("using private key (nsec) - authentication enabled")
+	} else if strings.HasPrefix(keyInput, "npub") {
+		// Handle npub (public key only) - no authentication
+		if pubkeyBytes, err = bech32encoding.NpubToBytes(keyInput); chk.E(err) {
+			return nil, fmt.Errorf("failed to decode npub: %w", err)
+		}
+		hasPrivateKey = false
+
+		log.I.F("using public key (npub) - authentication disabled")
+	} else {
+		return nil, fmt.Errorf("key input must start with 'nsec' or 'npub', got: %s", keyInput[:4])
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -314,10 +365,27 @@ func NewAggregator(npub string, since, until *timestamp.T) (agg *Aggregator, err
 		progressiveEnd = timestamp.Now()
 	}
 
+	// Initialize bloom filter - either new or loaded from file
+	var bloomFilter *BloomFilter
+	var appendMode bool
+
+	if bloomFilterFile != "" {
+		// Try to load existing bloom filter
+		if bloomFilter, err = loadBloomFilterFromFile(bloomFilterFile); err != nil {
+			log.W.F("failed to load bloom filter from %s: %v, creating new filter", bloomFilterFile, err)
+			bloomFilter = NewBloomFilter(bloomFilterBits, bloomFilterHashFuncs)
+		} else {
+			log.I.F("loaded existing bloom filter from %s", bloomFilterFile)
+			appendMode = true
+		}
+	} else {
+		bloomFilter = NewBloomFilter(bloomFilterBits, bloomFilterHashFuncs)
+	}
+
 	agg = &Aggregator{
-		npub:              npub,
+		npub:              keyInput,
 		pubkeyBytes:       pubkeyBytes,
-		seenEvents:        NewBloomFilter(bloomFilterBits, bloomFilterHashFuncs),
+		seenEvents:        bloomFilter,
 		seenRelays:        make(map[string]bool),
 		relayQueue:        make(chan string, 100),
 		ctx:               ctx,
@@ -329,6 +397,13 @@ func NewAggregator(npub string, since, until *timestamp.T) (agg *Aggregator, err
 		eventCount:        0,
 		relayStates:       make(map[string]*RelayState),
 		completionTracker: NewCompletionTracker(),
+		bloomFilterFile:   bloomFilterFile,
+		appendMode:        appendMode,
+		startTime:         time.Now(),
+		lastProgress:      0,
+		lastProgressTime:  time.Now(),
+		signer:            signer,
+		hasPrivateKey:     hasPrivateKey,
 	}
 
 	// Calculate time windows for progressive fetching
@@ -340,6 +415,54 @@ func NewAggregator(npub string, since, until *timestamp.T) (agg *Aggregator, err
 	}
 
 	return
+}
+
+// loadBloomFilterFromFile loads a bloom filter from a file containing base64 encoded data
+func loadBloomFilterFromFile(filename string) (*BloomFilter, error) {
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Find the base64 data between the markers
+	content := string(data)
+	startMarker := "Bloom filter (base64):\n"
+	endMarker := "\n=== END BLOOM FILTER ==="
+
+	startIdx := strings.Index(content, startMarker)
+	if startIdx == -1 {
+		return nil, fmt.Errorf("bloom filter start marker not found")
+	}
+	startIdx += len(startMarker)
+
+	endIdx := strings.Index(content[startIdx:], endMarker)
+	if endIdx == -1 {
+		return nil, fmt.Errorf("bloom filter end marker not found")
+	}
+
+	base64Data := strings.TrimSpace(content[startIdx : startIdx+endIdx])
+	return FromBase64(base64Data)
+}
+
+// updateActualTimeRange updates the actual time range of processed events
+func (a *Aggregator) updateActualTimeRange(eventTime *timestamp.T) {
+	a.timeMutex.Lock()
+	defer a.timeMutex.Unlock()
+
+	if a.actualSince == nil || eventTime.I64() < a.actualSince.I64() {
+		a.actualSince = eventTime
+	}
+
+	if a.actualUntil == nil || eventTime.I64() > a.actualUntil.I64() {
+		a.actualUntil = eventTime
+	}
+}
+
+// getActualTimeRange returns the actual time range of processed events
+func (a *Aggregator) getActualTimeRange() (since, until *timestamp.T) {
+	a.timeMutex.RLock()
+	defer a.timeMutex.RUnlock()
+	return a.actualSince, a.actualUntil
 }
 
 // calculateTimeWindows pre-calculates all time windows for progressive fetching
@@ -420,6 +543,12 @@ func (a *Aggregator) markRelayRateLimited(relayURL string) {
 	state.rateLimited = true
 	state.retryCount++
 
+	if state.retryCount >= maxRetries {
+		log.W.F("relay %s permanently failed after %d retries", relayURL, maxRetries)
+		state.completed = true // Mark as completed to exclude from future attempts
+		return
+	}
+
 	// Exponential backoff with jitter
 	delay := time.Duration(float64(baseRetryDelay) * math.Pow(2, float64(state.retryCount-1)))
 	if delay > maxRetryDelay {
@@ -457,19 +586,43 @@ func (a *Aggregator) checkAllCompleted() bool {
 	// Check if all relay-time window combinations are completed
 	totalCombinations := len(allRelays) * len(a.timeWindows)
 	completedCombinations := 0
+	availableCombinations := 0 // Combinations from relays that haven't permanently failed
 
 	for _, relayURL := range allRelays {
+		state := a.getOrCreateRelayState(relayURL)
+		state.mutex.RLock()
+		isRelayFailed := state.retryCount >= maxRetries
+		state.mutex.RUnlock()
+
 		for _, window := range a.timeWindows {
 			windowKey := fmt.Sprintf("%d-%d", window.since.I64(), window.until.I64())
 			if a.completionTracker.IsCompleted(relayURL, windowKey) {
 				completedCombinations++
 			}
+
+			// Only count combinations from relays that haven't permanently failed
+			if !isRelayFailed {
+				availableCombinations++
+			}
 		}
 	}
 
+	// Update progress tracking
+	a.progressMutex.Lock()
+	if completedCombinations > a.lastProgress {
+		a.lastProgress = completedCombinations
+		a.lastProgressTime = time.Now()
+	}
+	a.progressMutex.Unlock()
+
 	if totalCombinations > 0 {
 		progress := float64(completedCombinations) / float64(totalCombinations) * 100
-		log.I.F("completion progress: %d/%d (%.1f%%)", completedCombinations, totalCombinations, progress)
+		log.I.F("completion progress: %d/%d (%.1f%%) - available: %d", completedCombinations, totalCombinations, progress, availableCombinations)
+
+		// Consider complete if we've finished all available combinations (excluding permanently failed relays)
+		if availableCombinations > 0 {
+			return completedCombinations >= availableCombinations
+		}
 		return completedCombinations == totalCombinations
 	}
 
@@ -560,6 +713,19 @@ func (a *Aggregator) connectToRelay(relayURL string) {
 	defer client.Close()
 
 	log.I.F("connected to relay: %s", relayURL)
+
+	// Attempt authentication if we have a private key
+	if a.hasPrivateKey && a.signer != nil {
+		authCtx, authCancel := context.WithTimeout(a.ctx, 5*time.Second)
+		defer authCancel()
+
+		if err = client.Auth(authCtx, a.signer); err != nil {
+			log.W.F("authentication failed for relay %s: %v", relayURL, err)
+			// Continue without authentication - some relays may not require it
+		} else {
+			log.I.F("successfully authenticated to relay: %s", relayURL)
+		}
+	}
 
 	// Perform progressive backward fetching
 	a.progressiveFetch(client, relayURL)
@@ -666,13 +832,23 @@ func (a *Aggregator) fetchTimeWindow(client *ws.Client, relayURL string, window 
 		Until:   window.until,
 	}
 
-	// Subscribe to events using all filters
+	// Subscribe to events using all filters with a dedicated context and timeout
+	// Use a longer timeout to avoid premature cancellation by completion monitor
+	subCtx, subCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+
 	var sub *ws.Subscription
 	var err error
-	if sub, err = client.Subscribe(a.ctx, filter.NewS(f1, f2, f3)); chk.E(err) {
+	if sub, err = client.Subscribe(subCtx, filter.NewS(f1, f2, f3)); chk.E(err) {
+		subCancel() // Cancel context on error
 		log.E.F("failed to subscribe to relay %s: %v", relayURL, err)
 		return false
 	}
+
+	// Ensure subscription is cleaned up when we're done
+	defer func() {
+		sub.Unsub()
+		subCancel()
+	}()
 
 	log.I.F("subscribed to batch from %s for pubkey %s (authored by, mentioning, and relay lists)", relayURL, a.npub)
 
@@ -683,13 +859,14 @@ func (a *Aggregator) fetchTimeWindow(client *ws.Client, relayURL string, window 
 	for !batchComplete && !rateLimited {
 		select {
 		case <-a.ctx.Done():
-			sub.Unsub()
-			log.I.F("context cancelled, stopping batch for relay %s", relayURL)
+			log.I.F("aggregator context cancelled, stopping batch for relay %s", relayURL)
+			return false
+		case <-subCtx.Done():
+			log.W.F("subscription timeout for relay %s", relayURL)
 			return false
 		case ev := <-sub.Events:
 			if ev == nil {
 				log.I.F("event channel closed for relay %s", relayURL)
-				sub.Unsub()
 				return false
 			}
 
@@ -702,6 +879,9 @@ func (a *Aggregator) fetchTimeWindow(client *ws.Client, relayURL string, window 
 
 			// Mark event as seen
 			a.markEventSeen(eventID)
+
+			// Update actual time range
+			a.updateActualTimeRange(timestamp.FromUnix(ev.CreatedAt))
 
 			// Process relay list events to discover new relays
 			if ev.Kind == 10002 {
@@ -757,7 +937,7 @@ func (a *Aggregator) isRateLimitMessage(message string) bool {
 }
 
 func (a *Aggregator) Start() (err error) {
-	log.I.F("starting aggregator for npub: %s", a.npub)
+	log.I.F("starting aggregator for key: %s", a.npub)
 	log.I.F("pubkey bytes: %s", hex.Enc(a.pubkeyBytes))
 	log.I.F("bloom filter: %d bits (%.2fMB), %d hash functions, ~0.1%% false positive rate",
 		bloomFilterBits, float64(a.seenEvents.MemoryUsage())/1024/1024, bloomFilterHashFuncs)
@@ -809,9 +989,8 @@ func (a *Aggregator) completionMonitor() {
 		case <-a.ctx.Done():
 			return
 		case <-ticker.C:
-			if a.checkAllCompleted() {
-				log.I.F("all relay-time window combinations completed, terminating aggregator")
-				a.cancel() // This will trigger context cancellation
+			// Check for various termination conditions
+			if a.shouldTerminate() {
 				return
 			}
 
@@ -819,6 +998,38 @@ func (a *Aggregator) completionMonitor() {
 			a.retryRateLimitedRelays()
 		}
 	}
+}
+
+// shouldTerminate checks various conditions that should cause the aggregator to terminate
+func (a *Aggregator) shouldTerminate() bool {
+	now := time.Now()
+
+	// Check if all work is completed
+	if a.checkAllCompleted() {
+		log.I.F("all relay-time window combinations completed, terminating aggregator")
+		a.cancel()
+		return true
+	}
+
+	// Check for maximum runtime timeout
+	if now.Sub(a.startTime) > maxRunTime {
+		log.W.F("maximum runtime (%v) exceeded, terminating aggregator", maxRunTime)
+		a.cancel()
+		return true
+	}
+
+	// Check for stuck progress timeout
+	a.progressMutex.RLock()
+	timeSinceProgress := now.Sub(a.lastProgressTime)
+	a.progressMutex.RUnlock()
+
+	if timeSinceProgress > stuckProgressTimeout {
+		log.W.F("no progress made for %v, terminating aggregator", timeSinceProgress)
+		a.cancel()
+		return true
+	}
+
+	return false
 }
 
 // retryRateLimitedRelays checks for rate-limited relays that can be retried
@@ -890,6 +1101,9 @@ func (a *Aggregator) outputBloomFilter() {
 	estimatedEvents := a.seenEvents.EstimatedItems()
 	memoryUsage := float64(a.seenEvents.MemoryUsage()) / 1024 / 1024
 
+	// Get actual time range of processed events
+	actualSince, actualUntil := a.getActualTimeRange()
+
 	// Output to stderr so it doesn't interfere with JSONL event output to stdout
 	fmt.Fprintf(os.Stderr, "\n=== BLOOM FILTER SUMMARY ===\n")
 	fmt.Fprintf(os.Stderr, "Events processed: %d\n", a.eventCount)
@@ -897,6 +1111,23 @@ func (a *Aggregator) outputBloomFilter() {
 	fmt.Fprintf(os.Stderr, "Bloom filter size: %.2f MB\n", memoryUsage)
 	fmt.Fprintf(os.Stderr, "False positive rate: ~0.1%%\n")
 	fmt.Fprintf(os.Stderr, "Hash functions: %d\n", bloomFilterHashFuncs)
+
+	// Output time range information
+	if actualSince != nil && actualUntil != nil {
+		fmt.Fprintf(os.Stderr, "Time range covered: %d to %d\n", actualSince.I64(), actualUntil.I64())
+		fmt.Fprintf(os.Stderr, "Time range (human): %s to %s\n",
+			time.Unix(actualSince.I64(), 0).UTC().Format(time.RFC3339),
+			time.Unix(actualUntil.I64(), 0).UTC().Format(time.RFC3339))
+	} else if a.since != nil && a.until != nil {
+		// Fallback to requested range if no events were processed
+		fmt.Fprintf(os.Stderr, "Requested time range: %d to %d\n", a.since.I64(), a.until.I64())
+		fmt.Fprintf(os.Stderr, "Requested range (human): %s to %s\n",
+			time.Unix(a.since.I64(), 0).UTC().Format(time.RFC3339),
+			time.Unix(a.until.I64(), 0).UTC().Format(time.RFC3339))
+	} else {
+		fmt.Fprintf(os.Stderr, "Time range: unbounded\n")
+	}
+
 	fmt.Fprintf(os.Stderr, "\nBloom filter (base64):\n%s\n", base64Filter)
 	fmt.Fprintf(os.Stderr, "=== END BLOOM FILTER ===\n")
 }
@@ -958,19 +1189,28 @@ func parseTimestamp(s string) (ts *timestamp.T, err error) {
 }
 
 func main() {
-	var npub string
+	var keyInput string
 	var sinceStr string
 	var untilStr string
+	var bloomFilterFile string
+	var outputFile string
 
-	flag.StringVar(&npub, "npub", "", "npub (bech32-encoded public key) to search for events")
+	flag.StringVar(&keyInput, "key", "", "nsec (private key) or npub (public key) to search for events")
 	flag.StringVar(&sinceStr, "since", "", "start timestamp (Unix timestamp) - only events after this time")
 	flag.StringVar(&untilStr, "until", "", "end timestamp (Unix timestamp) - only events before this time")
+	flag.StringVar(&bloomFilterFile, "filter", "", "file containing base64 encoded bloom filter to exclude already seen events")
+	flag.StringVar(&outputFile, "output", "", "output file for events (default: stdout)")
 	flag.Parse()
 
-	if npub == "" {
-		fmt.Fprintf(os.Stderr, "Usage: %s -npub <npub> [-since <timestamp>] [-until <timestamp>]\n", os.Args[0])
-		fmt.Fprintf(os.Stderr, "Example: %s -npub npub1... -since 1640995200 -until 1672531200\n", os.Args[0])
+	if keyInput == "" {
+		fmt.Fprintf(os.Stderr, "Usage: %s -key <nsec|npub> [-since <timestamp>] [-until <timestamp>] [-filter <file>] [-output <file>]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Example: %s -key npub1... -since 1640995200 -until 1672531200 -filter bloom.txt -output events.jsonl\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Example: %s -key nsec1... -since 1640995200 -until 1672531200 -output events.jsonl\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "\nKey types:\n")
+		fmt.Fprintf(os.Stderr, "  nsec: Private key (enables authentication to relays that require it)\n")
+		fmt.Fprintf(os.Stderr, "  npub: Public key (authentication disabled)\n")
 		fmt.Fprintf(os.Stderr, "\nTimestamps should be Unix timestamps (seconds since epoch)\n")
+		fmt.Fprintf(os.Stderr, "If -filter is provided, output will be appended to the output file\n")
 		os.Exit(1)
 	}
 
@@ -993,8 +1233,28 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Set up output redirection if needed
+	if outputFile != "" {
+		var file *os.File
+		if bloomFilterFile != "" {
+			// Append mode if bloom filter is provided
+			file, err = os.OpenFile(outputFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		} else {
+			// Truncate mode if no bloom filter
+			file, err = os.OpenFile(outputFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening output file: %v\n", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+
+		// Redirect stdout to file
+		os.Stdout = file
+	}
+
 	var agg *Aggregator
-	if agg, err = NewAggregator(npub, since, until); chk.E(err) {
+	if agg, err = NewAggregator(keyInput, since, until, bloomFilterFile); chk.E(err) {
 		fmt.Fprintf(os.Stderr, "Error creating aggregator: %v\n", err)
 		os.Exit(1)
 	}
