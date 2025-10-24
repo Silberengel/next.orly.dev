@@ -203,9 +203,9 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	)
 
 	// If ACL mode is "none" and no pubkey is set, use the event's pubkey
-	// But if auth is required, always use the authenticated pubkey
+	// But if auth is required or AuthToWrite is enabled, always use the authenticated pubkey
 	var pubkeyForACL []byte
-	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" && !l.Config.AuthRequired {
+	if len(l.authedPubkey.Load()) == 0 && acl.Registry.Active.Load() == "none" && !l.Config.AuthRequired && !l.Config.AuthToWrite {
 		pubkeyForACL = env.E.Pubkey
 		log.I.F(
 			"HandleEvent: ACL mode is 'none' and auth not required, using event pubkey for ACL check: %s",
@@ -215,12 +215,12 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		pubkeyForACL = l.authedPubkey.Load()
 	}
 
-	// If auth is required but user is not authenticated, deny access
-	if l.Config.AuthRequired && len(l.authedPubkey.Load()) == 0 {
-		log.D.F("HandleEvent: authentication required but user not authenticated")
+	// If auth is required or AuthToWrite is enabled but user is not authenticated, deny access
+	if (l.Config.AuthRequired || l.Config.AuthToWrite) && len(l.authedPubkey.Load()) == 0 {
+		log.D.F("HandleEvent: authentication required for write operations but user not authenticated")
 		if err = okenvelope.NewFrom(
 			env.Id(), false,
-			reason.AuthRequired.F("authentication required"),
+			reason.AuthRequired.F("authentication required for write operations"),
 		).Write(l); chk.E(err) {
 			return
 		}

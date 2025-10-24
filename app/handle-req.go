@@ -51,8 +51,8 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			)
 		},
 	)
-	// send a challenge to the client to auth if an ACL is active or auth is required
-	if acl.Registry.Active.Load() != "none" || l.Config.AuthRequired {
+	// send a challenge to the client to auth if an ACL is active, auth is required, or AuthToWrite is enabled
+	if acl.Registry.Active.Load() != "none" || l.Config.AuthRequired || l.Config.AuthToWrite {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 			Write(l); chk.E(err) {
 			return
@@ -72,18 +72,41 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		return
 	}
 
-	switch accessLevel {
-	case "none":
-		// For REQ denial, send a CLOSED with auth-required reason (NIP-01)
-		if err = closedenvelope.NewFrom(
-			env.Subscription,
-			reason.AuthRequired.F("user not authed or has no read access"),
-		).Write(l); chk.E(err) {
-			return
+	// If AuthToWrite is enabled, allow REQ without auth (but still check ACL)
+	// Skip the auth requirement check for REQ when AuthToWrite is true
+	if l.Config.AuthToWrite && len(l.authedPubkey.Load()) == 0 {
+		// Allow unauthenticated REQ when AuthToWrite is enabled
+		// but still respect ACL access levels if ACL is active
+		if acl.Registry.Active.Load() != "none" {
+			switch accessLevel {
+			case "none", "blocked", "banned":
+				if err = closedenvelope.NewFrom(
+					env.Subscription,
+					reason.AuthRequired.F("user not authed or has no read access"),
+				).Write(l); chk.E(err) {
+					return
+				}
+				return
+			}
 		}
-		return
-	default:
-		// user has read access or better, continue
+		// Allow the request to proceed without authentication
+	}
+
+	// Only check ACL access level if not already handled by AuthToWrite
+	if !l.Config.AuthToWrite || len(l.authedPubkey.Load()) > 0 {
+		switch accessLevel {
+		case "none":
+			// For REQ denial, send a CLOSED with auth-required reason (NIP-01)
+			if err = closedenvelope.NewFrom(
+				env.Subscription,
+				reason.AuthRequired.F("user not authed or has no read access"),
+			).Write(l); chk.E(err) {
+				return
+			}
+			return
+		default:
+			// user has read access or better, continue
+		}
 	}
 	var events event.S
 	// Create a single context for all filter queries, isolated from the connection context
@@ -537,7 +560,8 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			cancel = false
 			subbedFilters = append(subbedFilters, f)
 		} else {
-			// remove the IDs that we already sent
+			// remove the IDs that we already sent, as it's one less
+			// comparison we have to make.
 			var notFounds [][]byte
 			for _, id := range f.Ids.T {
 				if _, ok := seen[hexenc.Enc(id)]; ok {
@@ -574,7 +598,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				remote:       l.remote,
 				Id:           string(env.Subscription),
 				Receiver:     receiver,
-				Filters:      env.Filters,
+				Filters:      &subbedFilters,
 				AuthedPubkey: l.authedPubkey.Load(),
 			},
 		)
