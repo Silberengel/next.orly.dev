@@ -451,6 +451,178 @@ go build -o orly
 
 This uses the pure Go `btcec` fallback library, which is slower but doesn't require system dependencies.
 
+== deployment
+
+ORLY includes an automated deployment script that handles Go installation, dependency setup, building, and systemd service configuration.
+
+=== automated deployment
+
+The deployment script (`scripts/deploy.sh`) provides a complete setup solution:
+
+[source,bash]
+----
+# Clone the repository
+git clone <repository-url>
+cd next.orly.dev
+
+# Run the deployment script
+./scripts/deploy.sh
+----
+
+The script will:
+
+1. **Install Go 1.23.1** if not present (in `~/.local/go`)
+2. **Configure environment** by creating `~/.goenv` and updating `~/.bashrc`
+3. **Install build dependencies** using the secp256k1 installation script (requires sudo)
+4. **Build the relay** with embedded web UI using `update-embedded-web.sh`
+5. **Set capabilities** for port 443 binding (requires sudo)
+6. **Install binary** to `~/.local/bin/orly`
+7. **Create systemd service** and enable it
+
+After deployment, reload your shell environment:
+
+[source,bash]
+----
+source ~/.bashrc
+----
+
+=== TLS configuration
+
+ORLY supports automatic TLS certificate management with Let's Encrypt and custom certificates:
+
+[source,bash]
+----
+# Enable TLS with Let's Encrypt for specific domains
+export ORLY_TLS_DOMAINS=relay.example.com,backup.relay.example.com
+
+# Optional: Use custom certificates (will load .pem and .key files)
+export ORLY_CERTS=/path/to/cert1,/path/to/cert2
+
+# When TLS domains are configured, ORLY will:
+# - Listen on port 443 for HTTPS/WSS
+# - Listen on port 80 for ACME challenges
+# - Ignore ORLY_PORT setting
+----
+
+Certificate files should be named with `.pem` and `.key` extensions:
+- `/path/to/cert1.pem` (certificate)
+- `/path/to/cert1.key` (private key)
+
+=== systemd service management
+
+The deployment script creates a systemd service for easy management:
+
+[source,bash]
+----
+# Start the service
+sudo systemctl start orly
+
+# Stop the service
+sudo systemctl stop orly
+
+# Restart the service
+sudo systemctl restart orly
+
+# Enable service to start on boot
+sudo systemctl enable orly --now
+
+# Disable service from starting on boot
+sudo systemctl disable orly --now
+
+# Check service status
+sudo systemctl status orly
+
+# View service logs
+sudo journalctl -u orly -f
+
+# View recent logs
+sudo journalctl -u orly --since "1 hour ago"
+----
+
+=== remote deployment
+
+You can deploy ORLY on a remote server using SSH:
+
+[source,bash]
+----
+# Deploy to a VPS with SSH key authentication
+ssh user@your-server.com << 'EOF'
+  # Clone and deploy
+  git clone <repository-url>
+  cd next.orly.dev
+  ./scripts/deploy.sh
+  
+  # Configure your relay
+  echo 'export ORLY_TLS_DOMAINS=relay.example.com' >> ~/.bashrc
+  echo 'export ORLY_ADMINS=npub1your_admin_key_here' >> ~/.bashrc
+  
+  # Start the service
+  sudo systemctl start orly --now
+EOF
+
+# Check deployment status
+ssh user@your-server.com 'sudo systemctl status orly'
+----
+
+=== configuration
+
+After deployment, configure your relay by setting environment variables in your shell profile:
+
+[source,bash]
+----
+# Add to ~/.bashrc or ~/.profile
+export ORLY_TLS_DOMAINS=relay.example.com
+export ORLY_ADMINS=npub1your_admin_key
+export ORLY_ACL_MODE=follows
+export ORLY_APP_NAME="MyRelay"
+----
+
+Then restart the service:
+
+[source,bash]
+----
+source ~/.bashrc
+sudo systemctl restart orly
+----
+
+=== firewall configuration
+
+Ensure your firewall allows the necessary ports:
+
+[source,bash]
+----
+# For TLS-enabled relays
+sudo ufw allow 80/tcp   # HTTP (ACME challenges)
+sudo ufw allow 443/tcp  # HTTPS/WSS
+
+# For non-TLS relays
+sudo ufw allow 3334/tcp # Default ORLY port
+
+# Enable firewall if not already enabled
+sudo ufw enable
+----
+
+=== monitoring
+
+Monitor your relay using systemd and standard Linux tools:
+
+[source,bash]
+----
+# Service status and logs
+sudo systemctl status orly
+sudo journalctl -u orly -f
+
+# Resource usage
+htop
+sudo ss -tulpn | grep orly
+
+# Disk usage (database grows over time)
+du -sh ~/.local/share/ORLY/
+
+# Check TLS certificates (if using Let's Encrypt)
+ls -la ~/.local/share/ORLY/autocert/
+----
+
 == stress testing
 
 The stress tester is a tool for performance testing relay implementations under various load conditions.

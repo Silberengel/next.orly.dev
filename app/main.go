@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/acme/autocert"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
@@ -159,25 +162,86 @@ func Run(
 			log.I.F("payment processor started successfully")
 		}
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
-	log.I.F("starting listener on http://%s", addr)
 
-	// Create HTTP server for graceful shutdown
-	srv := &http.Server{
-		Addr:    addr,
-		Handler: l,
+	// Check if TLS is enabled
+	var tlsEnabled bool
+	var tlsServer *http.Server
+	var httpServer *http.Server
+
+	if len(cfg.TLSDomains) > 0 {
+		// Validate TLS configuration
+		if err = ValidateTLSConfig(cfg.TLSDomains, cfg.Certs); chk.E(err) {
+			log.E.F("invalid TLS configuration: %v", err)
+		} else {
+			tlsEnabled = true
+			log.I.F("TLS enabled for domains: %v", cfg.TLSDomains)
+
+			// Create cache directory for autocert
+			cacheDir := filepath.Join(cfg.DataDir, "autocert")
+			if err = os.MkdirAll(cacheDir, 0700); chk.E(err) {
+				log.E.F("failed to create autocert cache directory: %v", err)
+				tlsEnabled = false
+			} else {
+				// Set up autocert manager
+				m := &autocert.Manager{
+					Prompt:     autocert.AcceptTOS,
+					Cache:      autocert.DirCache(cacheDir),
+					HostPolicy: autocert.HostWhitelist(cfg.TLSDomains...),
+				}
+
+				// Create TLS server on port 443
+				tlsServer = &http.Server{
+					Addr:      ":443",
+					Handler:   l,
+					TLSConfig: TLSConfig(m, cfg.Certs...),
+				}
+
+				// Create HTTP server for ACME challenges and redirects on port 80
+				httpServer = &http.Server{
+					Addr:    ":80",
+					Handler: m.HTTPHandler(nil),
+				}
+
+				// Start TLS server
+				go func() {
+					log.I.F("starting TLS listener on https://:443")
+					if err := tlsServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+						log.E.F("TLS server error: %v", err)
+					}
+				}()
+
+				// Start HTTP server for ACME challenges
+				go func() {
+					log.I.F("starting HTTP listener on http://:80 for ACME challenges")
+					if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+						log.E.F("HTTP server error: %v", err)
+					}
+				}()
+			}
+		}
 	}
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.E.F("HTTP server error: %v", err)
+	// Start regular HTTP server if TLS is not enabled or as fallback
+	if !tlsEnabled {
+		addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
+		log.I.F("starting listener on http://%s", addr)
+
+		httpServer = &http.Server{
+			Addr:    addr,
+			Handler: l,
 		}
-	}()
+
+		go func() {
+			if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.E.F("HTTP server error: %v", err)
+			}
+		}()
+	}
 
 	// Graceful shutdown handler
 	go func() {
 		<-ctx.Done()
-		log.I.F("shutting down HTTP server gracefully")
+		log.I.F("shutting down servers gracefully")
 
 		// Stop spider manager if running
 		if l.spiderManager != nil {
@@ -189,11 +253,22 @@ func Run(
 		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancelShutdown()
 
-		// Shutdown the server gracefully
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.E.F("HTTP server shutdown error: %v", err)
-		} else {
-			log.I.F("HTTP server shutdown completed")
+		// Shutdown TLS server if running
+		if tlsServer != nil {
+			if err := tlsServer.Shutdown(shutdownCtx); err != nil {
+				log.E.F("TLS server shutdown error: %v", err)
+			} else {
+				log.I.F("TLS server shutdown completed")
+			}
+		}
+
+		// Shutdown HTTP server
+		if httpServer != nil {
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				log.E.F("HTTP server shutdown error: %v", err)
+			} else {
+				log.I.F("HTTP server shutdown completed")
+			}
 		}
 
 		once.Do(func() { close(quit) })

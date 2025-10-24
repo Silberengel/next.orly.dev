@@ -64,6 +64,10 @@ type C struct {
 	SpiderMode string `env:"ORLY_SPIDER_MODE" default:"none" usage:"spider mode for syncing events: none, follows"`
 
 	PolicyEnabled bool `env:"ORLY_POLICY_ENABLED" default:"false" usage:"enable policy-based event processing (configuration found in $HOME/.config/ORLY/policy.json)"`
+
+	// TLS configuration
+	TLSDomains []string `env:"ORLY_TLS_DOMAINS" usage:"comma-separated list of domains to respond to for TLS"`
+	Certs      []string `env:"ORLY_CERTS" usage:"comma-separated list of paths to certificate root names (e.g., /path/to/cert will load /path/to/cert.pem and /path/to/cert.key)"`
 }
 
 // New creates and initializes a new configuration object for the relay
@@ -200,9 +204,7 @@ func (kv KVSlice) Swap(i, j int)      { kv[i], kv[j] = kv[j], kv[i] }
 // resulting slice remains sorted by keys as per the KVSlice implementation.
 func (kv KVSlice) Compose(kv2 KVSlice) (out KVSlice) {
 	// duplicate the initial KVSlice
-	for _, p := range kv {
-		out = append(out, p)
-	}
+	out = append(out, kv...)
 out:
 	for i, p := range kv2 {
 		for j, q := range out {

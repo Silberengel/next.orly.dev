@@ -15,10 +15,10 @@ require (
 	github.com/templexxx/xhex v0.0.0-20200614015412-aed53437177b
 	go-simpler.org/env v0.12.0
 	go.uber.org/atomic v1.11.0
-	golang.org/x/crypto v0.42.0
-	golang.org/x/exp v0.0.0-20251002181428-27f1f14c8bb9
+	golang.org/x/crypto v0.43.0
+	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546
 	golang.org/x/lint v0.0.0-20241112194109-818c5a804067
-	golang.org/x/net v0.44.0
+	golang.org/x/net v0.46.0
 	honnef.co/go/tools v0.6.1
 	lol.mleku.dev v1.0.4
 	lukechampine.com/frand v1.5.1
@@ -27,25 +27,28 @@ require (
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/fgprof v0.9.5 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/flatbuffers v25.9.23+incompatible // indirect
-	github.com/google/pprof v0.0.0-20251002213607-436353cc1ee6 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/google/pprof v0.0.0-20251007162407-5df77e3f7d1d // indirect
+	github.com/ianlancetaylor/demangle v0.0.0-20250417193237-f615e6bd150b // indirect
+	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.38.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20251002181428-27f1f14c8bb9 // indirect
-	golang.org/x/mod v0.28.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
-	golang.org/x/sys v0.36.0 // indirect
-	golang.org/x/tools v0.37.0 // indirect
+	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/text v0.30.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
