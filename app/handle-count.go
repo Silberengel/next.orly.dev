@@ -25,7 +25,7 @@ func (l *Listener) HandleCount(msg []byte) (err error) {
 	if _, err = env.Unmarshal(msg); chk.E(err) {
 		return normalize.Error.Errorf(err.Error())
 	}
- log.D.C(func() string { return fmt.Sprintf("COUNT sub=%s filters=%d", env.Subscription, len(env.Filters)) })
+	log.D.C(func() string { return fmt.Sprintf("COUNT sub=%s filters=%d", env.Subscription, len(env.Filters)) })
 
 	// If ACL is active, send a challenge (same as REQ path)
 	if acl.Registry.Active.Load() != "none" {
@@ -43,14 +43,15 @@ func (l *Listener) HandleCount(msg []byte) (err error) {
 		// allowed to read
 	}
 
-	// Use a bounded context for counting
-	ctx, cancel := context.WithTimeout(l.ctx, 30*time.Second)
+	// Use a bounded context for counting, isolated from the connection context
+	// to prevent count timeouts from affecting the long-lived websocket connection
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Aggregate count across all provided filters
 	var total int
 	var approx bool // database returns false per implementation
- for _, f := range env.Filters {
+	for _, f := range env.Filters {
 		if f == nil {
 			continue
 		}

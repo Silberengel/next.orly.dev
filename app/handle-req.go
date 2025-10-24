@@ -86,9 +86,10 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		// user has read access or better, continue
 	}
 	var events event.S
-	// Create a single context for all filter queries, tied to the connection context, to prevent leaks and support timely cancellation
+	// Create a single context for all filter queries, isolated from the connection context
+	// to prevent query timeouts from affecting the long-lived websocket connection
 	queryCtx, queryCancel := context.WithTimeout(
-		l.ctx, 30*time.Second,
+		context.Background(), 30*time.Second,
 	)
 	defer queryCancel()
 
