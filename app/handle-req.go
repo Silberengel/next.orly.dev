@@ -267,7 +267,6 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		}
 	}()
 	var tmp event.S
-privCheck:
 	for _, ev := range events {
 		// Check for private tag first
 		privateTags := ev.Tags.GetAll([]byte("private"))
@@ -309,8 +308,7 @@ privCheck:
 		}
 
 		if l.Config.ACLMode != "none" &&
-			(kind.IsPrivileged(ev.Kind) && accessLevel != "admin") &&
-			l.authedPubkey.Load() != nil { // admins can see all events
+			kind.IsPrivileged(ev.Kind) && accessLevel != "admin" { // admins can see all events
 			log.T.C(
 				func() string {
 					return fmt.Sprintf(
@@ -320,9 +318,21 @@ privCheck:
 			)
 			pk := l.authedPubkey.Load()
 			if pk == nil {
+				// Not authenticated - cannot see privileged events
+				log.T.C(
+					func() string {
+						return fmt.Sprintf(
+							"privileged event %s denied - not authenticated",
+							ev.ID,
+						)
+					},
+				)
 				continue
 			}
+			// Check if user is authorized to see this privileged event
+			authorized := false
 			if utils.FastEqual(ev.Pubkey, pk) {
+				authorized = true
 				log.T.C(
 					func() string {
 						return fmt.Sprintf(
@@ -331,36 +341,40 @@ privCheck:
 						)
 					},
 				)
+			} else {
+				// Check p tags
+				pTags := ev.Tags.GetAll([]byte("p"))
+				for _, pTag := range pTags {
+					var pt []byte
+					if pt, err = hexenc.Dec(string(pTag.Value())); chk.E(err) {
+						continue
+					}
+					if utils.FastEqual(pt, pk) {
+						authorized = true
+						log.T.C(
+							func() string {
+								return fmt.Sprintf(
+									"privileged event %s is for logged in pubkey %0x",
+									ev.ID, pk,
+								)
+							},
+						)
+						break
+					}
+				}
+			}
+			if authorized {
 				tmp = append(tmp, ev)
-				continue
+			} else {
+				log.T.C(
+					func() string {
+						return fmt.Sprintf(
+							"privileged event %s does not contain the logged in pubkey %0x",
+							ev.ID, pk,
+						)
+					},
+				)
 			}
-			pTags := ev.Tags.GetAll([]byte("p"))
-			for _, pTag := range pTags {
-				var pt []byte
-				if pt, err = hexenc.Dec(string(pTag.Value())); chk.E(err) {
-					continue
-				}
-				if utils.FastEqual(pt, pk) {
-					log.T.C(
-						func() string {
-							return fmt.Sprintf(
-								"privileged event %s is for logged in pubkey %0x",
-								ev.ID, pk,
-							)
-						},
-					)
-					tmp = append(tmp, ev)
-					continue privCheck
-				}
-			}
-			log.T.C(
-				func() string {
-					return fmt.Sprintf(
-						"privileged event %s does not contain the logged in pubkey %0x",
-						ev.ID, pk,
-					)
-				},
-			)
 		} else {
 			tmp = append(tmp, ev)
 		}

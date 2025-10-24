@@ -194,7 +194,14 @@ func (p *P) Deliver(ev *event.E) {
 	for _, d := range deliveries {
 		// If the event is privileged, enforce that the subscriber's authed pubkey matches
 		// either the event pubkey or appears in any 'p' tag of the event.
-		if kind.IsPrivileged(ev.Kind) && len(d.sub.AuthedPubkey) > 0 {
+		if kind.IsPrivileged(ev.Kind) {
+			if len(d.sub.AuthedPubkey) == 0 {
+				// Not authenticated - cannot see privileged events
+				log.D.F("subscription delivery DENIED for privileged event %s to %s (not authenticated)",
+					hex.Enc(ev.ID), d.sub.remote)
+				continue
+			}
+
 			pk := d.sub.AuthedPubkey
 			allowed := false
 			// Direct author match
