@@ -166,7 +166,7 @@ func (s *Server) WebSocketURL(req *http.Request) (url string) {
 	if host == "" {
 		host = req.Host
 	}
-	return proto + "://" + host
+	return proto + "://" + strings.TrimRight(host, "/") + "/"
 }
 
 func (s *Server) DashboardURL(req *http.Request) (url string) {

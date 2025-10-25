@@ -28,7 +28,7 @@ This NIP addresses these issues by enabling relay operators to form trusted cons
 Each participating relay MUST generate and maintain a long-term identity keypair separate from any user keys:
 
 - **Identity Key**: A secp256k1 keypair used to identify the relay in the consortium. The public key MUST be listed in the `pubkey` field of the NIP-11 relay information document, and the relay MUST prove control of the corresponding private key through the signature mechanism described below.
-- **Signing Keys**: secp256k1 keys used for Schnorr signatures on attestations and directory events
+- **Signing Keys**: secp256k1 keys used for Schnorr signatures on acts and directory events
 - **Encryption Keys**: secp256k1 keys used for ECDH encryption of sensitive consortium communications
 
 The relay identity key serves as the authoritative identifier for the relay and MUST be discoverable through the standard NIP-11 relay information document available at `https://<relay-domain>/.well-known/nostr.json` or via the `NIP11` WebSocket message. This ensures that any client or relay can verify the identity of a consortium member by requesting their relay information document and comparing the public key.
@@ -57,7 +57,7 @@ This protocol extends the NIP-11 relay information document with two additional 
 
 **Signature Generation:**
 1. Concatenate the `pubkey`, `nonce`, and relay address as strings: `pubkey + nonce + relay_address`
-2. The relay address MUST be the canonical WebSocket URL (e.g., "wss://relay.example.com")
+2. The relay address MUST be the canonical WebSocket URL (e.g., "wss://relay.example.com/", note the path suffix)
 3. Compute SHA256 hash of the concatenated string
 4. Sign the hash using the relay's private key (corresponding to `pubkey`)
 5. Encode the signature as hex and store in the `sig` field
@@ -79,8 +79,8 @@ This NIP defines the following new event kinds:
 | Kind | Description |
 |------|-------------|
 | `39100` | Relay Identity Announcement |
-| `39101` | Trust Attestation |
-| `39102` | Group Tag Attestation |
+| `39101` | Trust Act |
+| `39102` | Group Tag Act |
 | `39103` | Public Key Advertisement |
 | `39104` | Directory Event Replication Request |
 | `39105` | Directory Event Replication Response |
@@ -107,7 +107,7 @@ Relay operators publish this event to announce their participation in the distri
 **Tags:**
 - `d`: Identifier for the relay identity (always "relay-identity")
 - `relay`: WebSocket URL of the relay
-- `signing_key`: Public key for verifying attestations from this relay (MAY be the same as identity key)
+- `signing_key`: Public key for verifying acts from this relay (MAY be the same as identity key)
 - `encryption_key`: Public key for ECDH encryption
 - `version`: Protocol version number
 - `nip11_url`: URL to the relay's NIP-11 information document for identity verification
@@ -125,9 +125,9 @@ Relay operators publish this event to announce their participation in the distri
 5. They verify that the announcement event is signed by the same key
 6. This confirms that the relay identity is cryptographically bound to the specific network address
 
-### Trust Attestation (Kind 39101)
+### Trust Act (Kind 39101)
 
-Relay operators create trust attestations toward other relays they wish to enter consensus with:
+Relay operators create trust acts toward other relays they wish to enter consensus with:
 
 ```json
 {
@@ -149,7 +149,7 @@ Relay operators create trust attestations toward other relays they wish to enter
 - `p`: Public key of the target relay being attested
 - `trust_level`: Level of trust (high, medium, low)
 - `relay`: WebSocket URL of the target relay
-- `expiry`: Optional expiration timestamp for the attestation
+- `expiry`: Optional expiration timestamp for the act
 - `reason`: How this trust relationship was established
 - `K`: Comma-separated list of event kinds to replicate in near real-time (in addition to directory events)
 - `I`: Identity tag with npub, nonce, and proof-of-control signature (same format as Kind 39103)
@@ -166,7 +166,7 @@ Relay operators create trust attestations toward other relays they wish to enter
 - **Near Real-time**: Events matching `K` tag kinds are replicated with minimal delay
 - **Bidirectional**: Replication occurs both to and from the trusted relay for specified kinds
 
-### Group Tag Attestation (Kind 39102)
+### Group Tag Act (Kind 39102)
 
 Relays can attest to arbitrary string values used as tags to create logical groups:
 
@@ -184,10 +184,10 @@ Relays can attest to arbitrary string values used as tags to create logical grou
 ```
 
 **Tags:**
-- `d`: Unique identifier for this group attestation
+- `d`: Unique identifier for this group act
 - `group_tag`: The tag name and value being attested
-- `attestor`: Public key of the relay making the attestation
-- `confidence`: Confidence level (0-100) in this attestation
+- `actor`: Public key of the relay making the act
+- `confidence`: Confidence level (0-100) in this act
 
 ### Hierarchical Deterministic Key Derivation
 
@@ -363,8 +363,8 @@ The following existing event kinds are considered "directory events" and subject
 #### 1. Consortium Formation
 
 1. Relay operators publish Relay Identity Announcements (Kind 39100)
-2. Operators create Trust Attestations (Kind 39101) toward relays they wish to collaborate with
-3. When mutual trust attestations exist, relays begin sharing directory events
+2. Operators create Trust Acts (Kind 39101) toward relays they wish to collaborate with
+3. When mutual trust acts exist, relays begin sharing directory events
 4. Trust relationships can be inherited through the web of trust with appropriate confidence scoring
 
 #### 2. Directory Event Synchronization
@@ -375,15 +375,15 @@ When a relay receives an event from a user, it:
 2. If the event contains an `I` tag, verifies the identity proof-of-control signature
 3. Stores the event locally
 4. Updates key delegation usage tracking (if applicable)
-5. Identifies trusted consortium members based on current trust attestations
+5. Identifies trusted consortium members based on current trust acts
 6. Determines replication targets based on event kind:
    - **Directory Events**: Replicate to all trusted consortium members
    - **Custom Kinds**: Replicate only to relays that have specified this kind in their `K` tag
 7. Replicates the event to appropriate trusted relays using Directory Event Replication Requests (Kind 39104)
 
 **Event Kind Matching:**
-- Check each trust attestation's `K` tag for the event's kind number
-- Only replicate to relays that have explicitly included the kind in their attestation
+- Check each trust act's `K` tag for the event's kind number
+- Only replicate to relays that have explicitly included the kind in their act
 - Directory events are always replicated regardless of `K` tag contents
 - Respect trust level when determining replication scope and frequency
 
@@ -430,10 +430,10 @@ Trust relationships can be inherited through the web of trust:
 ```
 Relay A                    Relay B                    Relay C
    |                          |                          |
-   |-- Trust Attestation ---->|                          |
-   |<-- Trust Attestation ----|                          |
-   |                          |-- Trust Attestation ---->|
-   |                          |<-- Trust Attestation ----|
+   |-- Trust Act ---->|                          |
+   |<-- Trust Act ----|                          |
+   |                          |-- Trust Act ---->|
+   |                          |<-- Trust Act ----|
    |                          |                          |
    |-- Directory Event ------>|-- Directory Event ------>|
    |                          |                          |
@@ -449,7 +449,7 @@ Relay A                    Relay B                    Relay C
 
 3. **Rate Limiting**: Implement rate limiting to prevent spam and DoS attacks
 
-4. **Signature Validation**: All events and attestations MUST be cryptographically verified, including `I` tag proof-of-control signatures
+4. **Signature Validation**: All events and acts MUST be cryptographically verified, including `I` tag proof-of-control signatures
 
 5. **Privacy**: Sensitive consortium communications SHOULD use secp256k1 ECDH encryption
 
@@ -480,7 +480,7 @@ Relay A                    Relay B                    Relay C
 #### Relay Operators
 
 1. Generate and securely store relay identity keys
-2. Configure trust policies and attestation criteria
+2. Configure trust policies and act criteria
 3. Implement Byzantine fault tolerance mechanisms
 4. Monitor consortium health and trust relationships
 5. Provide configuration options for users to opt-out of replication
@@ -539,7 +539,7 @@ This design draws inspiration from the democratic Byzantine Fault Tolerant appro
 A reference implementation will be provided showing:
 
 1. Relay identity key generation and management
-2. Trust attestation creation and validation
+2. Trust act creation and validation
 3. Directory event replication logic
 4. Byzantine fault tolerance mechanisms
 5. Web of trust computation algorithms
