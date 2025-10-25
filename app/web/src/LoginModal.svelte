@@ -353,7 +353,7 @@
     .login-nsec-btn {
         padding: 12px 24px;
         background: var(--primary);
-        color: white;
+        color: var(--text-color);
         border: none;
         border-radius: 6px;
         cursor: pointer;

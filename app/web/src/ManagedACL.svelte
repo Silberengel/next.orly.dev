@@ -897,23 +897,28 @@
                     </div>
                     <div class="config-form">
                         <div class="form-group">
-                            <label>Relay Name</label>
+                            <label for="relay-name">Relay Name</label>
                             <input
+                                id="relay-name"
                                 type="text"
                                 bind:value={relayConfig.relay_name}
                                 placeholder="Enter relay name"
                             />
                         </div>
                         <div class="form-group">
-                            <label>Relay Description</label>
+                            <label for="relay-description"
+                                >Relay Description</label
+                            >
                             <textarea
+                                id="relay-description"
                                 bind:value={relayConfig.relay_description}
                                 placeholder="Enter relay description"
                             ></textarea>
                         </div>
                         <div class="form-group">
-                            <label>Relay Icon URL</label>
+                            <label for="relay-icon">Relay Icon URL</label>
                             <input
+                                id="relay-icon"
                                 type="url"
                                 bind:value={relayConfig.relay_icon}
                                 placeholder="Enter icon URL"
@@ -958,10 +963,10 @@
     .owner-only-notice {
         margin-top: 10px;
         padding: 8px 12px;
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
+        background-color: var(--warning-bg);
+        border: 1px solid var(--warning);
         border-radius: 4px;
-        color: #856404;
+        color: var(--text-color);
         font-size: 0.9em;
     }
 
@@ -972,21 +977,21 @@
     }
 
     .message.success {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
+        background-color: var(--success-bg);
+        color: var(--success-text);
+        border: 1px solid var(--success);
     }
 
     .message.error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
+        background-color: var(--error-bg);
+        color: var(--error-text);
+        border: 1px solid var(--danger);
     }
 
     .message.info {
-        background-color: #d1ecf1;
-        color: #0c5460;
-        border: 1px solid #bee5eb;
+        background-color: var(--primary-bg);
+        color: var(--text-color);
+        border: 1px solid var(--info);
     }
 
     .tabs {
@@ -1010,8 +1015,8 @@
     }
 
     .tab.active {
-        border-bottom-color: #007bff;
-        color: #007bff;
+        border-bottom-color: var(--accent-color);
+        color: var(--accent-color);
     }
 
     .tab-content {
@@ -1046,15 +1051,15 @@
 
     .add-form button {
         padding: 8px 16px;
-        background-color: #007bff;
-        color: white;
+        background-color: var(--accent-color);
+        color: var(--text-color);
         border: none;
         border-radius: 4px;
         cursor: pointer;
     }
 
     .add-form button:disabled {
-        background-color: #6c757d;
+        background-color: var(--secondary);
         cursor: not-allowed;
     }
 
@@ -1096,8 +1101,8 @@
 
     .remove-btn {
         padding: 4px 8px;
-        background-color: #dc3545;
-        color: white;
+        background-color: var(--danger);
+        color: var(--text-color);
         border: none;
         border-radius: 3px;
         cursor: pointer;
@@ -1119,13 +1124,13 @@
     }
 
     .actions button:first-child {
-        background-color: #28a745;
-        color: white;
+        background-color: var(--success);
+        color: var(--text-color);
     }
 
     .actions button:last-child {
-        background-color: #dc3545;
-        color: white;
+        background-color: var(--danger);
+        color: var(--text-color);
     }
 
     .config-form {
@@ -1168,8 +1173,8 @@
 
     .refresh-btn {
         padding: 8px 16px;
-        background-color: #28a745;
-        color: white;
+        background-color: var(--success);
+        color: var(--text-color);
         border: none;
         border-radius: 4px;
         cursor: pointer;
@@ -1177,11 +1182,12 @@
     }
 
     .refresh-btn:hover:not(:disabled) {
-        background-color: #218838;
+        background-color: var(--success);
+        filter: brightness(0.9);
     }
 
     .refresh-btn:disabled {
-        background-color: #6c757d;
+        background-color: var(--secondary);
         cursor: not-allowed;
     }
 
@@ -1195,8 +1201,8 @@
 
     .update-all-btn {
         padding: 12px 24px;
-        background-color: #28a745;
-        color: white;
+        background-color: var(--success);
+        color: var(--text-color);
         border: none;
         border-radius: 6px;
         cursor: pointer;
@@ -1206,13 +1212,14 @@
     }
 
     .update-all-btn:hover:not(:disabled) {
-        background-color: #218838;
+        background-color: var(--success);
+        filter: brightness(0.9);
         transform: translateY(-1px);
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     .update-all-btn:disabled {
-        background-color: #6c757d;
+        background-color: var(--secondary);
         cursor: not-allowed;
         transform: none;
         box-shadow: none;
@@ -1224,20 +1231,5 @@
         color: var(--text-color);
         opacity: 0.7;
         font-style: italic;
-    }
-
-    .form-group button {
-        padding: 8px 16px;
-        background-color: #007bff;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        align-self: flex-start;
-    }
-
-    .form-group button:disabled {
-        background-color: #6c757d;
-        cursor: not-allowed;
     }
 </style>

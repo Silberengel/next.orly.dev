@@ -1,6 +1,15 @@
 <script>
     import LoginModal from "./LoginModal.svelte";
     import ManagedACL from "./ManagedACL.svelte";
+    import Header from "./Header.svelte";
+    import Sidebar from "./Sidebar.svelte";
+    import ExportView from "./ExportView.svelte";
+    import ImportView from "./ImportView.svelte";
+    import EventsView from "./EventsView.svelte";
+    import ComposeView from "./ComposeView.svelte";
+    import RecoveryView from "./RecoveryView.svelte";
+    import SprocketView from "./SprocketView.svelte";
+    import SearchResultsView from "./SearchResultsView.svelte";
     import {
         initializeNostrClient,
         fetchUserProfile,
@@ -793,6 +802,53 @@
         }
     }
 
+    // Get user's write relays from relay list event (kind 10002)
+    async function getUserWriteRelays() {
+        if (!userPubkey) {
+            return [];
+        }
+
+        try {
+            // Query for the user's relay list event (kind 10002)
+            const relayListEvents = await queryEventsFromDB([
+                {
+                    kinds: [10002],
+                    authors: [userPubkey],
+                    limit: 1,
+                },
+            ]);
+
+            if (relayListEvents.length === 0) {
+                console.log("No relay list event found for user");
+                return [];
+            }
+
+            const relayListEvent = relayListEvents[0];
+            console.log("Found relay list event:", relayListEvent);
+
+            const writeRelays = [];
+
+            // Parse r tags to extract write relays
+            for (const tag of relayListEvent.tags) {
+                if (tag[0] === "r" && tag.length >= 2) {
+                    const relayUrl = tag[1];
+                    const permission = tag.length >= 3 ? tag[2] : null;
+
+                    // Include relay if it's explicitly marked for write or has no permission specified (default is read+write)
+                    if (!permission || permission === "write") {
+                        writeRelays.push(relayUrl);
+                    }
+                }
+            }
+
+            console.log("Found write relays:", writeRelays);
+            return writeRelays;
+        } catch (error) {
+            console.error("Error fetching user write relays:", error);
+            return [];
+        }
+    }
+
     async function repostEvent(event) {
         if (!confirm("Are you sure you want to repost this event?")) {
             return;
@@ -846,6 +902,80 @@
         } catch (error) {
             console.error("Error reposting event:", error);
             alert("Error reposting event: " + error.message);
+        }
+    }
+
+    async function repostEventToAll(event) {
+        if (
+            !confirm(
+                "Are you sure you want to repost this event to all your write relays?",
+            )
+        ) {
+            return;
+        }
+
+        try {
+            // Get user's write relays
+            const writeRelays = await getUserWriteRelays();
+            const localRelayUrl = `wss://${window.location.host}/`;
+
+            // Always include local relay
+            const allRelays = [
+                localRelayUrl,
+                ...writeRelays.filter((url) => url !== localRelayUrl),
+            ];
+
+            if (allRelays.length === 1) {
+                alert(
+                    "No write relays found in your relay list. Only posting to local relay.",
+                );
+            }
+
+            console.log("Reposting event to all relays:", allRelays, event);
+
+            // Create a new event with updated timestamp
+            const newEvent = { ...event };
+            newEvent.created_at = Math.floor(Date.now() / 1000);
+            newEvent.id = ""; // Clear the old ID so it gets recalculated
+            newEvent.sig = ""; // Clear the old signature
+
+            // For addressable events, ensure the d tag matches
+            if (event.kind >= 30000 && event.kind <= 39999) {
+                const dTag = event.tags.find((tag) => tag[0] === "d");
+                if (dTag) {
+                    newEvent.tags = newEvent.tags.filter(
+                        (tag) => tag[0] !== "d",
+                    );
+                    newEvent.tags.push(dTag);
+                }
+            }
+
+            // Sign the event before publishing
+            if (userSigner) {
+                const signedEvent = await userSigner.signEvent(newEvent);
+                console.log("Signed event for repost to all:", signedEvent);
+
+                const result = await nostrClient.publish(
+                    signedEvent,
+                    allRelays,
+                );
+                console.log("Repost to all publish result:", result);
+
+                if (result.success && result.okCount > 0) {
+                    alert(
+                        `Event reposted successfully to ${allRelays.length} relays!`,
+                    );
+                    recoveryHasMore = false; // Reset to allow reloading
+                    await loadRecoveryEvents(); // Reload the events to show the new version
+                } else {
+                    alert("Failed to repost event. Check console for details.");
+                }
+            } else {
+                alert("No signer available. Please log in.");
+            }
+        } catch (error) {
+            console.error("Error reposting event to all:", error);
+            alert("Error reposting event to all: " + error.message);
         }
     }
 
@@ -2330,384 +2460,77 @@
 </script>
 
 <!-- Header -->
-<header class="main-header" class:dark-theme={isDarkTheme}>
-    <div class="header-content">
-        <img src="/orly.png" alt="ORLY Logo" class="logo" />
-        {#if isSearchMode}
-            <div class="search-input-container">
-                <input
-                    type="text"
-                    class="search-input"
-                    bind:value={searchQuery}
-                    on:keydown={handleSearchKeydown}
-                    placeholder="Search..."
-                />
-            </div>
-        {:else}
-            <div class="header-title">
-                <span class="app-title">
-                    ORLY? dashboard
-                    {#if isLoggedIn && userRole}
-                        <span class="permission-badge"
-                            >{currentEffectiveRole}</span
-                        >
-                    {/if}
-                </span>
-            </div>
-        {/if}
-        <button class="search-btn" on:click={toggleSearchMode}> 🔍 </button>
-        <button class="theme-toggle-btn" on:click={toggleTheme}>
-            {isDarkTheme ? "☀️" : "🌙"}
-        </button>
-        {#if isLoggedIn}
-            <div class="user-info">
-                <button class="user-profile-btn" on:click={openSettingsDrawer}>
-                    {#if userProfile?.picture}
-                        <img
-                            src={userProfile.picture}
-                            alt="User avatar"
-                            class="user-avatar"
-                        />
-                    {:else}
-                        <div class="user-avatar-placeholder">👤</div>
-                    {/if}
-                    <span class="user-name">
-                        {userProfile?.name || userPubkey.slice(0, 8) + "..."}
-                    </span>
-                </button>
-            </div>
-        {:else}
-            <button class="login-btn" on:click={openLoginModal}>Log in</button>
-        {/if}
-    </div>
-</header>
+<Header
+    {isDarkTheme}
+    {isSearchMode}
+    bind:searchQuery
+    {isLoggedIn}
+    {userRole}
+    {currentEffectiveRole}
+    {userProfile}
+    {userPubkey}
+    on:searchKeydown={handleSearchKeydown}
+    on:toggleSearchMode={toggleSearchMode}
+    on:toggleTheme={toggleTheme}
+    on:openSettingsDrawer={openSettingsDrawer}
+    on:openLoginModal={openLoginModal}
+/>
 
 <!-- Main Content Area -->
 <div class="app-container" class:dark-theme={isDarkTheme}>
     <!-- Sidebar -->
-    <aside class="sidebar" class:dark-theme={isDarkTheme}>
-        <div class="sidebar-content">
-            <div class="tabs">
-                {#each tabs as tab}
-                    <button
-                        class="tab"
-                        class:active={selectedTab === tab.id}
-                        on:click={() => selectTab(tab.id)}
-                    >
-                        <span class="tab-icon">{tab.icon}</span>
-                        <span class="tab-label">{tab.label}</span>
-                        {#if tab.isSearchTab}
-                            <span
-                                class="tab-close-icon"
-                                on:click|stopPropagation={() =>
-                                    closeSearchTab(tab.id)}
-                                on:keydown={(e) =>
-                                    e.key === "Enter" && closeSearchTab(tab.id)}
-                                role="button"
-                                tabindex="0">✕</span
-                            >
-                        {/if}
-                    </button>
-                {/each}
-            </div>
-        </div>
-    </aside>
+    <Sidebar
+        {isDarkTheme}
+        {tabs}
+        {selectedTab}
+        on:selectTab={(e) => selectTab(e.detail)}
+        on:closeSearchTab={(e) => closeSearchTab(e.detail)}
+    />
 
     <!-- Main Content -->
     <main class="main-content">
         {#if selectedTab === "export"}
-            {#if isLoggedIn}
-                <div class="export-section">
-                    <h3>Export My Events</h3>
-                    <p>Download your personal events as a JSONL file.</p>
-                    <button class="export-btn" on:click={exportMyEvents}>
-                        📤 Export My Events
-                    </button>
-                </div>
-                {#if currentEffectiveRole === "admin" || currentEffectiveRole === "owner"}
-                    <div class="export-section">
-                        <h3>Export All Events</h3>
-                        <p>
-                            Download the complete database as a JSONL file. This
-                            includes all events from all users.
-                        </p>
-                        <button class="export-btn" on:click={exportAllEvents}>
-                            📤 Export All Events
-                        </button>
-                    </div>
-                {/if}
-            {:else}
-                <div class="login-prompt">
-                    <p>Please log in to access export functionality.</p>
-                    <button class="login-btn" on:click={openLoginModal}
-                        >Log In</button
-                    >
-                </div>
-            {/if}
+            <ExportView
+                {isLoggedIn}
+                {currentEffectiveRole}
+                on:exportMyEvents={exportMyEvents}
+                on:exportAllEvents={exportAllEvents}
+                on:openLoginModal={openLoginModal}
+            />
         {:else if selectedTab === "import"}
-            <div class="import-section">
-                {#if isLoggedIn && (currentEffectiveRole === "admin" || currentEffectiveRole === "owner")}
-                    <h3>Import Events</h3>
-                    <p>
-                        Upload a JSONL file to import events into the database.
-                    </p>
-                    <div class="recovery-controls-card">
-                        <input
-                            type="file"
-                            id="import-file"
-                            accept=".jsonl,.txt"
-                            on:change={handleFileSelect}
-                        />
-                        <button
-                            class="import-btn"
-                            on:click={importEvents}
-                            disabled={!selectedFile}
-                        >
-                            Import Events
-                        </button>
-                    </div>
-                {:else if isLoggedIn}
-                    <div class="permission-denied">
-                        <h3 class="recovery-header">Import Events</h3>
-                        <p class="recovery-description">
-                            ❌ Admin or owner permission required for import
-                            functionality.
-                        </p>
-                    </div>
-                {:else}
-                    <div class="login-prompt">
-                        <h3 class="recovery-header">Import Events</h3>
-                        <p class="recovery-description">
-                            Please log in to access import functionality.
-                        </p>
-                        <button class="login-btn" on:click={openLoginModal}
-                            >Log In</button
-                        >
-                    </div>
-                {/if}
-            </div>
+            <ImportView
+                {isLoggedIn}
+                {currentEffectiveRole}
+                {selectedFile}
+                on:fileSelect={handleFileSelect}
+                on:importEvents={importEvents}
+                on:openLoginModal={openLoginModal}
+            />
         {:else if selectedTab === "events"}
-            <div class="events-view-container">
-                {#if isLoggedIn && (userRole === "write" || userRole === "admin" || userRole === "owner")}
-                    <div class="events-view-content" on:scroll={handleScroll}>
-                        {#if filteredEvents.length > 0}
-                            {#each filteredEvents as event}
-                                <div
-                                    class="events-view-item"
-                                    class:expanded={expandedEvents.has(
-                                        event.id,
-                                    )}
-                                >
-                                    <div
-                                        class="events-view-row"
-                                        on:click={() =>
-                                            toggleEventExpansion(event.id)}
-                                        on:keydown={(e) =>
-                                            e.key === "Enter" &&
-                                            toggleEventExpansion(event.id)}
-                                        role="button"
-                                        tabindex="0"
-                                    >
-                                        <div class="events-view-avatar">
-                                            <div class="avatar-placeholder">
-                                                👤
-                                            </div>
-                                        </div>
-                                        <div class="events-view-info">
-                                            <div class="events-view-author">
-                                                {truncatePubkey(event.pubkey)}
-                                            </div>
-                                            <div class="events-view-kind">
-                                                <span
-                                                    class="kind-number"
-                                                    class:delete-event={event.kind ===
-                                                        5}>{event.kind}</span
-                                                >
-                                                <span class="kind-name"
-                                                    >{getKindName(
-                                                        event.kind,
-                                                    )}</span
-                                                >
-                                            </div>
-                                        </div>
-                                        <div class="events-view-content">
-                                            <div class="event-timestamp">
-                                                {formatTimestamp(
-                                                    event.created_at,
-                                                )}
-                                            </div>
-                                            {#if event.kind === 5}
-                                                <div class="delete-event-info">
-                                                    <span
-                                                        class="delete-event-label"
-                                                        >🗑️ Delete Event</span
-                                                    >
-                                                    {#if event.tags && event.tags.length > 0}
-                                                        <div
-                                                            class="delete-targets"
-                                                        >
-                                                            {#each event.tags.filter((tag) => tag[0] === "e") as eTag}
-                                                                <span
-                                                                    class="delete-target"
-                                                                    >Target: {eTag[1].slice(
-                                                                        0,
-                                                                        8,
-                                                                    )}...{eTag[1].slice(
-                                                                        -8,
-                                                                    )}</span
-                                                                >
-                                                            {/each}
-                                                        </div>
-                                                    {/if}
-                                                </div>
-                                            {:else}
-                                                <div
-                                                    class="event-content-single-line"
-                                                >
-                                                    {truncateContent(
-                                                        event.content,
-                                                    )}
-                                                </div>
-                                            {/if}
-                                        </div>
-                                        {#if event.kind !== 5 && (userRole === "admin" || userRole === "owner" || (userRole === "write" && event.pubkey && event.pubkey === userPubkey))}
-                                            <button
-                                                class="delete-btn"
-                                                on:click|stopPropagation={() =>
-                                                    deleteEvent(event.id)}
-                                            >
-                                                🗑️
-                                            </button>
-                                        {/if}
-                                    </div>
-                                    {#if expandedEvents.has(event.id)}
-                                        <div class="events-view-details">
-                                            <div class="json-container">
-                                                <pre
-                                                    class="event-json">{JSON.stringify(
-                                                        event,
-                                                        null,
-                                                        2,
-                                                    )}</pre>
-                                                <button
-                                                    class="copy-json-btn"
-                                                    on:click|stopPropagation={(
-                                                        e,
-                                                    ) =>
-                                                        copyEventToClipboard(
-                                                            event,
-                                                            e,
-                                                        )}
-                                                    title="Copy minified JSON to clipboard"
-                                                >
-                                                    📋
-                                                </button>
-                                            </div>
-                                        </div>
-                                    {/if}
-                                </div>
-                            {/each}
-                        {:else if !isLoadingEvents}
-                            <div class="no-events">
-                                <p>No events found.</p>
-                            </div>
-                        {/if}
-
-                        {#if isLoadingEvents}
-                            <div class="loading-events">
-                                <div class="loading-spinner"></div>
-                                <p>Loading events...</p>
-                            </div>
-                        {/if}
-
-                        {#if !hasMoreEvents && allEvents.length > 0}
-                            <div class="end-of-events">
-                                <p>No more events to load.</p>
-                            </div>
-                        {/if}
-                    </div>
-                {:else}
-                    <div class="permission-denied">
-                        <p>
-                            ❌ Write, admin, or owner permission required to
-                            view all events.
-                        </p>
-                    </div>
-                {/if}
-                {#if isLoggedIn && (userRole === "write" || userRole === "admin" || userRole === "owner")}
-                    <div class="events-view-header">
-                        <div class="events-view-toggle">
-                            <label class="toggle-container">
-                                <input
-                                    type="checkbox"
-                                    bind:checked={showOnlyMyEvents}
-                                    on:change={() => handleToggleChange()}
-                                />
-                                <span class="toggle-slider"></span>
-                                <span class="toggle-label"
-                                    >Only show my events</span
-                                >
-                            </label>
-                        </div>
-                        <div class="events-view-buttons">
-                            <button
-                                class="refresh-btn"
-                                on:click={() => {
-                                    const authors =
-                                        showOnlyMyEvents && userPubkey
-                                            ? [userPubkey]
-                                            : null;
-                                    loadAllEvents(false, authors);
-                                }}
-                                disabled={isLoadingEvents}
-                            >
-                                🔄 Load More
-                            </button>
-                            <button
-                                class="reload-btn"
-                                on:click={() => {
-                                    const authors =
-                                        showOnlyMyEvents && userPubkey
-                                            ? [userPubkey]
-                                            : null;
-                                    loadAllEvents(true, authors);
-                                }}
-                                disabled={isLoadingEvents}
-                            >
-                                {#if isLoadingEvents}
-                                    <div class="spinner"></div>
-                                {:else}
-                                    🔄
-                                {/if}
-                            </button>
-                        </div>
-                    </div>
-                {/if}
-            </div>
+            <EventsView
+                {isLoggedIn}
+                {userRole}
+                {userPubkey}
+                {filteredEvents}
+                {expandedEvents}
+                {isLoadingEvents}
+                {showOnlyMyEvents}
+                on:scroll={handleScroll}
+                on:toggleEventExpansion={(e) => toggleEventExpansion(e.detail)}
+                on:deleteEvent={(e) => deleteEvent(e.detail)}
+                on:copyEventToClipboard={(e) =>
+                    copyEventToClipboard(e.detail.event, e.detail.e)}
+                on:toggleChange={handleToggleChange}
+                on:loadAllEvents={(e) =>
+                    loadAllEvents(e.detail.refresh, e.detail.authors)}
+            />
         {:else if selectedTab === "compose"}
-            <div class="compose-view">
-                <div class="compose-header">
-                    <button
-                        class="compose-btn reformat-btn"
-                        on:click={reformatJson}>Reformat</button
-                    >
-                    <button class="compose-btn sign-btn" on:click={signEvent}
-                        >Sign</button
-                    >
-                    <button
-                        class="compose-btn publish-btn"
-                        on:click={publishEvent}>Publish</button
-                    >
-                </div>
-                <div class="compose-editor">
-                    <textarea
-                        bind:value={composeEventJson}
-                        class="compose-textarea"
-                        placeholder="Enter your Nostr event JSON here..."
-                        spellcheck="false"
-                    ></textarea>
-                </div>
-            </div>
+            <ComposeView
+                bind:composeEventJson
+                on:reformatJson={reformatJson}
+                on:signEvent={signEvent}
+                on:publishEvent={publishEvent}
+            />
         {:else if selectedTab === "managed-acl"}
             <div class="managed-acl-view">
                 {#if aclMode !== "managed"}
@@ -2743,200 +2566,27 @@
                 {/if}
             </div>
         {:else if selectedTab === "sprocket"}
-            <div class="sprocket-view">
-                <h2>Sprocket Script Management</h2>
-                {#if isLoggedIn && userRole === "owner"}
-                    <div class="sprocket-section">
-                        <div class="sprocket-header">
-                            <h3>Script Editor</h3>
-                            <div class="sprocket-controls">
-                                <button
-                                    class="sprocket-btn restart-btn"
-                                    on:click={restartSprocket}
-                                    disabled={isLoadingSprocket}
-                                >
-                                    🔄 Restart
-                                </button>
-                                <button
-                                    class="sprocket-btn delete-btn"
-                                    on:click={deleteSprocket}
-                                    disabled={isLoadingSprocket ||
-                                        !sprocketStatus?.script_exists}
-                                >
-                                    🗑️ Delete Script
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="sprocket-upload-section">
-                            <h4>Upload Script</h4>
-                            <div class="upload-controls">
-                                <input
-                                    type="file"
-                                    id="sprocket-upload-file"
-                                    accept=".sh,.bash"
-                                    on:change={handleSprocketFileSelect}
-                                    disabled={isLoadingSprocket}
-                                />
-                                <button
-                                    class="sprocket-btn upload-btn"
-                                    on:click={uploadSprocketScript}
-                                    disabled={isLoadingSprocket ||
-                                        !sprocketUploadFile}
-                                >
-                                    📤 Upload & Update
-                                </button>
-                            </div>
-                        </div>
-
-                        <div class="sprocket-status">
-                            <div class="status-item">
-                                <span class="status-label">Status:</span>
-                                <span
-                                    class="status-value"
-                                    class:running={sprocketStatus?.is_running}
-                                >
-                                    {sprocketStatus?.is_running
-                                        ? "🟢 Running"
-                                        : "🔴 Stopped"}
-                                </span>
-                            </div>
-                            {#if sprocketStatus?.pid}
-                                <div class="status-item">
-                                    <span class="status-label">PID:</span>
-                                    <span class="status-value"
-                                        >{sprocketStatus.pid}</span
-                                    >
-                                </div>
-                            {/if}
-                            <div class="status-item">
-                                <span class="status-label">Script:</span>
-                                <span class="status-value"
-                                    >{sprocketStatus?.script_exists
-                                        ? "✅ Exists"
-                                        : "❌ Not found"}</span
-                                >
-                            </div>
-                        </div>
-
-                        <div class="script-editor-container">
-                            <textarea
-                                class="script-editor"
-                                bind:value={sprocketScript}
-                                placeholder="#!/bin/bash&#10;# Enter your sprocket script here..."
-                                disabled={isLoadingSprocket}
-                            ></textarea>
-                        </div>
-
-                        <div class="script-actions">
-                            <button
-                                class="sprocket-btn save-btn"
-                                on:click={saveSprocket}
-                                disabled={isLoadingSprocket}
-                            >
-                                💾 Save & Update
-                            </button>
-                            <button
-                                class="sprocket-btn load-btn"
-                                on:click={loadSprocket}
-                                disabled={isLoadingSprocket}
-                            >
-                                📥 Load Current
-                            </button>
-                        </div>
-
-                        {#if sprocketMessage}
-                            <div
-                                class="sprocket-message"
-                                class:error={sprocketMessageType === "error"}
-                            >
-                                {sprocketMessage}
-                            </div>
-                        {/if}
-                    </div>
-
-                    <div class="sprocket-section">
-                        <h3>Script Versions</h3>
-                        <div class="versions-list">
-                            {#each sprocketVersions as version}
-                                <div
-                                    class="version-item"
-                                    class:current={version.is_current}
-                                >
-                                    <div class="version-info">
-                                        <div class="version-name">
-                                            {version.name}
-                                        </div>
-                                        <div class="version-date">
-                                            {new Date(
-                                                version.modified,
-                                            ).toLocaleString()}
-                                            {#if version.is_current}
-                                                <span class="current-badge"
-                                                    >Current</span
-                                                >
-                                            {/if}
-                                        </div>
-                                    </div>
-                                    <div class="version-actions">
-                                        <button
-                                            class="version-btn load-btn"
-                                            on:click={() =>
-                                                loadVersion(version)}
-                                            disabled={isLoadingSprocket}
-                                        >
-                                            📥 Load
-                                        </button>
-                                        {#if !version.is_current}
-                                            <button
-                                                class="version-btn delete-btn"
-                                                on:click={() =>
-                                                    deleteVersion(version.name)}
-                                                disabled={isLoadingSprocket}
-                                            >
-                                                🗑️ Delete
-                                            </button>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-
-                        <button
-                            class="sprocket-btn refresh-btn"
-                            on:click={loadVersions}
-                            disabled={isLoadingSprocket}
-                        >
-                            🔄 Refresh Versions
-                        </button>
-                    </div>
-                {:else if isLoggedIn}
-                    <div class="permission-denied">
-                        <p>
-                            ❌ Owner permission required for sprocket
-                            management.
-                        </p>
-                        <p>
-                            To enable sprocket functionality, set the <code
-                                >ORLY_OWNERS</code
-                            > environment variable with your npub when starting the
-                            relay.
-                        </p>
-                        <p>
-                            Current user role: <strong
-                                >{userRole || "none"}</strong
-                            >
-                        </p>
-                    </div>
-                {:else}
-                    <div class="login-prompt">
-                        <p>Please log in to access sprocket management.</p>
-                        <button class="login-btn" on:click={openLoginModal}
-                            >Log In</button
-                        >
-                    </div>
-                {/if}
-            </div>
+            <SprocketView
+                {isLoggedIn}
+                {userRole}
+                {sprocketStatus}
+                {isLoadingSprocket}
+                {sprocketUploadFile}
+                bind:sprocketScript
+                {sprocketMessage}
+                {sprocketMessageType}
+                {sprocketVersions}
+                on:restartSprocket={restartSprocket}
+                on:deleteSprocket={deleteSprocket}
+                on:sprocketFileSelect={handleSprocketFileSelect}
+                on:uploadSprocketScript={uploadSprocketScript}
+                on:saveSprocket={saveSprocket}
+                on:loadSprocket={loadSprocket}
+                on:loadVersions={loadVersions}
+                on:loadVersion={(e) => loadVersion(e.detail)}
+                on:deleteVersion={(e) => deleteVersion(e.detail)}
+                on:openLoginModal={openLoginModal}
+            />
         {:else if selectedTab === "recovery"}
             <div class="recovery-tab">
                 <div>
@@ -3012,12 +2662,25 @@
                                             <div class="event-header-actions">
                                                 {#if !isCurrent}
                                                     <button
-                                                        class="repost-button"
+                                                        class="repost-all-button"
                                                         on:click={() =>
-                                                            repostEvent(event)}
+                                                            repostEventToAll(
+                                                                event,
+                                                            )}
                                                     >
-                                                        🔄 Repost
+                                                        🌐 Repost to All
                                                     </button>
+                                                    {#if currentEffectiveRole !== "read"}
+                                                        <button
+                                                            class="repost-button"
+                                                            on:click={() =>
+                                                                repostEvent(
+                                                                    event,
+                                                                )}
+                                                        >
+                                                            🔄 Repost
+                                                        </button>
+                                                    {/if}
                                                 {/if}
                                                 <button
                                                     class="copy-json-btn"
@@ -3353,160 +3016,95 @@
     :global(body) {
         margin: 0;
         padding: 0;
+        /* Base colors */
         --bg-color: #ddd;
         --header-bg: #eee;
+        --sidebar-bg: #eee;
+        --card-bg: #f8f9fa;
+        --panel-bg: #f8f9fa;
         --border-color: #dee2e6;
         --text-color: #444444;
+        --text-muted: #6c757d;
         --input-border: #ccc;
+        --input-bg: #ffffff;
+        --input-text-color: #495057;
         --button-bg: #ddd;
         --button-hover-bg: #eee;
+        --button-text: #444444;
+        --button-hover-border: #adb5bd;
+
+        /* Theme colors */
         --primary: #00bcd4;
+        --primary-bg: rgba(0, 188, 212, 0.1);
+        --secondary: #6c757d;
+        --success: #28a745;
+        --success-bg: #d4edda;
+        --success-text: #155724;
+        --info: #17a2b8;
         --warning: #ff3e00;
+        --warning-bg: #fff3cd;
+        --danger: #dc3545;
+        --danger-bg: #f8d7da;
+        --danger-text: #721c24;
+        --error-bg: #f8d7da;
+        --error-text: #721c24;
+
+        /* Code colors */
+        --code-bg: #f8f9fa;
+        --code-text: #495057;
+
+        /* Tab colors */
         --tab-inactive-bg: #bbb;
+
+        /* Accent colors */
+        --accent-color: #007bff;
+        --accent-hover-color: #0056b3;
     }
 
     :global(body.dark-theme) {
+        /* Base colors */
         --bg-color: #263238;
         --header-bg: #1e272c;
+        --sidebar-bg: #1e272c;
+        --card-bg: #37474f;
+        --panel-bg: #37474f;
         --border-color: #404040;
         --text-color: #ffffff;
+        --text-muted: #adb5bd;
         --input-border: #555;
+        --input-bg: #37474f;
+        --input-text-color: #ffffff;
         --button-bg: #263238;
         --button-hover-bg: #1e272c;
+        --button-text: #ffffff;
+        --button-hover-border: #6c757d;
+
+        /* Theme colors */
         --primary: #00bcd4;
+        --primary-bg: rgba(0, 188, 212, 0.2);
+        --secondary: #6c757d;
+        --success: #28a745;
+        --success-bg: #1e4620;
+        --success-text: #d4edda;
+        --info: #17a2b8;
         --warning: #ff3e00;
+        --warning-bg: #4d1f00;
+        --danger: #dc3545;
+        --danger-bg: #4d1319;
+        --danger-text: #f8d7da;
+        --error-bg: #4d1319;
+        --error-text: #f8d7da;
+
+        /* Code colors */
+        --code-bg: #1e272c;
+        --code-text: #ffffff;
+
+        /* Tab colors */
         --tab-inactive-bg: #1a1a1a;
-    }
 
-    /* Header Styles */
-    .main-header {
-        height: 3em;
-        background-color: var(--header-bg);
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        z-index: 1000;
-        color: var(--text-color);
-    }
-
-    .header-content {
-        height: 100%;
-        display: flex;
-        align-items: center;
-        padding: 0;
-        gap: 0;
-    }
-
-    .logo {
-        height: 2.5em;
-        width: 2.5em;
-        object-fit: contain;
-        flex-shrink: 0;
-        transition: opacity 0.2s ease;
-    }
-
-    .logo:hover {
-        content: url("/favicon.png");
-    }
-
-    .header-title {
-        flex: 1;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        gap: 0;
-        padding: 0 1rem;
-    }
-
-    .app-title {
-        font-size: 1em;
-        font-weight: 600;
-        color: var(--text-color);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .permission-badge {
-        font-size: 0.7em;
-        font-weight: 500;
-        padding: 0.2em 0.5em;
-        border-radius: 0.3em;
-        background-color: var(--primary);
-        color: white;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    .search-input-container {
-        flex: 1;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        padding: 0 1rem;
-    }
-
-    .search-input {
-        width: 100%;
-        height: 2em;
-        padding: 0.5rem;
-        border: 1px solid var(--input-border);
-        border-radius: 4px;
-        background: var(--bg-color);
-        color: var(--text-color);
-        font-size: 1em;
-        outline: none;
-    }
-
-    .search-input:focus {
-        border-color: var(--primary);
-    }
-
-    .search-btn {
-        border: 0 none;
-        border-radius: 0;
-        display: flex;
-        align-items: center;
-        background-color: var(--button-hover-bg);
-        cursor: pointer;
-        color: var(--text-color);
-        height: 3em;
-        width: auto;
-        min-width: 3em;
-        flex-shrink: 0;
-        line-height: 1;
-        transition: background-color 0.2s;
-        justify-content: center;
-        padding: 1em 1em 1em 1em;
-        margin: 0;
-    }
-
-    .search-btn:hover {
-        background-color: var(--button-bg);
-    }
-
-    .theme-toggle-btn {
-        border: 0 none;
-        border-radius: 0;
-        display: flex;
-        align-items: center;
-        background-color: var(--button-hover-bg);
-        cursor: pointer;
-        color: var(--text-color);
-        height: 3em;
-        width: auto;
-        min-width: 3em;
-        flex-shrink: 0;
-        line-height: 1;
-        transition: background-color 0.2s;
-        justify-content: center;
-        padding: 1em 1em 1em 1em;
-        margin: 0;
-    }
-
-    .theme-toggle-btn:hover {
-        background-color: var(--button-bg);
+        /* Accent colors */
+        --accent-color: #007bff;
+        --accent-hover-color: #0056b3;
     }
 
     .login-btn {
@@ -3514,7 +3112,7 @@
         border: none;
         border-radius: 6px;
         background-color: #4caf50;
-        color: white;
+        color: var(--text-color);
         cursor: pointer;
         font-size: 1rem;
         font-weight: 500;
@@ -3565,93 +3163,14 @@
         height: calc(100vh - 3em);
     }
 
-    /* Sidebar Styles */
-    .sidebar {
-        position: fixed;
-        left: 0;
-        top: 3em;
-        bottom: 0;
-        width: 200px;
-        background-color: var(--header-bg);
-        color: var(--text-color);
-        z-index: 100;
-    }
-
-    .sidebar-content {
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        padding: 0;
-    }
-
-    .tabs {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .tab {
-        height: 3em;
-        display: flex;
-        align-items: center;
-        padding: 0 1rem;
-        cursor: pointer;
-        border: none;
-        background: transparent;
-        color: var(--text-color);
-        transition: background-color 0.2s ease;
-        gap: 0.75rem;
-        text-align: left;
-        width: 100%;
-    }
-
-    .tab:hover {
-        background-color: var(--bg-color);
-    }
-
-    .tab.active {
-        background-color: var(--bg-color);
-    }
-
-    .tab-icon {
-        font-size: 1.2em;
-        flex-shrink: 0;
-        width: 1.5em;
-        text-align: center;
-    }
-
-    .tab-label {
-        font-size: 0.9em;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        flex: 1;
-    }
-
-    .tab-close-icon {
-        cursor: pointer;
-        transition: opacity 0.2s;
-        font-size: 0.8em;
-        margin-left: auto;
-        padding: 0.25rem;
-        border-radius: 0.25rem;
-        flex-shrink: 0;
-    }
-
-    .tab-close-icon:hover {
-        opacity: 0.7;
-        background-color: var(--warning);
-        color: white;
-    }
-
     /* Main Content */
     .main-content {
         position: fixed;
         left: 200px;
-        top: 3em;
+        top: 2.5em;
         right: 0;
         bottom: 0;
-        padding: 1em;
+        padding: 0;
         overflow-y: auto;
         background-color: var(--bg-color);
         color: var(--text-color);
@@ -3670,339 +3189,11 @@
         font-size: 1.2rem;
     }
 
-    /* Sprocket Styles */
-    .sprocket-view {
-        width: 100%;
-        max-width: 1200px;
-        margin: 0;
-        padding: 20px;
-        background: var(--header-bg);
-        color: var(--text-color);
-        border-radius: 8px;
-    }
-
-    .sprocket-section {
-        background-color: var(--card-bg);
-        border-radius: 8px;
-        padding: 1em;
-        margin-bottom: 1.5rem;
-        border: 1px solid var(--border-color);
-        width: 32em;
-    }
-
-    .sprocket-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 1rem;
-    }
-
-    .sprocket-controls {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .sprocket-upload-section {
-        margin-bottom: 1rem;
-        padding: 1rem;
-        background-color: var(--bg-color);
-        border-radius: 6px;
-        border: 1px solid var(--border-color);
-    }
-
-    .sprocket-upload-section h4 {
-        margin: 0 0 0.75rem 0;
-        color: var(--text-color);
-        font-size: 1rem;
-        font-weight: 500;
-    }
-
-    .upload-controls {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-    }
-
-    .upload-controls input[type="file"] {
-        flex: 1;
-        padding: 0.5rem;
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        background: var(--bg-color);
-        color: var(--text-color);
-        font-size: 0.9rem;
-    }
-
-    .sprocket-btn.upload-btn {
-        background-color: #8b5cf6;
-        color: white;
-    }
-
-    .sprocket-btn.upload-btn:hover:not(:disabled) {
-        background-color: #7c3aed;
-    }
-
-    .sprocket-status {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 1rem;
-        padding: 0.75rem;
-        background-color: var(--bg-color);
-        border-radius: 6px;
-        border: 1px solid var(--border-color);
-    }
-
-    .status-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .status-label {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        font-weight: 500;
-    }
-
-    .status-value {
-        font-size: 0.9rem;
-        font-weight: 600;
-    }
-
-    .status-value.running {
-        color: #22c55e;
-    }
-
-    .script-editor-container {
-        margin-bottom: 1rem;
-    }
-
-    .script-editor {
-        width: 100%;
-        height: 300px;
-        padding: 1rem;
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
-        font-size: 0.9rem;
-        line-height: 1.4;
-        resize: vertical;
-        outline: none;
-    }
-
-    .script-editor:focus {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
-    }
-
-    .script-editor:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .script-actions {
-        display: flex;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .sprocket-btn {
-        padding: 0.5rem 1rem;
-        border: none;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .sprocket-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .sprocket-btn.save-btn {
-        background-color: #22c55e;
-        color: white;
-    }
-
-    .sprocket-btn.save-btn:hover:not(:disabled) {
-        background-color: #16a34a;
-    }
-
-    .sprocket-btn.load-btn {
-        background-color: #3b82f6;
-        color: white;
-    }
-
-    .sprocket-btn.load-btn:hover:not(:disabled) {
-        background-color: #2563eb;
-    }
-
-    .sprocket-btn.restart-btn {
-        background-color: #f59e0b;
-        color: white;
-    }
-
-    .sprocket-btn.restart-btn:hover:not(:disabled) {
-        background-color: #d97706;
-    }
-
-    .sprocket-btn.delete-btn {
-        background-color: #ef4444;
-        color: white;
-    }
-
-    .sprocket-btn.delete-btn:hover:not(:disabled) {
-        background-color: #dc2626;
-    }
-
-    .sprocket-btn.refresh-btn {
-        background-color: #6b7280;
-        color: white;
-    }
-
-    .sprocket-btn.refresh-btn:hover:not(:disabled) {
-        background-color: #4b5563;
-    }
-
-    .sprocket-message {
-        padding: 0.75rem;
-        border-radius: 6px;
-        font-size: 0.9rem;
-        font-weight: 500;
-        background-color: #dbeafe;
-        color: #1e40af;
-        border: 1px solid #93c5fd;
-    }
-
-    .sprocket-message.error {
-        background-color: #fee2e2;
-        color: #dc2626;
-        border-color: #fca5a5;
-    }
-
-    .versions-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        margin-bottom: 1rem;
-    }
-
-    .version-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background-color: var(--bg-color);
-        border: 1px solid var(--border-color);
-        border-radius: 6px;
-        transition: all 0.2s ease;
-    }
-
-    .version-item.current {
-        border-color: var(--primary-color);
-        background-color: rgba(59, 130, 246, 0.05);
-    }
-
-    .version-item:hover {
-        border-color: var(--primary-color);
-    }
-
-    .version-info {
-        flex: 1;
-    }
-
-    .version-name {
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.25rem;
-    }
-
-    .version-date {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .current-badge {
-        background-color: var(--primary-color);
-        color: white;
-        padding: 0.125rem 0.5rem;
-        border-radius: 12px;
-        font-size: 0.7rem;
-        font-weight: 500;
-    }
-
-    .version-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .version-btn {
-        padding: 0.375rem 0.75rem;
-        border: none;
-        border-radius: 4px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    .version-btn:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-    }
-
-    .version-btn.load-btn {
-        background-color: #3b82f6;
-        color: white;
-    }
-
-    .version-btn.load-btn:hover:not(:disabled) {
-        background-color: #2563eb;
-    }
-
-    .version-btn.delete-btn {
-        background-color: #ef4444;
-        color: white;
-    }
-
-    .version-btn.delete-btn:hover:not(:disabled) {
-        background-color: #dc2626;
-    }
-
     @media (max-width: 640px) {
-        .header-content {
-            padding: 0;
-        }
-
-        .sidebar {
-            width: 160px;
-        }
-
         .main-content {
             left: 160px;
             padding: 1rem;
         }
-    }
-
-    /* User Info Styles */
-    .user-info {
-        display: flex;
-        align-items: flex-start;
-        padding: 0;
-        height: 3em;
     }
 
     .logout-btn {
@@ -4010,7 +3201,7 @@
         border: none;
         border-radius: 6px;
         background-color: var(--warning);
-        color: white;
+        color: var(--text-color);
         cursor: pointer;
         font-size: 1rem;
         font-weight: 500;
@@ -4031,57 +3222,6 @@
         right: 0.5em;
         z-index: 10;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    }
-
-    /* User Profile Button */
-    .user-profile-btn {
-        border: 0 none;
-        border-radius: 0;
-        display: flex;
-        align-items: center;
-        background-color: var(--button-hover-bg);
-        cursor: pointer;
-        color: var(--text-color);
-        height: 3em;
-        width: auto;
-        min-width: 3em;
-        flex-shrink: 0;
-        line-height: 1;
-        transition: background-color 0.2s;
-        justify-content: center;
-        padding: 0;
-        margin: 0;
-    }
-
-    .user-profile-btn:hover {
-        background-color: var(--button-bg);
-        padding: 0;
-    }
-
-    .user-avatar,
-    .user-avatar-placeholder {
-        width: 2.5em;
-        height: 2.5em;
-        object-fit: cover;
-        border-radius: 50%;
-    }
-
-    .user-avatar-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.5em;
-        padding: 0.5em;
-    }
-
-    .user-name {
-        font-size: 1.2em;
-        font-weight: 500;
-        max-width: 100px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        padding: 0.5em;
     }
 
     /* Settings Drawer */
@@ -4246,7 +3386,7 @@
     .retry-profile-btn {
         padding: 0.5rem 1rem;
         background: var(--primary);
-        color: white;
+        color: var(--text-color);
         border: none;
         border-radius: 4px;
         cursor: pointer;
@@ -4270,16 +3410,6 @@
         word-break: break-all;
     }
 
-    /* Export/Import Views */
-    .import-view {
-        padding: 1em;
-        max-width: 32em;
-        margin: 0;
-        background: transparent;
-        color: var(--text-color);
-        border-radius: 0;
-    }
-
     /* Managed ACL View */
     .managed-acl-view {
         padding: 20px;
@@ -4290,121 +3420,10 @@
         border-radius: 8px;
     }
 
-    .compose-view {
-        position: fixed;
-        top: 3em;
-        left: 200px;
-        right: 0;
-        bottom: 0;
-        display: flex;
-        flex-direction: column;
-        background: transparent;
-    }
-
-    .compose-header {
-        display: flex;
-        gap: 0.5em;
-        padding: 0.5em;
-        background: transparent;
-        border-bottom: 1px solid var(--border-color);
-    }
-
-    .compose-btn {
-        padding: 0.5em 1em;
-        border: 1px solid var(--border-color);
-        border-radius: 0.25rem;
-        background: var(--button-bg);
-        color: var(--button-text);
-        cursor: pointer;
-        font-size: 0.9rem;
-        transition:
-            background-color 0.2s,
-            border-color 0.2s;
-    }
-
-    .compose-btn:hover {
-        background: var(--button-hover-bg);
-        border-color: var(--button-hover-border);
-    }
-
-    .publish-btn {
-        background: var(--accent-color, #007bff);
-        color: white;
-        border-color: var(--accent-color, #007bff);
-    }
-
-    .publish-btn:hover {
-        background: var(--accent-hover-color, #0056b3);
-        border-color: var(--accent-hover-color, #0056b3);
-    }
-
-    .compose-editor {
-        flex: 1;
-        padding: 0.5em;
-    }
-
-    .compose-textarea {
-        width: 100%;
-        height: 100%;
-        border: 1px solid var(--border-color);
-        border-radius: 0.25rem;
-        background: var(--bg-color);
-        color: var(--text-color);
-        font-family: "Courier New", monospace;
-        font-size: 0.9rem;
-        padding: 1rem;
-        resize: none;
-        outline: none;
-    }
-
-    .compose-textarea:focus {
-        border-color: var(--accent-color, #007bff);
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-    }
-
-    .import-view h3 {
-        margin: 0 0 2rem 0;
-        color: var(--text-color);
-        font-size: 1.5rem;
-        font-weight: 600;
-    }
-
-    .export-section,
-    .import-section {
-        background: transparent;
-        padding: 1em;
-        border-radius: 8px;
-        margin-bottom: 1.5rem;
-        width: 32em;
-    }
-
-    .export-section h3,
-    .import-section h3 {
-        margin: 0 0 10px 0;
-        color: var(--text-color);
-    }
-
-    .export-section p,
-    .import-section p {
-        margin: 0;
-        color: var(--text-color);
-        opacity: 0.7;
-        padding: 0.5em;
-    }
-
-    .events-view-buttons {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-    }
-
-    .export-btn,
-    .import-btn,
-    .refresh-btn,
-    .reload-btn {
+    .refresh-btn {
         padding: 0.5rem 1rem;
         background: var(--primary);
-        color: white;
+        color: var(--text-color);
         border: none;
         border-radius: 4px;
         cursor: pointer;
@@ -4418,25 +3437,8 @@
         margin: 1em;
     }
 
-    .export-btn:hover,
-    .import-btn:hover,
-    .refresh-btn:hover,
-    .reload-btn:hover {
+    .refresh-btn:hover {
         background: #00acc1;
-    }
-
-    .reload-btn {
-        min-width: 2em;
-        justify-content: center;
-    }
-
-    .spinner {
-        width: 1em;
-        height: 1em;
-        border: 2px solid transparent;
-        border-top: 2px solid currentColor;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
     }
 
     @keyframes spin {
@@ -4448,55 +3450,11 @@
         }
     }
 
-    .export-btn:disabled,
-    .import-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    #import-file {
-        margin: 1rem 0;
-        padding: 0.5rem;
-        border: 1px solid var(--input-border);
-        border-radius: 4px;
-        background: var(--bg-color);
-        color: var(--text-color);
-        font-size: 1rem;
-    }
-
-    .login-prompt {
-        text-align: center;
-        padding: 1em;
-        background: var(--header-bg);
-        border-radius: 8px;
-    }
-
-    .login-prompt p {
-        margin: 0 0 1rem 0;
-        color: var(--text-color);
-        font-size: 1.1rem;
-    }
-
-    .permission-denied {
-        text-align: center;
-        padding: 1em;
-        background: var(--header-bg);
-        border-radius: 8px;
-        border: 2px solid var(--warning);
-    }
-
-    .permission-denied p {
-        margin: 0;
-        color: var(--warning);
-        font-size: 1.1rem;
-        font-weight: 500;
-    }
-
     /* View as Section */
     .view-as-section {
         color: var(--text-color);
         padding: 1rem;
-        border-radius: 8px;
+        border-radius: 0.5em;
         margin-bottom: 1rem;
     }
 
@@ -4525,7 +3483,7 @@
         gap: 0.5rem;
         cursor: pointer;
         padding: 0.25rem;
-        border-radius: 4px;
+        border-radius: 0.5em;
         transition: background 0.2s;
     }
 
@@ -4535,127 +3493,6 @@
 
     .radio-label input {
         margin: 0;
-    }
-
-    /* Events View Container */
-    .events-view-container {
-        position: fixed;
-        top: 3em;
-        left: 200px;
-        right: 0;
-        bottom: 0;
-        background: var(--bg-color);
-        color: var(--text-color);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .events-view-header {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        padding: 0.5rem 1rem;
-        background: var(--header-bg);
-        border-top: 1px solid var(--border-color);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        height: 2.5em;
-        z-index: 10;
-    }
-
-    .events-view-toggle {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .toggle-container {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        cursor: pointer;
-        font-size: 0.875rem;
-        color: var(--text-color);
-    }
-
-    .toggle-container input[type="checkbox"] {
-        display: none;
-    }
-
-    .toggle-slider {
-        position: relative;
-        width: 2.5em;
-        height: 1.25em;
-        background: var(--border-color);
-        border-radius: 1.25em;
-        transition: background-color 0.3s;
-    }
-
-    .toggle-slider::before {
-        content: "";
-        position: absolute;
-        top: 0.125em;
-        left: 0.125em;
-        width: 1em;
-        height: 1em;
-        background: white;
-        border-radius: 50%;
-        transition: transform 0.3s;
-    }
-
-    .toggle-container input[type="checkbox"]:checked + .toggle-slider {
-        background: var(--primary);
-    }
-
-    .toggle-container input[type="checkbox"]:checked + .toggle-slider::before {
-        transform: translateX(1.25em);
-    }
-
-    .toggle-label {
-        font-size: 0.875rem;
-        font-weight: 500;
-        user-select: none;
-    }
-
-    .events-view-content {
-        flex: 1;
-        overflow-y: auto;
-        padding: 0;
-    }
-
-    .events-view-item {
-        border-bottom: 1px solid var(--border-color);
-        transition: background-color 0.2s;
-    }
-
-    .events-view-item:hover {
-        background: var(--button-hover-bg);
-    }
-
-    .events-view-item.expanded {
-        background: var(--button-hover-bg);
-    }
-
-    .events-view-row {
-        display: flex;
-        align-items: center;
-        padding: 0.4rem 1rem;
-        cursor: pointer;
-        gap: 0.75rem;
-        min-height: 2rem;
-    }
-
-    .events-view-avatar {
-        flex-shrink: 0;
-        width: 1.5rem;
-        height: 1.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
     }
 
     .avatar-placeholder {
@@ -4669,32 +3506,11 @@
         font-size: 0.7rem;
     }
 
-    .events-view-info {
-        flex-shrink: 0;
-        width: 12rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.1rem;
-    }
-
-    .events-view-author {
-        font-family: monospace;
-        font-size: 0.8rem;
-        color: var(--text-color);
-        opacity: 0.8;
-    }
-
-    .events-view-kind {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
     .kind-number {
         background: var(--primary);
-        color: white;
+        color: var(--text-color);
         padding: 0.125rem 0.375rem;
-        border-radius: 0.25rem;
+        border-radius: 0.5em;
         font-size: 0.7rem;
         font-weight: 500;
         font-family: monospace;
@@ -4705,14 +3521,6 @@
         color: var(--text-color);
         opacity: 0.7;
         font-weight: 500;
-    }
-
-    .events-view-content {
-        flex: 1;
-        color: var(--text-color);
-        font-size: 0.9rem;
-        line-height: 1.3;
-        word-break: break-word;
     }
 
     .event-timestamp {
@@ -4736,7 +3544,7 @@
         border: none;
         cursor: pointer;
         padding: 0.2rem;
-        border-radius: 0.25rem;
+        border-radius: 0.5em;
         transition: background-color 0.2s;
         font-size: 1.6rem;
         display: flex;
@@ -4748,41 +3556,7 @@
 
     .delete-btn:hover {
         background: var(--warning);
-        color: white;
-    }
-
-    .kind-number.delete-event {
-        background: var(--warning);
-    }
-
-    .delete-event-info {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .delete-event-label {
-        font-weight: 500;
-        color: var(--warning);
-    }
-
-    .delete-targets {
-        display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
-    }
-
-    .delete-target {
-        font-size: 0.75rem;
-        font-family: monospace;
         color: var(--text-color);
-        opacity: 0.7;
-    }
-
-    .events-view-details {
-        border-top: 1px solid var(--border-color);
-        background: var(--header-bg);
-        padding: 1rem;
     }
 
     .json-container {
@@ -4790,16 +3564,13 @@
     }
 
     .copy-json-btn {
-        background: var(--active-tab-bg);
-        color: var(--button-text);
-        border: 1px solid var(--border-color);
-        border-radius: 0.25rem;
-        padding: 0.5rem 1rem;
+        color: var(--text-color);
+        background: var(--accent-color);
+        border: 0;
+        border-radius: 0.5rem;
+        padding: 0.5rem;
         font-size: 1rem;
         cursor: pointer;
-        transition:
-            background-color 0.2s,
-            border-color 0.2s;
         width: auto;
         height: auto;
         display: flex;
@@ -4808,8 +3579,7 @@
     }
 
     .copy-json-btn:hover {
-        background: var(--button-hover-bg);
-        border-color: var(--button-hover-border);
+        background: var(--accent-hover-color);
     }
 
     .event-json {
@@ -4826,18 +3596,6 @@
     }
 
     .no-events {
-        padding: 2rem;
-        text-align: center;
-        color: var(--text-color);
-        opacity: 0.7;
-    }
-
-    .no-events p {
-        margin: 0;
-        font-size: 1rem;
-    }
-
-    .loading-events {
         padding: 2rem;
         text-align: center;
         color: var(--text-color);
@@ -4861,24 +3619,6 @@
         100% {
             transform: rotate(360deg);
         }
-    }
-
-    .loading-events p {
-        margin: 0;
-        font-size: 0.9rem;
-    }
-
-    .end-of-events {
-        padding: 1rem;
-        text-align: center;
-        color: var(--text-color);
-        opacity: 0.5;
-        font-size: 0.8rem;
-        border-top: 1px solid var(--border-color);
-    }
-
-    .end-of-events p {
-        margin: 0;
     }
 
     /* Search Results Styles */
@@ -5038,48 +3778,11 @@
     }
 
     @media (max-width: 1280px) {
-        .sidebar {
-            width: 60px;
-        }
-
         .main-content {
             left: 60px;
         }
-
-        .events-view-container {
-            left: 60px;
-        }
-
-        .compose-view {
-            left: 60px;
-        }
-
         .search-results-view {
             left: 60px;
-        }
-
-        .tab-label {
-            display: none;
-        }
-
-        .tab {
-            justify-content: center;
-            padding: 0 0.5rem;
-        }
-
-        .tab-icon {
-            width: 2em;
-            height: 2em;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 0.25rem;
-            background-color: var(--bg-color);
-        }
-
-        .tab.active .tab-icon {
-            background-color: var(--primary);
-            color: white;
         }
     }
 
@@ -5104,42 +3807,12 @@
             color: var(--text-color);
         }
 
-        .import-view {
-            padding: 1em;
-        }
-
         .managed-acl-view {
             padding: 1rem;
         }
 
-        .export-section,
-        .import-section {
-            padding: 1em;
-            width: 32em;
-        }
-
-        .events-view-container {
-            left: 160px;
-        }
-
-        .compose-view {
-            left: 160px;
-        }
-
-        .events-view-info {
-            width: 8rem;
-        }
-
-        .events-view-author {
-            font-size: 0.7rem;
-        }
-
         .kind-name {
             font-size: 0.7rem;
-        }
-
-        .events-view-content {
-            font-size: 0.8rem;
         }
 
         .search-results-view {
@@ -5166,11 +3839,6 @@
         margin: 0;
     }
 
-    .recovery-header {
-        margin-bottom: 30px;
-        text-align: left;
-    }
-
     .recovery-tab h3 {
         margin: 0 0 10px 0;
         color: var(--text-color);
@@ -5186,7 +3854,7 @@
     .recovery-controls-card {
         background-color: transparent;
         border: none;
-        border-radius: 0;
+        border-radius: 0.5em;
         padding: 0;
     }
 
@@ -5211,7 +3879,7 @@
     .kind-selector select {
         padding: 8px 12px;
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 0.5em;
         background: var(--bg-color);
         color: var(--text-color);
         min-width: 300px;
@@ -5231,7 +3899,7 @@
     .custom-kind-input input {
         padding: 8px 12px;
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 0.5em;
         background: var(--bg-color);
         color: var(--text-color);
         min-width: 200px;
@@ -5263,7 +3931,7 @@
     .event-item {
         background: var(--surface-bg);
         border: 2px solid var(--primary);
-        border-radius: 8px;
+        border-radius: 0.5em;
         padding: 20px;
         transition: all 0.2s ease;
         background: var(--header-bg);
@@ -5308,12 +3976,28 @@
         opacity: 0.7;
     }
 
-    .repost-button {
-        background: var(--primary);
-        color: white;
+    .repost-all-button {
+        background: #059669;
+        color: var(--text-color);
         border: none;
         padding: 6px 12px;
-        border-radius: 4px;
+        border-radius: 0.5em;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background 0.2s ease;
+        margin-right: 8px;
+    }
+
+    .repost-all-button:hover {
+        background: #047857;
+    }
+
+    .repost-button {
+        background: var(--primary);
+        color: var(--text-color);
+        border: none;
+        padding: 6px 12px;
+        border-radius: 0.5em;
         cursor: pointer;
         font-size: 0.9em;
         transition: background 0.2s ease;
@@ -5327,64 +4011,13 @@
         margin-bottom: 15px;
     }
 
-    .profile-content pre,
-    .generic-content pre {
-        background: var(--bg-color);
-        padding: 15px;
-        border-radius: 4px;
-        overflow-x: auto;
-        font-size: 0.9em;
-        margin: 0;
-        border: 1px solid var(--border-color);
-        white-space: pre-wrap;
-        word-wrap: break-word;
-    }
-
-    .follow-list p {
-        margin: 0 0 10px 0;
-        font-weight: 500;
-        color: var(--text-color);
-    }
-
-    .follow-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .pubkey-tag {
-        background: var(--bg-color);
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-family: monospace;
-        font-size: 0.8em;
-        border: 1px solid var(--border-color);
-        color: var(--text-color);
-    }
-
-    .event-tags {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .tag {
-        background: var(--bg-color);
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-size: 0.8em;
-        color: var(--text-color);
-        opacity: 0.7;
-        border: 1px solid var(--border-color);
-    }
-
     .load-more {
         width: 100%;
         padding: 12px;
         background: var(--primary);
-        color: white;
+        color: var(--text-color);
         border: none;
-        border-radius: 4px;
+        border-radius: 0.5em;
         cursor: pointer;
         font-size: 1em;
         margin-top: 20px;
@@ -5404,113 +4037,5 @@
     :global(body.dark-theme) .event-item.old-version {
         background: var(--header-bg);
         border: none;
-    }
-
-    .tab-panel {
-        display: none;
-        padding: 1em;
-        background-color: var(--panel-bg);
-        border-radius: 0 0 8px 8px;
-        color: var(--text-color);
-        text-align: left;
-    }
-
-    .tab-panel.active {
-        display: block;
-    }
-
-    .recovery-header {
-        font-size: 1.5em;
-        font-weight: bold;
-        margin-bottom: 0.5em;
-        color: var(--header-text-color);
-    }
-
-    .recovery-description {
-        margin-bottom: 1.5em;
-        color: var(--description-text-color);
-    }
-
-    .recovery-controls-card {
-        background-color: transparent;
-        border-radius: 8px;
-        padding: 1em;
-        margin-bottom: 1em;
-        width: 100%;
-    }
-
-    .form-group {
-        margin-bottom: 1em;
-    }
-
-    .form-group label {
-        display: block;
-        margin-bottom: 0.5em;
-        font-weight: bold;
-    }
-
-    .form-group input,
-    .form-group select {
-        width: 100%;
-        padding: 0.5em;
-        border: 1px solid var(--border-color);
-        border-radius: 4px;
-        background-color: var(--input-bg);
-        color: var(--input-text-color);
-    }
-
-    .form-group button {
-        background-color: var(--primary);
-        color: white;
-        border: none;
-        padding: 0.75em 1.5em;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: bold;
-    }
-
-    .form-group button:disabled {
-        background-color: #6c757d;
-        cursor: not-allowed;
-    }
-
-    .status-message {
-        padding: 1em;
-        border-radius: 4px;
-        margin-top: 1em;
-    }
-
-    .status-message.success {
-        background-color: var(--success-bg);
-        color: var(--success-text);
-    }
-
-    .status-message.error {
-        background-color: var(--error-bg);
-        color: var(--error-text);
-    }
-
-    .export-results {
-        margin-top: 2em;
-    }
-
-    .export-results h3 {
-        margin-bottom: 1em;
-    }
-
-    .export-results button {
-        background-color: var(--primary);
-        color: white;
-        border: none;
-        padding: 0.75em 1.5em;
-        border-radius: 4px;
-        cursor: pointer;
-        font-weight: bold;
-        margin-bottom: 1em;
-    }
-
-    .events-preview {
-        max-height: 400px;
-        overflow-y: auto;
     }
 </style>
