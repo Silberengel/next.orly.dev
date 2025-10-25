@@ -55,42 +55,65 @@ var (
 	PublicKeyAdvertisementKind            = kind.New(39103)
 	DirectoryEventReplicationRequestKind  = kind.New(39104)
 	DirectoryEventReplicationResponseKind = kind.New(39105)
+	GroupTagTransferKind                  = kind.New(39106)
+	EscrowWitnessCompletionActKind        = kind.New(39107)
 )
 
 // Common tag names used across directory protocol messages
 var (
-	DTag              = []byte("d")
-	RelayTag          = []byte("relay")
-	SigningKeyTag     = []byte("signing_key")
-	EncryptionKeyTag  = []byte("encryption_key")
-	VersionTag        = []byte("version")
-	NIP11URLTag       = []byte("nip11_url")
-	PubkeyTag         = []byte("p")
-	TrustLevelTag     = []byte("trust_level")
-	ExpiryTag         = []byte("expiry")
-	ReasonTag         = []byte("reason")
-	KTag              = []byte("K")
-	ITag              = []byte("I")
-	GroupTagTag       = []byte("group_tag")
-	ActorTag          = []byte("actor")
-	ConfidenceTag     = []byte("confidence")
-	PurposeTag        = []byte("purpose")
-	AlgorithmTag      = []byte("algorithm")
-	DerivationPathTag = []byte("derivation_path")
-	KeyIndexTag       = []byte("key_index")
-	RequestIDTag      = []byte("request_id")
-	EventIDTag        = []byte("event_id")
-	StatusTag         = []byte("status")
-	ErrorTag          = []byte("error")
+	DTag                = []byte("d")
+	RelayTag            = []byte("relay")
+	SigningKeyTag       = []byte("signing_key")
+	EncryptionKeyTag    = []byte("encryption_key")
+	VersionTag          = []byte("version")
+	NIP11URLTag         = []byte("nip11_url")
+	PubkeyTag           = []byte("p")
+	TrustLevelTag       = []byte("trust_level")
+	ExpiryTag           = []byte("expiry")
+	ReasonTag           = []byte("reason")
+	KTag                = []byte("K")
+	ITag                = []byte("I")
+	GroupTagTag         = []byte("group_tag")
+	ActorTag            = []byte("actor")
+	ConfidenceTag       = []byte("confidence")
+	OwnersTag           = []byte("owners")
+	CreatedTag          = []byte("created")
+	FromOwnersTag       = []byte("from_owners")
+	ToOwnersTag         = []byte("to_owners")
+	TransferDateTag     = []byte("transfer_date")
+	SignaturesTag       = []byte("signatures")
+	EscrowIDTag         = []byte("escrow_id")
+	SellerWitnessTag    = []byte("seller_witness")
+	BuyerWitnessTag     = []byte("buyer_witness")
+	ConditionsTag       = []byte("conditions")
+	WitnessRoleTag      = []byte("witness_role")
+	CompletionStatusTag = []byte("completion_status")
+	VerificationHashTag = []byte("verification_hash")
+	TimestampTag        = []byte("timestamp")
+	PurposeTag          = []byte("purpose")
+	AlgorithmTag        = []byte("algorithm")
+	DerivationPathTag   = []byte("derivation_path")
+	KeyIndexTag         = []byte("key_index")
+	RequestIDTag        = []byte("request_id")
+	EventIDTag          = []byte("event_id")
+	StatusTag           = []byte("status")
+	ErrorTag            = []byte("error")
 )
 
 // Trust levels for trust acts
-type TrustLevel string
+// TrustLevel represents the replication percentage (0-100) indicating
+// the probability that any given event will be replicated.
+// This implements partial replication via random selection.
+type TrustLevel uint8
 
+// Suggested trust level ranges
 const (
-	TrustLevelHigh   TrustLevel = "high"
-	TrustLevelMedium TrustLevel = "medium"
-	TrustLevelLow    TrustLevel = "low"
+	TrustLevelNone    TrustLevel = 0   // No replication
+	TrustLevelMinimal TrustLevel = 10  // Minimal sampling (10%)
+	TrustLevelLow     TrustLevel = 25  // Low partial replication (25%)
+	TrustLevelMedium  TrustLevel = 50  // Medium partial replication (50%)
+	TrustLevelHigh    TrustLevel = 75  // High partial replication (75%)
+	TrustLevelFull    TrustLevel = 100 // Full replication (100%)
 )
 
 // Reason types for trust establishment
@@ -163,14 +186,12 @@ func IsDirectoryEventKind(k uint16) (isDirectory bool) {
 	}
 }
 
-// ValidateTrustLevel checks if the provided trust level is valid.
-func ValidateTrustLevel(level string) (err error) {
-	switch TrustLevel(level) {
-	case TrustLevelHigh, TrustLevelMedium, TrustLevelLow:
-		return nil
-	default:
-		return errorf.E("invalid trust level: %s", level)
+// ValidateTrustLevel checks if the provided trust level is valid (0-100).
+func ValidateTrustLevel(level TrustLevel) (err error) {
+	if level > 100 {
+		return errorf.E("invalid trust level: %d (must be 0-100)", level)
 	}
+	return nil
 }
 
 // ValidateKeyPurpose checks if the provided key purpose is valid.

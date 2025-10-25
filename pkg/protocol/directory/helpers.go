@@ -168,19 +168,22 @@ func (tc *TrustCalculator) GetTrustLevel(pubkey string) TrustLevel {
 			return act.GetTrustLevel()
 		}
 	}
-	return TrustLevel("")
+	return TrustLevelNone // Return 0 for no trust
 }
 
 // CalculateInheritedTrust calculates inherited trust through the web of trust.
+// With numeric trust levels, inherited trust is calculated by multiplying
+// the trust percentages at each hop, reducing trust over distance.
 func (tc *TrustCalculator) CalculateInheritedTrust(
 	fromPubkey, toPubkey string,
 ) TrustLevel {
 	// Direct trust
-	if directTrust := tc.GetTrustLevel(toPubkey); directTrust != "" {
+	if directTrust := tc.GetTrustLevel(toPubkey); directTrust > 0 {
 		return directTrust
 	}
 
 	// Look for inherited trust through intermediate nodes
+	var maxInheritedTrust TrustLevel = 0
 	for intermediatePubkey, act := range tc.acts {
 		if act.IsExpired() {
 			continue
@@ -188,43 +191,35 @@ func (tc *TrustCalculator) CalculateInheritedTrust(
 
 		// Check if we trust the intermediate node
 		intermediateLevel := tc.GetTrustLevel(intermediatePubkey)
-		if intermediateLevel == "" {
+		if intermediateLevel == 0 {
 			continue
 		}
 
 		// Check if intermediate node trusts the target
 		targetLevel := tc.GetTrustLevel(toPubkey)
-		if targetLevel == "" {
+		if targetLevel == 0 {
 			continue
 		}
 
-		// Calculate inherited trust level
-		return tc.combinesTrustLevels(intermediateLevel, targetLevel)
+		// Calculate inherited trust level (multiply percentages)
+		inheritedLevel := tc.combinesTrustLevels(intermediateLevel, targetLevel)
+		if inheritedLevel > maxInheritedTrust {
+			maxInheritedTrust = inheritedLevel
+		}
 	}
 
-	return TrustLevel("")
+	return maxInheritedTrust
 }
 
 // combinesTrustLevels combines two trust levels to calculate inherited trust.
+// With numeric trust levels (0-100), inherited trust is calculated by
+// multiplying the two percentages: (level1 * level2) / 100
+// This naturally reduces trust over distance.
 func (tc *TrustCalculator) combinesTrustLevels(level1, level2 TrustLevel) TrustLevel {
-	// Trust inheritance rules:
-	// high + high = medium
-	// high + medium = low
-	// medium + medium = low
-	// anything else = no trust
-
-	if level1 == TrustLevelHigh && level2 == TrustLevelHigh {
-		return TrustLevelMedium
-	}
-	if (level1 == TrustLevelHigh && level2 == TrustLevelMedium) ||
-		(level1 == TrustLevelMedium && level2 == TrustLevelHigh) {
-		return TrustLevelLow
-	}
-	if level1 == TrustLevelMedium && level2 == TrustLevelMedium {
-		return TrustLevelLow
-	}
-
-	return TrustLevel("")
+	// Multiply percentages: (level1% * level2%) = (level1 * level2) / 100
+	// Example: 75% trust * 50% trust = 37.5% inherited trust
+	combined := (uint16(level1) * uint16(level2)) / 100
+	return TrustLevel(combined)
 }
 
 // ReplicationFilter helps determine which events should be replicated.

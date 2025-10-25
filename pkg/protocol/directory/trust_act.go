@@ -1,6 +1,7 @@
 package directory
 
 import (
+	"crypto/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -53,7 +54,7 @@ func NewTrustAct(
 	if len(targetPubkey) != 64 {
 		return nil, errorf.E("target pubkey must be 64 hex characters")
 	}
-	if err = ValidateTrustLevel(string(trustLevel)); chk.E(err) {
+	if err = ValidateTrustLevel(trustLevel); chk.E(err) {
 		return
 	}
 	if relayURL == "" {
@@ -65,7 +66,7 @@ func NewTrustAct(
 
 	// Add required tags
 	ev.Tags.Append(tag.NewFromAny(string(PubkeyTag), targetPubkey))
-	ev.Tags.Append(tag.NewFromAny(string(TrustLevelTag), string(trustLevel)))
+	ev.Tags.Append(tag.NewFromAny(string(TrustLevelTag), strconv.FormatUint(uint64(trustLevel), 10)))
 	ev.Tags.Append(tag.NewFromAny(string(RelayTag), relayURL))
 
 	// Add optional expiry
@@ -142,8 +143,12 @@ func ParseTrustAct(ev *event.E) (ta *TrustAct, err error) {
 	}
 
 	// Validate trust level
-	trustLevel := TrustLevel(trustLevelTag.Value())
-	if err = ValidateTrustLevel(string(trustLevel)); chk.E(err) {
+	var trustLevelValue uint64
+	if trustLevelValue, err = strconv.ParseUint(string(trustLevelTag.Value()), 10, 8); chk.E(err) {
+		return nil, errorf.E("invalid trust level: %w", err)
+	}
+	trustLevel := TrustLevel(trustLevelValue)
+	if err = ValidateTrustLevel(trustLevel); chk.E(err) {
 		return
 	}
 
@@ -291,7 +296,7 @@ func (ta *TrustAct) Validate() (err error) {
 		return errorf.E("target pubkey must be 64 hex characters")
 	}
 
-	if err = ValidateTrustLevel(string(ta.TrustLevel)); chk.E(err) {
+	if err = ValidateTrustLevel(ta.TrustLevel); chk.E(err) {
 		return
 	}
 
@@ -340,6 +345,39 @@ func (ta *TrustAct) ShouldReplicate(kind uint16) bool {
 
 	// Check if kind is in the replication list
 	return ta.HasReplicationKind(kind)
+}
+
+// ShouldReplicateEvent determines whether a specific event should be replicated
+// based on the trust level using partial replication (random dice-throw).
+// This function uses crypto/rand for cryptographically secure randomness.
+func (ta *TrustAct) ShouldReplicateEvent(kind uint16) (shouldReplicate bool, err error) {
+	// Check if kind is eligible for replication
+	if !ta.ShouldReplicate(kind) {
+		return false, nil
+	}
+
+	// Trust level of 100 means always replicate
+	if ta.TrustLevel == TrustLevelFull {
+		return true, nil
+	}
+
+	// Trust level of 0 means never replicate
+	if ta.TrustLevel == TrustLevelNone {
+		return false, nil
+	}
+
+	// Generate cryptographically secure random number 0-100
+	var randomBytes [1]byte
+	if _, err = rand.Read(randomBytes[:]); chk.E(err) {
+		return false, errorf.E("failed to generate random number: %w", err)
+	}
+
+	// Scale byte value (0-255) to 0-100 range
+	randomValue := uint8((uint16(randomBytes[0]) * 101) / 256)
+
+	// Replicate if random value is less than or equal to trust level
+	shouldReplicate = randomValue <= uint8(ta.TrustLevel)
+	return
 }
 
 // GetTargetPubkey returns the target relay's public key.

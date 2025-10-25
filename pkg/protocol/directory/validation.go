@@ -26,10 +26,33 @@ const (
 
 // Regular expressions for validation
 var (
-	hexKeyRegex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
-	npubRegex   = regexp.MustCompile(`^npub1[0-9a-z]+$`)
-	wsURLRegex  = regexp.MustCompile(`^wss?://[a-zA-Z0-9.-]+(?::[0-9]+)?(?:/.*)?$`)
+	hexKeyRegex       = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+	npubRegex         = regexp.MustCompile(`^npub1[0-9a-z]+$`)
+	wsURLRegex        = regexp.MustCompile(`^wss?://[a-zA-Z0-9.-]+(?::[0-9]+)?(?:/.*)?$`)
+	groupTagNameRegex = regexp.MustCompile(`^[a-zA-Z0-9._~-]+$`) // RFC 3986 URL-safe characters
 )
+
+// ValidateGroupTagName validates that a group tag name is URL-safe (RFC 3986).
+func ValidateGroupTagName(name string) (err error) {
+	if len(name) < 1 {
+		return errorf.E("group tag name cannot be empty")
+	}
+	if len(name) > 255 {
+		return errorf.E("group tag name cannot exceed 255 characters")
+	}
+
+	// Check for reserved prefixes
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+		return errorf.E("group tag names starting with '.' or '_' are reserved for system use")
+	}
+
+	// Validate URL-safe character set
+	if !groupTagNameRegex.MatchString(name) {
+		return errorf.E("group tag name must contain only URL-safe characters (a-z, A-Z, 0-9, -, ., _, ~)")
+	}
+
+	return nil
+}
 
 // ValidateHexKey validates that a string is a valid 64-character hex key.
 func ValidateHexKey(key string) (err error) {

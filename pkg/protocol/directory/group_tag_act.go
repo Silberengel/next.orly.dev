@@ -2,6 +2,7 @@ package directory
 
 import (
 	"strconv"
+	"time"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
@@ -18,7 +19,49 @@ type GroupTagAct struct {
 	TagValue    string
 	Actor       string
 	Confidence  int
+	Owners      *OwnershipSpec
+	Created     *time.Time
 	Description string
+	IdentityTag *IdentityTag
+}
+
+// OwnershipSpec defines the ownership control for a group tag.
+type OwnershipSpec struct {
+	Scheme SignatureScheme
+	Owners []string // Public keys of owners
+}
+
+// SignatureScheme defines the type of signature requirement.
+type SignatureScheme string
+
+const (
+	SchemeSingle SignatureScheme = "single"
+	Scheme2of3   SignatureScheme = "2-of-3"
+	Scheme3of5   SignatureScheme = "3-of-5"
+)
+
+// ValidateSignatureScheme checks if a signature scheme is valid.
+func ValidateSignatureScheme(scheme SignatureScheme) error {
+	switch scheme {
+	case SchemeSingle, Scheme2of3, Scheme3of5:
+		return nil
+	default:
+		return errorf.E("invalid signature scheme: %s", scheme)
+	}
+}
+
+// RequiredSignatures returns the number of signatures required for the scheme.
+func (s SignatureScheme) RequiredSignatures() int {
+	switch s {
+	case SchemeSingle:
+		return 1
+	case Scheme2of3:
+		return 2
+	case Scheme3of5:
+		return 3
+	default:
+		return 0
+	}
 }
 
 // NewGroupTagAct creates a new Group Tag Act event.
@@ -26,7 +69,9 @@ func NewGroupTagAct(
 	pubkey []byte,
 	groupID, tagName, tagValue, actor string,
 	confidence int,
+	owners *OwnershipSpec,
 	description string,
+	identityTag *IdentityTag,
 ) (gta *GroupTagAct, err error) {
 
 	// Validate required fields
@@ -36,6 +81,12 @@ func NewGroupTagAct(
 	if groupID == "" {
 		return nil, errorf.E("group ID is required")
 	}
+
+	// Validate group ID is URL-safe
+	if err = ValidateGroupTagName(groupID); chk.E(err) {
+		return nil, errorf.E("invalid group ID: %w", err)
+	}
+
 	if tagName == "" {
 		return nil, errorf.E("tag name is required")
 	}
@@ -52,6 +103,31 @@ func NewGroupTagAct(
 		return nil, errorf.E("confidence must be between 0 and 100")
 	}
 
+	// Validate ownership spec if provided
+	if owners != nil {
+		if err = ValidateSignatureScheme(owners.Scheme); chk.E(err) {
+			return
+		}
+		if len(owners.Owners) == 0 {
+			return nil, errorf.E("at least one owner is required")
+		}
+		// Validate owner count matches scheme
+		switch owners.Scheme {
+		case SchemeSingle:
+			if len(owners.Owners) != 1 {
+				return nil, errorf.E("single scheme requires exactly 1 owner")
+			}
+		case Scheme2of3:
+			if len(owners.Owners) != 3 {
+				return nil, errorf.E("2-of-3 scheme requires exactly 3 owners")
+			}
+		case Scheme3of5:
+			if len(owners.Owners) != 5 {
+				return nil, errorf.E("3-of-5 scheme requires exactly 5 owners")
+			}
+		}
+	}
+
 	// Create base event
 	ev := CreateBaseEvent(pubkey, GroupTagActKind)
 	ev.Content = []byte(description)
@@ -62,6 +138,26 @@ func NewGroupTagAct(
 	ev.Tags.Append(tag.NewFromAny(string(ActorTag), actor))
 	ev.Tags.Append(tag.NewFromAny(string(ConfidenceTag), strconv.Itoa(confidence)))
 
+	// Add ownership tag if provided
+	if owners != nil {
+		ownersTagParts := make([]any, 0, len(owners.Owners)+2)
+		ownersTagParts = append(ownersTagParts, string(OwnersTag), string(owners.Scheme))
+		for _, owner := range owners.Owners {
+			ownersTagParts = append(ownersTagParts, owner)
+		}
+		ev.Tags.Append(tag.NewFromAny(ownersTagParts...))
+	}
+
+	// Add created timestamp
+	created := time.Now()
+	ev.Tags.Append(tag.NewFromAny(string(CreatedTag), strconv.FormatInt(created.Unix(), 10)))
+
+	// Add identity tag if provided
+	if identityTag != nil {
+		iTag := tag.NewFromAny(string(ITag), identityTag.NPubIdentity, identityTag.Nonce, identityTag.Signature)
+		ev.Tags.Append(iTag)
+	}
+
 	gta = &GroupTagAct{
 		Event:       ev,
 		GroupID:     groupID,
@@ -69,7 +165,10 @@ func NewGroupTagAct(
 		TagValue:    tagValue,
 		Actor:       actor,
 		Confidence:  confidence,
+		Owners:      owners,
+		Created:     &created,
 		Description: description,
+		IdentityTag: identityTag,
 	}
 
 	return
@@ -124,6 +223,44 @@ func ParseGroupTagAct(ev *event.E) (gta *GroupTagAct, err error) {
 		return nil, errorf.E("confidence must be between 0 and 100")
 	}
 
+	// Parse optional ownership tag
+	var owners *OwnershipSpec
+	ownersTag := ev.Tags.GetFirst(OwnersTag)
+	if ownersTag != nil && ownersTag.Len() >= 3 {
+		scheme := SignatureScheme(ownersTag.T[1])
+		if err = ValidateSignatureScheme(scheme); chk.E(err) {
+			return nil, errorf.E("invalid signature scheme: %w", err)
+		}
+		ownerPubkeys := make([]string, 0, ownersTag.Len()-2)
+		for i := 2; i < ownersTag.Len(); i++ {
+			ownerPubkeys = append(ownerPubkeys, string(ownersTag.T[i]))
+		}
+		owners = &OwnershipSpec{
+			Scheme: scheme,
+			Owners: ownerPubkeys,
+		}
+	}
+
+	// Parse optional created timestamp
+	var created *time.Time
+	createdTag := ev.Tags.GetFirst(CreatedTag)
+	if createdTag != nil {
+		var timestamp int64
+		if timestamp, err = strconv.ParseInt(string(createdTag.Value()), 10, 64); err == nil {
+			t := time.Unix(timestamp, 0)
+			created = &t
+		}
+	}
+
+	// Parse optional identity tag
+	var identityTag *IdentityTag
+	iTag := ev.Tags.GetFirst(ITag)
+	if iTag != nil {
+		if identityTag, err = ParseIdentityTag(iTag); chk.E(err) {
+			return
+		}
+	}
+
 	gta = &GroupTagAct{
 		Event:       ev,
 		GroupID:     string(dTag.Value()),
@@ -131,7 +268,10 @@ func ParseGroupTagAct(ev *event.E) (gta *GroupTagAct, err error) {
 		TagValue:    string(groupTagTag.T[2]),
 		Actor:       string(actorTag.Value()),
 		Confidence:  confidence,
+		Owners:      owners,
+		Created:     created,
 		Description: string(ev.Content),
+		IdentityTag: identityTag,
 	}
 
 	return
