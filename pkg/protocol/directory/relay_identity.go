@@ -26,14 +26,13 @@ type RelayIdentityAnnouncement struct {
 	SigningKey    string
 	EncryptionKey string
 	Version       string
-	NIP11URL      string
 }
 
 // NewRelayIdentityAnnouncement creates a new Relay Identity Announcement event.
 func NewRelayIdentityAnnouncement(
 	pubkey []byte,
 	name, description, contact string,
-	relayURL, signingKey, encryptionKey, version, nip11URL string,
+	relayURL, signingKey, encryptionKey, version string,
 ) (ria *RelayIdentityAnnouncement, err error) {
 
 	// Validate required fields
@@ -54,9 +53,6 @@ func NewRelayIdentityAnnouncement(
 	}
 	if version == "" {
 		version = "1" // Default version
-	}
-	if nip11URL == "" {
-		return nil, errorf.E("NIP-11 URL is required")
 	}
 
 	// Create content
@@ -82,7 +78,6 @@ func NewRelayIdentityAnnouncement(
 	ev.Tags.Append(tag.NewFromAny(string(SigningKeyTag), signingKey))
 	ev.Tags.Append(tag.NewFromAny(string(EncryptionKeyTag), encryptionKey))
 	ev.Tags.Append(tag.NewFromAny(string(VersionTag), version))
-	ev.Tags.Append(tag.NewFromAny(string(NIP11URLTag), nip11URL))
 
 	ria = &RelayIdentityAnnouncement{
 		Event:         ev,
@@ -91,7 +86,6 @@ func NewRelayIdentityAnnouncement(
 		SigningKey:    signingKey,
 		EncryptionKey: encryptionKey,
 		Version:       version,
-		NIP11URL:      nip11URL,
 	}
 
 	return
@@ -144,11 +138,6 @@ func ParseRelayIdentityAnnouncement(ev *event.E) (ria *RelayIdentityAnnouncement
 		return nil, errorf.E("missing version tag")
 	}
 
-	nip11URLTag := ev.Tags.GetFirst(NIP11URLTag)
-	if nip11URLTag == nil {
-		return nil, errorf.E("missing nip11_url tag")
-	}
-
 	ria = &RelayIdentityAnnouncement{
 		Event:         ev,
 		Content:       &content,
@@ -156,7 +145,6 @@ func ParseRelayIdentityAnnouncement(ev *event.E) (ria *RelayIdentityAnnouncement
 		SigningKey:    string(signingKeyTag.Value()),
 		EncryptionKey: string(encryptionKeyTag.Value()),
 		Version:       string(versionTag.Value()),
-		NIP11URL:      string(nip11URLTag.Value()),
 	}
 
 	return
@@ -198,10 +186,6 @@ func (ria *RelayIdentityAnnouncement) Validate() (err error) {
 		return errorf.E("version is required")
 	}
 
-	if ria.NIP11URL == "" {
-		return errorf.E("NIP-11 URL is required")
-	}
-
 	// Validate hex-encoded keys (should be 64 characters for 32-byte keys)
 	if len(ria.SigningKey) != 64 {
 		return errorf.E("signing key must be 64 hex characters")
@@ -232,11 +216,6 @@ func (ria *RelayIdentityAnnouncement) GetEncryptionKey() string {
 // GetVersion returns the protocol version.
 func (ria *RelayIdentityAnnouncement) GetVersion() string {
 	return ria.Version
-}
-
-// GetNIP11URL returns the NIP-11 information document URL.
-func (ria *RelayIdentityAnnouncement) GetNIP11URL() string {
-	return ria.NIP11URL
 }
 
 // GetName returns the relay name from the content.
