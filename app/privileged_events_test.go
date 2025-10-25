@@ -248,7 +248,7 @@ func TestAllPrivilegedKinds(t *testing.T) {
 		kind.JWTBinding.K,
 		kind.ApplicationSpecificData.K,
 		kind.Seal.K,
-		kind.PrivateDirectMessage.K,
+		kind.DirectMessage.K,
 	}
 
 	for _, k := range privilegedKinds {

@@ -825,7 +825,7 @@
 
             // Sign the event before publishing
             if (userSigner) {
-                const signedEvent = await userSigner.sign(newEvent);
+                const signedEvent = await userSigner.signEvent(newEvent);
                 console.log("Signed event for repost:", signedEvent);
 
                 const result = await nostrClient.publish(signedEvent, [
