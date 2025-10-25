@@ -56,19 +56,21 @@ This protocol extends the NIP-11 relay information document with two additional 
 - `sig`: A secp256k1 signature proving control of the private key corresponding to `pubkey`
 
 **Signature Generation:**
-1. Concatenate the `pubkey` and `nonce` values as strings: `pubkey + nonce`
-2. Compute SHA256 hash of the concatenated string
-3. Sign the hash using the relay's private key (corresponding to `pubkey`)
-4. Encode the signature as hex and store in the `sig` field
+1. Concatenate the `pubkey`, `nonce`, and relay address as strings: `pubkey + nonce + relay_address`
+2. The relay address MUST be the canonical WebSocket URL (e.g., "wss://relay.example.com")
+3. Compute SHA256 hash of the concatenated string
+4. Sign the hash using the relay's private key (corresponding to `pubkey`)
+5. Encode the signature as hex and store in the `sig` field
 
 **Verification Process:**
 1. Extract `pubkey`, `nonce`, and `sig` from the NIP-11 document
-2. Concatenate `pubkey + nonce` as strings
-3. Compute SHA256 hash of the concatenated string
-4. Verify the signature using the public key and computed hash
-5. If verification succeeds, the relay has proven control of the private key
+2. Determine the relay address from the request URL or connection context
+3. Concatenate `pubkey + nonce + relay_address` as strings
+4. Compute SHA256 hash of the concatenated string
+5. Verify the signature using the public key and computed hash
+6. If verification succeeds, the relay has proven control of the private key AND binding to the network address
 
-This mechanism ensures that only the entity controlling the private key can generate a valid NIP-11 document, preventing relay impersonation attacks where an attacker might copy another relay's public key without controlling the corresponding private key.
+This mechanism ensures that only the entity controlling the private key can generate a valid NIP-11 document for a specific network address, preventing relay impersonation attacks where an attacker might copy another relay's public key without controlling the corresponding private key. The inclusion of the relay address in the signature prevents an attacker from copying a valid NIP-11 document and hosting it at a different address.
 
 ### Event Kinds
 
@@ -117,10 +119,11 @@ Relay operators publish this event to announce their participation in the distri
 4. They verify the NIP-11 signature using the extended verification process:
    - Extract `pubkey`, `nonce`, and `sig` from the NIP-11 document
    - Verify that the `pubkey` matches the announcement event's `pubkey`
-   - Concatenate `pubkey + nonce` and compute SHA256 hash
-   - Verify the signature proves control of the private key
+   - Extract the relay address from the `relay` tag or `nip11_url`
+   - Concatenate `pubkey + nonce + relay_address` and compute SHA256 hash
+   - Verify the signature proves control of the private key AND address binding
 5. They verify that the announcement event is signed by the same key
-6. This confirms that the relay identity is cryptographically bound to the network address
+6. This confirms that the relay identity is cryptographically bound to the specific network address
 
 ### Trust Attestation (Kind 39101)
 
@@ -375,7 +378,7 @@ Relay A                    Relay B                    Relay C
 
 5. **Privacy**: Sensitive consortium communications SHOULD use ECDH encryption
 
-6. **Address Binding**: The extended NIP-11 document serves as the authoritative source for relay identity verification. Relays MUST NOT accept consortium events from identities that cannot be verified through their NIP-11 document's signature mechanism. The `nonce` field SHOULD be regenerated periodically to maintain security.
+6. **Address Binding**: The extended NIP-11 document serves as the authoritative source for relay identity verification. The signature includes the relay's network address, creating a cryptographic binding between identity, private key control, and network location. Relays MUST NOT accept consortium events from identities that cannot be verified through their NIP-11 document's signature mechanism. The `nonce` field SHOULD be regenerated periodically to maintain security.
 
 7. **Key Rotation**: If a relay rotates its identity key, it MUST update both its NIP-11 document and republish its Relay Identity Announcement to maintain consortium membership.
 
