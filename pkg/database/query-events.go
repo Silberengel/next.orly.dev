@@ -51,6 +51,10 @@ func (d *D) QueryAllVersions(c context.Context, f *filter.F) (
 func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool, showAllVersions bool) (
 	evs event.S, err error,
 ) {
+	// Determine if we should return multiple versions of replaceable events
+	// based on the limit parameter
+	wantMultipleVersions := showAllVersions || (f.Limit != nil && *f.Limit > 1)
+
 	// if there is Ids in the query, this overrides anything else
 	var expDeletes types.Uint40s
 	var expEvs event.S
@@ -135,11 +139,15 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			return
 		}
 		// log.T.F("QueryEvents: QueryForIds returned %d candidates", len(idPkTs))
-		// Create a map to store the latest version of replaceable events
+		// Create a map to store versions of replaceable events
+		// If wantMultipleVersions is true, we keep multiple versions (sorted by timestamp)
+		// Otherwise, we keep only the latest
 		replaceableEvents := make(map[string]*event.E)
+		replaceableEventVersions := make(map[string]event.S) // For multiple versions
 		// Create a map to store the latest version of parameterized replaceable
 		// events
 		paramReplaceableEvents := make(map[string]map[string]*event.E)
+		paramReplaceableEventVersions := make(map[string]map[string]event.S) // For multiple versions
 		// Regular events that are not replaceable
 		var regularEvents event.S
 		// Map to track deletion events by kind and pubkey (for replaceable
@@ -435,11 +443,11 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				if deletionsByKindPubkey[key] && !isIdInFilter {
 					// This replaceable event has been deleted, skip it
 					continue
-				} else if showAllVersions {
-					// If showAllVersions is true, treat replaceable events as regular events
-					regularEvents = append(regularEvents, ev)
+				} else if wantMultipleVersions {
+					// If wantMultipleVersions is true, collect all versions
+					replaceableEventVersions[key] = append(replaceableEventVersions[key], ev)
 				} else {
-					// Normal replaceable event handling
+					// Normal replaceable event handling - keep only the newest
 					existing, exists := replaceableEvents[key]
 					if !exists || ev.CreatedAt > existing.CreatedAt {
 						replaceableEvents[key] = ev
@@ -469,9 +477,12 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					}
 				}
 
-				if showAllVersions {
-					// If showAllVersions is true, treat parameterized replaceable events as regular events
-					regularEvents = append(regularEvents, ev)
+				if wantMultipleVersions {
+					// If wantMultipleVersions is true, collect all versions
+					if _, exists := paramReplaceableEventVersions[key]; !exists {
+						paramReplaceableEventVersions[key] = make(map[string]event.S)
+					}
+					paramReplaceableEventVersions[key][dValue] = append(paramReplaceableEventVersions[key][dValue], ev)
 				} else {
 					// Initialize the inner map if it doesn't exist
 					if _, exists := paramReplaceableEvents[key]; !exists {
@@ -496,14 +507,57 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 		}
 		// Add all the latest replaceable events to the result
-		for _, ev := range replaceableEvents {
-			evs = append(evs, ev)
+		if wantMultipleVersions {
+			// Add all versions (sorted by timestamp, newest first)
+			for key, versions := range replaceableEventVersions {
+				// Sort versions by timestamp (newest first)
+				sort.Slice(versions, func(i, j int) bool {
+					return versions[i].CreatedAt > versions[j].CreatedAt
+				})
+				// Add versions up to the limit
+				limit := len(versions)
+				if f.Limit != nil && int(*f.Limit) < limit {
+					limit = int(*f.Limit)
+				}
+				for i := 0; i < limit && i < len(versions); i++ {
+					evs = append(evs, versions[i])
+				}
+				_ = key // Use key to avoid unused variable warning
+			}
+		} else {
+			// Add only the newest version of each replaceable event
+			for _, ev := range replaceableEvents {
+				evs = append(evs, ev)
+			}
 		}
 
 		// Add all the latest parameterized replaceable events to the result
-		for _, innerMap := range paramReplaceableEvents {
-			for _, ev := range innerMap {
-				evs = append(evs, ev)
+		if wantMultipleVersions {
+			// Add all versions (sorted by timestamp, newest first)
+			for key, dTagMap := range paramReplaceableEventVersions {
+				for dTag, versions := range dTagMap {
+					// Sort versions by timestamp (newest first)
+					sort.Slice(versions, func(i, j int) bool {
+						return versions[i].CreatedAt > versions[j].CreatedAt
+					})
+					// Add versions up to the limit
+					limit := len(versions)
+					if f.Limit != nil && int(*f.Limit) < limit {
+						limit = int(*f.Limit)
+					}
+					for i := 0; i < limit && i < len(versions); i++ {
+						evs = append(evs, versions[i])
+					}
+					_ = key  // Use key to avoid unused variable warning
+					_ = dTag // Use dTag to avoid unused variable warning
+				}
+			}
+		} else {
+			// Add only the newest version of each parameterized replaceable event
+			for _, innerMap := range paramReplaceableEvents {
+				for _, ev := range innerMap {
+					evs = append(evs, ev)
+				}
 			}
 		}
 		// Add all regular events to the result

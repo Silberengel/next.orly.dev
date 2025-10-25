@@ -45,31 +45,37 @@ var (
 	}
 	NIP3                   = OpenTimestampsAttestations
 	EncryptedDirectMessage = NIP{
-		"Direct Message deprecated in favor of NIP-44", 4,
+		"Encrypted Direct Message -- unrecommended: deprecated in favor of NIP-17", 4,
 	}
 	NIP4                  = EncryptedDirectMessage
 	MappingNostrKeysToDNS = NIP{
-		"Mapping Nostr keys to DNS-based identifiers", 5,
+		"Mapping Nostr keys to DNS-based internet identifiers", 5,
 	}
-	NIP5             = MappingNostrKeysToDNS
-	HandlingMentions = NIP{
-		"Handling Mentions deprecated in favor of NIP-27", 8,
-	}
-	NIP8                     = HandlingMentions
-	EventDeletion            = NIP{"Event Deletion", 9}
-	NIP9                     = EventDeletion
-	RelayInformationDocument = NIP{"Client Information Document", 11}
-	NIP11                    = RelayInformationDocument
-	GenericTagQueries        = NIP{"Generic Tag Queries", 12}
-	NIP12                    = GenericTagQueries
-	SubjectTag               = NIP{"Subject tag in text events", 14}
-	NIP14                    = SubjectTag
-	NostrMarketplace         = NIP{
-		"Nostr Marketplace (for resilient marketplaces)", 15,
-	}
+	NIP5                           = MappingNostrKeysToDNS
+	BasicKeyDerivation             = NIP{"Basic key derivation from mnemonic seed phrase", 6}
+	NIP6                           = BasicKeyDerivation
+	WindowNostrCapability          = NIP{"window.nostr capability for web browsers", 7}
+	NIP7                           = WindowNostrCapability
+	HandlingMentions               = NIP{"Handling Mentions -- unrecommended: deprecated in favor of NIP-27", 8}
+	NIP8                           = HandlingMentions
+	EventDeletion                  = NIP{"Event Deletion Request", 9}
+	NIP9                           = EventDeletion
+	TextNotesAndThreads            = NIP{"Text Notes and Threads", 10}
+	NIP10                          = TextNotesAndThreads
+	RelayInformationDocument       = NIP{"Relay Information Document", 11}
+	NIP11                          = RelayInformationDocument
+	GenericTagQueries              = NIP{"Generic Tag Queries", 12}
+	NIP12                          = GenericTagQueries
+	ProofOfWork                    = NIP{"Proof of Work", 13}
+	NIP13                          = ProofOfWork
+	SubjectTag                     = NIP{"Subject tag in text events", 14}
+	NIP14                          = SubjectTag
+	NostrMarketplace               = NIP{"Nostr Marketplace (for resilient marketplaces)", 15}
 	NIP15                          = NostrMarketplace
-	EventTreatment                 = NIP{"EVent Treatment", 16}
+	EventTreatment                 = NIP{"Event Treatment", 16}
 	NIP16                          = EventTreatment
+	PrivateDirectMessages          = NIP{"Private Direct Messages", 17}
+	NIP17                          = PrivateDirectMessages
 	Reposts                        = NIP{"Reposts", 18}
 	NIP18                          = Reposts
 	Bech32EncodedEntities          = NIP{"bech32-encoded entities", 19}
@@ -86,40 +92,50 @@ var (
 	NIP24                          = ExtraMetadata
 	Reactions                      = NIP{"Reactions", 25}
 	NIP25                          = Reactions
-	DelegatedEventSigning          = NIP{"Delegated Event Signing", 26}
+	DelegatedEventSigning          = NIP{"Delegated Event Signing -- unrecommended: adds unnecessary burden for little gain", 26}
 	NIP26                          = DelegatedEventSigning
 	TextNoteReferences             = NIP{"Text Note References", 27}
 	NIP27                          = TextNoteReferences
 	PublicChat                     = NIP{"Public Chat", 28}
 	NIP28                          = PublicChat
+	RelayBasedGroups               = NIP{"Relay-based Groups", 29}
+	NIP29                          = RelayBasedGroups
 	CustomEmoji                    = NIP{"Custom Emoji", 30}
 	NIP30                          = CustomEmoji
+	DealingWithUnknownEvents       = NIP{"Dealing with Unknown Events", 31}
+	NIP31                          = DealingWithUnknownEvents
 	Labeling                       = NIP{"Labeling", 32}
 	NIP32                          = Labeling
 	ParameterizedReplaceableEvents = NIP{"Parameterized Replaceable Events", 33}
 	NIP33                          = ParameterizedReplaceableEvents
+	GitStuff                       = NIP{"git stuff", 34}
+	NIP34                          = GitStuff
+	Torrents                       = NIP{"Torrents", 35}
+	NIP35                          = Torrents
 	SensitiveContent               = NIP{"Sensitive Content", 36}
 	NIP36                          = SensitiveContent
+	DraftEvents                    = NIP{"Draft Events", 37}
+	NIP37                          = DraftEvents
 	UserStatuses                   = NIP{"User Statuses", 38}
 	NIP38                          = UserStatuses
 	ExternalIdentitiesInProfiles   = NIP{"External Identities in Profiles", 39}
 	NIP39                          = ExternalIdentitiesInProfiles
 	ExpirationTimestamp            = NIP{"Expiration Timestamp", 40}
 	NIP40                          = ExpirationTimestamp
-	Authentication                 = NIP{
-		"Authentication of clients to relays", 42,
-	}
+	Authentication                 = NIP{"Authentication of clients to relays", 42}
 	NIP42                          = Authentication
-	VersionedEncryption            = NIP{"Versioned Encryption", 44}
+	VersionedEncryption            = NIP{"Encrypted Payloads (Versioned)", 44}
 	NIP44                          = VersionedEncryption
 	CountingResults                = NIP{"Counting results", 45}
 	NIP45                          = CountingResults
-	NostrConnect                   = NIP{"Nostr Connect", 46}
-	NIP46                          = NostrConnect
-	WalletConnect                  = NIP{"Wallet Connect", 47}
+	NostrRemoteSigning             = NIP{"Nostr Remote Signing", 46}
+	NIP46                          = NostrRemoteSigning
+	WalletConnect                  = NIP{"Nostr Wallet Connect", 47}
 	NIP47                          = WalletConnect
 	ProxyTags                      = NIP{"Proxy Tags", 48}
 	NIP48                          = ProxyTags
+	PrivateKeyEncryption           = NIP{"Private Key Encryption", 49}
+	NIP49                          = PrivateKeyEncryption
 	SearchCapability               = NIP{"Search Capability", 50}
 	NIP50                          = SearchCapability
 	Lists                          = NIP{"Lists", 51}
@@ -128,51 +144,97 @@ var (
 	NIP52                          = CalendarEvents
 	LiveActivities                 = NIP{"Live Activities", 53}
 	NIP53                          = LiveActivities
+	Wiki                           = NIP{"Wiki", 54}
+	NIP54                          = Wiki
+	AndroidSignerApplication       = NIP{"Android Signer Application", 55}
+	NIP55                          = AndroidSignerApplication
 	Reporting                      = NIP{"Reporting", 56}
 	NIP56                          = Reporting
 	LightningZaps                  = NIP{"Lightning Zaps", 57}
 	NIP57                          = LightningZaps
 	Badges                         = NIP{"Badges", 58}
 	NIP58                          = Badges
-	RelayListMetadata              = NIP{"Client List Metadata", 65}
+	GiftWrap                       = NIP{"Gift Wrap", 59}
+	NIP59                          = GiftWrap
+	CashuWallet                    = NIP{"Cashu Wallet", 60}
+	NIP60                          = CashuWallet
+	Nutzaps                        = NIP{"Nutzaps", 61}
+	NIP61                          = Nutzaps
+	RequestToVanish                = NIP{"Request to Vanish", 62}
+	NIP62                          = RequestToVanish
+	ChessPGN                       = NIP{"Chess (PGN)", 64}
+	NIP64                          = ChessPGN
+	RelayListMetadata              = NIP{"Relay List Metadata", 65}
 	NIP65                          = RelayListMetadata
+	RelayDiscoveryAndLiveness      = NIP{"Relay Discovery and Liveness Monitoring", 66}
+	NIP66                          = RelayDiscoveryAndLiveness
+	PictureFirstFeeds              = NIP{"Picture-first feeds", 68}
+	NIP68                          = PictureFirstFeeds
+	PeerToPeerOrderEvents          = NIP{"Peer-to-peer Order events", 69}
+	NIP69                          = PeerToPeerOrderEvents
 	ProtectedEvents                = NIP{"Protected Events", 70}
 	NIP70                          = ProtectedEvents
+	VideoEvents                    = NIP{"Video Events", 71}
+	NIP71                          = VideoEvents
 	ModeratedCommunities           = NIP{"Moderated Communities", 72}
 	NIP72                          = ModeratedCommunities
+	ExternalContentIDs             = NIP{"External Content IDs", 73}
+	NIP73                          = ExternalContentIDs
 	ZapGoals                       = NIP{"Zap Goals", 75}
 	NIP75                          = ZapGoals
+	NegentropySync                 = NIP{"Negentropy Syncing", 77}
+	NIP77                          = NegentropySync
 	ApplicationSpecificData        = NIP{"Application-specific data", 78}
 	NIP78                          = ApplicationSpecificData
+	Threads                        = NIP{"Threads", 0x7D}
+	NIP7D                          = Threads
 	Highlights                     = NIP{"Highlights", 84}
 	NIP84                          = Highlights
+	RelayManagementAPI             = NIP{"Relay Management API", 86}
+	NIP86                          = RelayManagementAPI
+	EcashMintDiscoverability       = NIP{"Ecash Mint Discoverability", 87}
+	NIP87                          = EcashMintDiscoverability
+	Polls                          = NIP{"Polls", 88}
+	NIP88                          = Polls
 	RecommendedApplicationHandlers = NIP{"Recommended Application Handlers", 89}
 	NIP89                          = RecommendedApplicationHandlers
 	DataVendingMachines            = NIP{"Data Vending Machines", 90}
 	NIP90                          = DataVendingMachines
+	MediaAttachments               = NIP{"Media Attachments", 92}
+	NIP92                          = MediaAttachments
 	FileMetadata                   = NIP{"File Metadata", 94}
 	NIP94                          = FileMetadata
-	HTTPFileStorageIntegration     = NIP{"HTTP File Storage Integration", 96}
+	HTTPFileStorageIntegration     = NIP{"HTTP File Storage Integration -- unrecommended: replaced by blossom APIs", 96}
 	NIP96                          = HTTPFileStorageIntegration
-	HTTPAuth                       = NIP{"HTTP IsAuthed", 98}
+	HTTPAuth                       = NIP{"HTTP Auth", 98}
 	NIP98                          = HTTPAuth
 	ClassifiedListings             = NIP{"Classified Listings", 99}
 	NIP99                          = ClassifiedListings
+	VoiceMessages                  = NIP{"Voice Messages", 0xA0}
+	NIPA0                          = VoiceMessages
+	WebBookmarks                   = NIP{"Web Bookmarks", 0xB0}
+	NIPB0                          = WebBookmarks
+	Blossom                        = NIP{"Blossom", 0xB7}
+	NIPB7                          = Blossom
+	CodeSnippets                   = NIP{"Code Snippets", 0xC0}
+	NIPC0                          = CodeSnippets
+	Chats                          = NIP{"Chats", 0xC7}
+	NIPC7                          = Chats
+	E2EEMessagingUsingMLSProtocol  = NIP{"E2EE Messaging using MLS Protocol", 0xEE}
+	NIPEE                          = E2EEMessagingUsingMLSProtocol
 )
 
 var NIPMap = map[int]NIP{
-	1: NIP1, 2: NIP2, 3: NIP3, 4: NIP4, 5: NIP5, 8: NIP8, 9: NIP9,
-	11: NIP11, 12: NIP12, 14: NIP14, 15: NIP15, 16: NIP16, 18: NIP18, 19: NIP19,
-	20: NIP20,
-	21: NIP21, 22: NIP22, 23: NIP23, 24: NIP24, 25: NIP25, 26: NIP26, 27: NIP27,
-	28: NIP28,
-	30: NIP30, 32: NIP32, 33: NIP33, 36: NIP36, 38: NIP38, 39: NIP39, 40: NIP40,
-	42: NIP42,
-	44: NIP44, 45: NIP45, 46: NIP46, 47: NIP47, 48: NIP48, 50: NIP50, 51: NIP51,
-	52: NIP52,
-	53: NIP53, 56: NIP56, 57: NIP57, 58: NIP58, 65: NIP65, 72: NIP72, 75: NIP75,
-	78: NIP78,
-	84: NIP84, 89: NIP89, 90: NIP90, 94: NIP94, 96: NIP96, 98: NIP98, 99: NIP99,
+	1: NIP1, 2: NIP2, 3: NIP3, 4: NIP4, 5: NIP5, 6: NIP6, 7: NIP7, 8: NIP8, 9: NIP9, 10: NIP10,
+	11: NIP11, 12: NIP12, 13: NIP13, 14: NIP14, 15: NIP15, 16: NIP16, 17: NIP17, 18: NIP18, 19: NIP19, 20: NIP20,
+	21: NIP21, 22: NIP22, 23: NIP23, 24: NIP24, 25: NIP25, 26: NIP26, 27: NIP27, 28: NIP28, 29: NIP29, 30: NIP30,
+	31: NIP31, 32: NIP32, 33: NIP33, 34: NIP34, 35: NIP35, 36: NIP36, 37: NIP37, 38: NIP38, 39: NIP39, 40: NIP40,
+	42: NIP42, 44: NIP44, 45: NIP45, 46: NIP46, 47: NIP47, 48: NIP48, 49: NIP49, 50: NIP50,
+	51: NIP51, 52: NIP52, 53: NIP53, 54: NIP54, 55: NIP55, 56: NIP56, 57: NIP57, 58: NIP58, 59: NIP59, 60: NIP60,
+	61: NIP61, 62: NIP62, 64: NIP64, 65: NIP65, 66: NIP66, 68: NIP68, 69: NIP69, 70: NIP70,
+	71: NIP71, 72: NIP72, 73: NIP73, 75: NIP75, 77: NIP77, 78: NIP78, 0x7D: NIP7D, 84: NIP84,
+	86: NIP86, 87: NIP87, 88: NIP88, 89: NIP89, 90: NIP90, 92: NIP92, 94: NIP94, 96: NIP96, 98: NIP98, 99: NIP99,
+	0xA0: NIPA0, 0xB0: NIPB0, 0xB7: NIPB7, 0xC0: NIPC0, 0xC7: NIPC7, 0xEE: NIPEE,
 }
 
 // Limits are rules about what is acceptable for events and filters on a relay.

@@ -201,33 +201,13 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 
 					// Process this chunk
 					var chunkEvents event.S
-					showAllVersions := false
-					if chunkFilter.Tags != nil {
-						if showAllTag := chunkFilter.Tags.GetFirst([]byte("show_all_versions")); showAllTag != nil {
-							if string(showAllTag.Value()) == "true" {
-								showAllVersions = true
-							}
+					if chunkEvents, err = l.QueryEvents(queryCtx, chunkFilter); chk.E(err) {
+						if errors.Is(err, badger.ErrDBClosed) {
+							return
 						}
-					}
-
-					if showAllVersions {
-						if chunkEvents, err = l.QueryAllVersions(queryCtx, chunkFilter); chk.E(err) {
-							if errors.Is(err, badger.ErrDBClosed) {
-								return
-							}
-							log.E.F("QueryAllVersions failed for chunk filter: %v", err)
-							err = nil
-							continue
-						}
-					} else {
-						if chunkEvents, err = l.QueryEvents(queryCtx, chunkFilter); chk.E(err) {
-							if errors.Is(err, badger.ErrDBClosed) {
-								return
-							}
-							log.E.F("QueryEvents failed for chunk filter: %v", err)
-							err = nil
-							continue
-						}
+						log.E.F("QueryEvents failed for chunk filter: %v", err)
+						err = nil
+						continue
 					}
 
 					// Add chunk results to overall results
@@ -250,35 +230,13 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			}
 		}
 		var filterEvents event.S
-		// Check if the filter has the special "show_all_versions" tag
-		showAllVersions := false
-		if f.Tags != nil {
-			if showAllTag := f.Tags.GetFirst([]byte("show_all_versions")); showAllTag != nil {
-				if string(showAllTag.Value()) == "true" {
-					showAllVersions = true
-					log.T.F("REQ %s: detected show_all_versions tag, using QueryAllVersions", env.Subscription)
-				}
+		if filterEvents, err = l.QueryEvents(queryCtx, f); chk.E(err) {
+			if errors.Is(err, badger.ErrDBClosed) {
+				return
 			}
-		}
-
-		if showAllVersions {
-			if filterEvents, err = l.QueryAllVersions(queryCtx, f); chk.E(err) {
-				if errors.Is(err, badger.ErrDBClosed) {
-					return
-				}
-				log.E.F("QueryAllVersions failed for filter: %v", err)
-				err = nil
-				continue
-			}
-		} else {
-			if filterEvents, err = l.QueryEvents(queryCtx, f); chk.E(err) {
-				if errors.Is(err, badger.ErrDBClosed) {
-					return
-				}
-				log.E.F("QueryEvents failed for filter: %v", err)
-				err = nil
-				continue
-			}
+			log.E.F("QueryEvents failed for filter: %v", err)
+			err = nil
+			continue
 		}
 		// Append events from this filter to the overall collection
 		allEvents = append(allEvents, filterEvents...)
