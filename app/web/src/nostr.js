@@ -83,13 +83,20 @@ class NostrClient {
   }
 
   // Publish an event
-  async publish(event) {
-    console.log("Publishing event:", event);
+  async publish(event, specificRelays = null) {
+    if (!this.isConnected) {
+      console.warn("Not connected to any relays, attempting to connect first");
+      await this.connect();
+    }
     
     try {
-      const promises = this.pool.publish(this.relays, event);
+      const relaysToUse = specificRelays || this.relays;
+      const promises = this.pool.publish(relaysToUse, event);
       await Promise.allSettled(promises);
       console.log("✓ Event published successfully");
+      // Store the published event in IndexedDB
+      await putEvents([event]);
+      console.log("Event stored in IndexedDB");
       return { success: true, okCount: 1, errorCount: 0 };
     } catch (error) {
       console.error("✗ Failed to publish event:", error);
@@ -172,32 +179,56 @@ export class Nip07Signer {
   }
 }
 
-// IndexedDB helpers for caching events (kind 0 profiles)
+// IndexedDB helpers for unified event storage
+// This provides a local cache that all components can access
 const DB_NAME = "nostrCache";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Incremented for new indexes
 const STORE_EVENTS = "events";
 
 function openDB() {
   return new Promise((resolve, reject) => {
     try {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = () => {
+      req.onupgradeneeded = (event) => {
         const db = req.result;
+        const oldVersion = event.oldVersion;
+        
+        // Create or update the events store
+        let store;
         if (!db.objectStoreNames.contains(STORE_EVENTS)) {
-          const store = db.createObjectStore(STORE_EVENTS, { keyPath: "id" });
+          store = db.createObjectStore(STORE_EVENTS, { keyPath: "id" });
+        } else {
+          // Get existing store during upgrade
+          store = req.transaction.objectStore(STORE_EVENTS);
+        }
+        
+        // Create indexes if they don't exist
+        if (!store.indexNames.contains("byKindAuthor")) {
           store.createIndex("byKindAuthor", ["kind", "pubkey"], {
             unique: false,
           });
+        }
+        if (!store.indexNames.contains("byKindAuthorCreated")) {
           store.createIndex(
             "byKindAuthorCreated",
             ["kind", "pubkey", "created_at"],
             { unique: false },
           );
         }
+        if (!store.indexNames.contains("byKind")) {
+          store.createIndex("byKind", "kind", { unique: false });
+        }
+        if (!store.indexNames.contains("byAuthor")) {
+          store.createIndex("byAuthor", "pubkey", { unique: false });
+        }
+        if (!store.indexNames.contains("byCreatedAt")) {
+          store.createIndex("byCreatedAt", "created_at", { unique: false });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     } catch (e) {
+      console.error("Failed to open IndexedDB", e);
       reject(e);
     }
   });
@@ -237,6 +268,146 @@ async function putEvent(event) {
     });
   } catch (e) {
     console.warn("IDB putEvent failed", e);
+  }
+}
+
+// Store multiple events in IndexedDB
+async function putEvents(events) {
+  if (!events || events.length === 0) return;
+  
+  try {
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_EVENTS, "readwrite");
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      
+      const store = tx.objectStore(STORE_EVENTS);
+      for (const event of events) {
+        store.put(event);
+      }
+    });
+    console.log(`Stored ${events.length} events in IndexedDB`);
+  } catch (e) {
+    console.warn("IDB putEvents failed", e);
+  }
+}
+
+// Query events from IndexedDB by filters
+async function queryEventsFromDB(filters) {
+  try {
+    const db = await openDB();
+    const results = [];
+    
+    console.log("QueryEventsFromDB: Starting query with filters:", filters);
+    
+    for (const filter of filters) {
+      console.log("QueryEventsFromDB: Processing filter:", filter);
+      
+      const events = await new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_EVENTS, "readonly");
+        const store = tx.objectStore(STORE_EVENTS);
+        const allEvents = [];
+        
+        // Determine which index to use based on filter
+        let req;
+        if (filter.kinds && filter.kinds.length > 0 && filter.authors && filter.authors.length > 0) {
+          // Use byKindAuthor index for the most specific query
+          const kind = filter.kinds[0];
+          const author = filter.authors[0];
+          console.log(`QueryEventsFromDB: Using byKindAuthorCreated index for kind=${kind}, author=${author.substring(0, 8)}...`);
+          
+          const idx = store.index("byKindAuthorCreated");
+          const range = IDBKeyRange.bound(
+            [kind, author, -Infinity],
+            [kind, author, Infinity]
+          );
+          req = idx.openCursor(range, "prev"); // newest first
+        } else if (filter.kinds && filter.kinds.length > 0) {
+          // Use byKind index
+          console.log(`QueryEventsFromDB: Using byKind index for kind=${filter.kinds[0]}`);
+          const idx = store.index("byKind");
+          req = idx.openCursor(IDBKeyRange.only(filter.kinds[0]));
+        } else if (filter.authors && filter.authors.length > 0) {
+          // Use byAuthor index
+          console.log(`QueryEventsFromDB: Using byAuthor index for author=${filter.authors[0].substring(0, 8)}...`);
+          const idx = store.index("byAuthor");
+          req = idx.openCursor(IDBKeyRange.only(filter.authors[0]));
+        } else {
+          // Scan all events
+          console.log("QueryEventsFromDB: Scanning all events (no specific index)");
+          req = store.openCursor();
+        }
+        
+        req.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            const evt = cursor.value;
+            
+            // Apply additional filters
+            let matches = true;
+            
+            // Filter by kinds
+            if (filter.kinds && filter.kinds.length > 0 && !filter.kinds.includes(evt.kind)) {
+              matches = false;
+            }
+            
+            // Filter by authors
+            if (filter.authors && filter.authors.length > 0 && !filter.authors.includes(evt.pubkey)) {
+              matches = false;
+            }
+            
+            // Filter by since
+            if (filter.since && evt.created_at < filter.since) {
+              matches = false;
+            }
+            
+            // Filter by until
+            if (filter.until && evt.created_at > filter.until) {
+              matches = false;
+            }
+            
+            // Filter by IDs
+            if (filter.ids && filter.ids.length > 0 && !filter.ids.includes(evt.id)) {
+              matches = false;
+            }
+            
+            if (matches) {
+              allEvents.push(evt);
+            }
+            
+            // Apply limit
+            if (filter.limit && allEvents.length >= filter.limit) {
+              console.log(`QueryEventsFromDB: Reached limit of ${filter.limit}, found ${allEvents.length} matching events`);
+              resolve(allEvents);
+              return;
+            }
+            
+            cursor.continue();
+          } else {
+            console.log(`QueryEventsFromDB: Cursor exhausted, found ${allEvents.length} matching events`);
+            resolve(allEvents);
+          }
+        };
+        
+        req.onerror = () => {
+          console.error("QueryEventsFromDB: Cursor error:", req.error);
+          reject(req.error);
+        };
+      });
+      
+      console.log(`QueryEventsFromDB: Found ${events.length} events for this filter`);
+      results.push(...events);
+    }
+    
+    // Sort by created_at (newest first) and apply global limit
+    results.sort((a, b) => b.created_at - a.created_at);
+    
+    console.log(`QueryEventsFromDB: Returning ${results.length} total events`);
+    return results;
+  } catch (e) {
+    console.error("QueryEventsFromDB failed:", e);
+    return [];
   }
 }
 
@@ -296,6 +467,16 @@ export async function fetchUserProfile(pubkey) {
       // Cache the event
       await putEvent(profileEvent);
       
+      // Publish the profile event to the local relay
+      try {
+        console.log("Publishing profile event to local relay:", profileEvent.id);
+        await nostrClient.publish(profileEvent);
+        console.log("Profile event successfully saved to local relay");
+      } catch (publishError) {
+        console.warn("Failed to publish profile to local relay:", publishError);
+        // Don't fail the whole operation if publishing fails
+      }
+      
       // Parse profile data
       const profile = parseProfileFromEvent(profileEvent);
       
@@ -324,33 +505,78 @@ export async function fetchUserProfile(pubkey) {
 
 // Fetch events
 export async function fetchEvents(filters, options = {}) {
-  console.log(`Starting event fetch with filters:`, filters);
+  console.log(`Starting event fetch with filters:`, JSON.stringify(filters, null, 2));
+  console.log(`Current relays:`, nostrClient.relays);
+
+  // Ensure client is connected
+  if (!nostrClient.isConnected || nostrClient.relays.length === 0) {
+    console.warn("Client not connected, initializing...");
+    await initializeNostrClient();
+  }
 
   const {
     timeout = 30000,
+    useCache = true, // Option to query from cache first
   } = options;
+
+  // Try to get cached events first if requested
+  if (useCache) {
+    try {
+      const cachedEvents = await queryEventsFromDB(filters);
+      if (cachedEvents.length > 0) {
+        console.log(`Found ${cachedEvents.length} cached events in IndexedDB`);
+      }
+    } catch (e) {
+      console.warn("Failed to query cached events", e);
+    }
+  }
 
   return new Promise((resolve, reject) => {
     const events = [];
     const timeoutId = setTimeout(() => {
       console.log(`Timeout reached after ${timeout}ms, returning ${events.length} events`);
       sub.close();
+      
+      // Store all received events in IndexedDB before resolving
+      if (events.length > 0) {
+        putEvents(events).catch(e => console.warn("Failed to cache events", e));
+      }
+      
       resolve(events);
     }, timeout);
 
     try {
+      // Generate a subscription ID for logging
+      const subId = Math.random().toString(36).substring(7);
+      console.log(`📤 REQ [${subId}]:`, JSON.stringify(["REQ", subId, ...filters], null, 2));
+      
       const sub = nostrClient.pool.subscribeMany(
         nostrClient.relays,
         filters,
         {
           onevent(event) {
-            console.log("Event received:", event);
+            console.log(`📥 EVENT received for REQ [${subId}]:`, {
+              id: event.id?.substring(0, 8) + '...',
+              kind: event.kind,
+              pubkey: event.pubkey?.substring(0, 8) + '...',
+              created_at: event.created_at,
+              content_preview: event.content?.substring(0, 50)
+            });
             events.push(event);
+            
+            // Store event immediately in IndexedDB
+            putEvent(event).catch(e => console.warn("Failed to cache event", e));
           },
           oneose() {
-            console.log(`EOSE received, got ${events.length} events`);
+            console.log(`✅ EOSE received for REQ [${subId}], got ${events.length} events`);
             clearTimeout(timeoutId);
             sub.close();
+            
+            // Store all events in IndexedDB before resolving
+            if (events.length > 0) {
+              putEvents(events).catch(e => console.warn("Failed to cache events", e));
+            }
+            
             resolve(events);
           }
         }
@@ -494,4 +720,78 @@ export async function fetchDeleteEventsByTarget(eventId, options = {}) {
 // Initialize client connection
 export async function initializeNostrClient() {
   await nostrClient.connect();
+}
+
+// Query events from cache and relay combined
+// This is the main function components should use
+export async function queryEvents(filters, options = {}) {
+  const {
+    timeout = 30000,
+    cacheFirst = true, // Try cache first before hitting relay
+    cacheOnly = false,  // Only use cache, don't query relay
+  } = options;
+  
+  let cachedEvents = [];
+  
+  // Try cache first
+  if (cacheFirst || cacheOnly) {
+    try {
+      cachedEvents = await queryEventsFromDB(filters);
+      console.log(`Found ${cachedEvents.length} events in cache`);
+      
+      if (cacheOnly || cachedEvents.length > 0) {
+        return cachedEvents;
+      }
+    } catch (e) {
+      console.warn("Failed to query cache", e);
+    }
+  }
+  
+  // If cache didn't have results and we're not cache-only, query relay
+  if (!cacheOnly) {
+    const relayEvents = await fetchEvents(filters, { timeout, useCache: false });
+    console.log(`Fetched ${relayEvents.length} events from relay`);
+    return relayEvents;
+  }
+  
+  return cachedEvents;
+}
+
+// Export cache query function for direct access
+export { queryEventsFromDB };
+
+// Debug function to check database contents
+export async function debugIndexedDB() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_EVENTS, "readonly");
+    const store = tx.objectStore(STORE_EVENTS);
+    
+    const allEvents = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    
+    const byKind = allEvents.reduce((acc, e) => {
+      acc[e.kind] = (acc[e.kind] || 0) + 1;
+      return acc;
+    }, {});
+    
+    console.log("===== IndexedDB Contents =====");
+    console.log(`Total events: ${allEvents.length}`);
+    console.log("Events by kind:", byKind);
+    console.log("Kind 0 events:", allEvents.filter(e => e.kind === 0));
+    console.log("All event IDs:", allEvents.map(e => ({ id: e.id.substring(0, 8), kind: e.kind, pubkey: e.pubkey.substring(0, 8) })));
+    console.log("==============================");
+    
+    return {
+      total: allEvents.length,
+      byKind,
+      events: allEvents
+    };
+  } catch (e) {
+    console.error("Failed to debug IndexedDB:", e);
+    return null;
+  }
 }

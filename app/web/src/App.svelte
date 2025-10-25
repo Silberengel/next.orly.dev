@@ -9,12 +9,20 @@
         searchEvents,
         fetchEventById,
         fetchDeleteEventsByTarget,
+        queryEvents,
+        queryEventsFromDB,
+        debugIndexedDB,
         nostrClient,
         NostrClient,
         Nip07Signer,
         PrivateKeySigner,
     } from "./nostr.js";
     import { publishEventWithAuth } from "./websocket-auth.js";
+
+    // Expose debug function globally for console access
+    if (typeof window !== "undefined") {
+        window.debugIndexedDB = debugIndexedDB;
+    }
 
     let isDarkTheme = false;
     let showLoginModal = false;
@@ -25,7 +33,7 @@
     let userRole = "";
     let userSigner = null;
     let showSettingsDrawer = false;
-    let selectedTab = "export";
+    let selectedTab = localStorage.getItem("selectedTab") || "export";
     let isSearchMode = false;
     let searchQuery = "";
     let searchTabs = [];
@@ -86,47 +94,93 @@
     let recoveryNewestTimestamp = null;
 
     // Replaceable kinds for the recovery dropdown
+    // Based on NIP-01: kinds 0, 3, and 10000-19999 are replaceable
+    // kinds 30000-39999 are addressable (parameterized replaceable)
     const replaceableKinds = [
-        { value: 0, label: "Profile Metadata (0)" },
-        { value: 3, label: "Follow List (3)" },
-        { value: 10000, label: "Relay List Metadata (10000)" },
-        { value: 10001, label: "Mute List (10001)" },
-        { value: 10002, label: "Pin List (10002)" },
-        { value: 10003, label: "Bookmark List (10003)" },
-        { value: 10004, label: "Communities List (10004)" },
-        { value: 10005, label: "Public Chats List (10005)" },
-        { value: 10006, label: "Blocked Relays List (10006)" },
-        { value: 10007, label: "Search Relays List (10007)" },
-        { value: 10015, label: "Interests List (10015)" },
-        { value: 10030, label: "Emoji Sets (10030)" },
-        { value: 30000, label: "Categorized People List (30000)" },
-        { value: 30001, label: "Categorized Bookmark List (30001)" },
-        { value: 30002, label: "Relay Sets (30002)" },
-        { value: 30003, label: "Bookmark Sets (30003)" },
-        { value: 30004, label: "Curation Sets (30004)" },
+        // Basic replaceable kinds (0, 3)
+        { value: 0, label: "User Metadata (0)" },
+        { value: 3, label: "Follows (3)" },
+
+        // Replaceable range 10000-19999
+        { value: 10000, label: "Mute list (10000)" },
+        { value: 10001, label: "Pin list (10001)" },
+        { value: 10002, label: "Relay List Metadata (10002)" },
+        { value: 10003, label: "Bookmark list (10003)" },
+        { value: 10004, label: "Communities list (10004)" },
+        { value: 10005, label: "Public chats list (10005)" },
+        { value: 10006, label: "Blocked relays list (10006)" },
+        { value: 10007, label: "Search relays list (10007)" },
+        { value: 10009, label: "User groups (10009)" },
+        { value: 10012, label: "Favorite relays list (10012)" },
+        { value: 10013, label: "Private event relay list (10013)" },
+        { value: 10015, label: "Interests list (10015)" },
+        { value: 10019, label: "Nutzap Mint Recommendation (10019)" },
+        { value: 10020, label: "Media follows (10020)" },
+        { value: 10030, label: "User emoji list (10030)" },
+        { value: 10050, label: "Relay list to receive DMs (10050)" },
+        { value: 10051, label: "KeyPackage Relays List (10051)" },
+        { value: 10063, label: "User server list (10063)" },
+        { value: 10096, label: "File storage server list (10096)" },
+        { value: 10166, label: "Relay Monitor Announcement (10166)" },
+        { value: 10312, label: "Room Presence (10312)" },
+        { value: 10377, label: "Proxy Announcement (10377)" },
+        { value: 11111, label: "Transport Method Announcement (11111)" },
+        { value: 13194, label: "Wallet Info (13194)" },
+        { value: 17375, label: "Cashu Wallet Event (17375)" },
+
+        // Addressable range 30000-39999 (parameterized replaceable)
+        { value: 30000, label: "Follow sets (30000)" },
+        { value: 30001, label: "Generic lists (30001)" },
+        { value: 30002, label: "Relay sets (30002)" },
+        { value: 30003, label: "Bookmark sets (30003)" },
+        { value: 30004, label: "Curation sets (30004)" },
+        { value: 30005, label: "Video sets (30005)" },
+        { value: 30007, label: "Kind mute sets (30007)" },
         { value: 30008, label: "Profile Badges (30008)" },
         { value: 30009, label: "Badge Definition (30009)" },
-        { value: 30015, label: "Interest Sets (30015)" },
-        { value: 30017, label: "Stall Definition (30017)" },
-        { value: 30018, label: "Product Definition (30018)" },
+        { value: 30015, label: "Interest sets (30015)" },
+        { value: 30017, label: "Create or update a stall (30017)" },
+        { value: 30018, label: "Create or update a product (30018)" },
         { value: 30019, label: "Marketplace UI/UX (30019)" },
-        { value: 30020, label: "Product Sold as Auction (30020)" },
-        { value: 30023, label: "Article (30023)" },
+        { value: 30020, label: "Product sold as an auction (30020)" },
+        { value: 30023, label: "Long-form Content (30023)" },
         { value: 30024, label: "Draft Long-form Content (30024)" },
-        { value: 30030, label: "Emoji Sets (30030)" },
-        { value: 30078, label: "Application Specific Data (30078)" },
+        { value: 30030, label: "Emoji sets (30030)" },
+        { value: 30040, label: "Curated Publication Index (30040)" },
+        { value: 30041, label: "Curated Publication Content (30041)" },
+        { value: 30063, label: "Release artifact sets (30063)" },
+        { value: 30078, label: "Application-specific Data (30078)" },
+        { value: 30166, label: "Relay Discovery (30166)" },
+        { value: 30267, label: "App curation sets (30267)" },
         { value: 30311, label: "Live Event (30311)" },
+        { value: 30312, label: "Interactive Room (30312)" },
+        { value: 30313, label: "Conference Event (30313)" },
         { value: 30315, label: "User Statuses (30315)" },
+        { value: 30388, label: "Slide Set (30388)" },
         { value: 30402, label: "Classified Listing (30402)" },
         { value: 30403, label: "Draft Classified Listing (30403)" },
-        { value: 31922, label: "Date-based Calendar Event (31922)" },
-        { value: 31923, label: "Time-based Calendar Event (31923)" },
+        { value: 30617, label: "Repository announcements (30617)" },
+        { value: 30618, label: "Repository state announcements (30618)" },
+        { value: 30818, label: "Wiki article (30818)" },
+        { value: 30819, label: "Redirects (30819)" },
+        { value: 31234, label: "Draft Event (31234)" },
+        { value: 31388, label: "Link Set (31388)" },
+        { value: 31890, label: "Feed (31890)" },
+        { value: 31922, label: "Date-Based Calendar Event (31922)" },
+        { value: 31923, label: "Time-Based Calendar Event (31923)" },
         { value: 31924, label: "Calendar (31924)" },
         { value: 31925, label: "Calendar Event RSVP (31925)" },
-        { value: 31989, label: "Handler Recommendation (31989)" },
-        { value: 31990, label: "Handler Information (31990)" },
-        { value: 32123, label: "WaveLake Track (32123)" },
+        { value: 31989, label: "Handler recommendation (31989)" },
+        { value: 31990, label: "Handler information (31990)" },
+        { value: 32267, label: "Software Application (32267)" },
         { value: 34550, label: "Community Definition (34550)" },
+        { value: 37516, label: "Geocache listing (37516)" },
+        { value: 38172, label: "Cashu Mint Announcement (38172)" },
+        { value: 38173, label: "Fedimint Announcement (38173)" },
+        { value: 38383, label: "Peer-to-peer Order events (38383)" },
+        { value: 39089, label: "Starter packs (39089)" },
+        { value: 39092, label: "Media starter packs (39092)" },
+        { value: 39701, label: "Web bookmarks (39701)" },
     ];
 
     // Kind name mapping based on NIP specification
@@ -667,7 +721,16 @@
         const kindToUse = recoveryCustomKind
             ? parseInt(recoveryCustomKind)
             : recoverySelectedKind;
-        if (!kindToUse || !isLoggedIn) return;
+
+        if (kindToUse === null || kindToUse === undefined || isNaN(kindToUse)) {
+            console.log("No valid kind to load, kindToUse:", kindToUse);
+            return;
+        }
+
+        if (!isLoggedIn) {
+            console.log("Not logged in, cannot load recovery events");
+            return;
+        }
 
         console.log(
             "Loading recovery events for kind:",
@@ -679,18 +742,26 @@
         try {
             // Fetch multiple versions using limit parameter
             // For replaceable events, limit > 1 returns multiple versions
-            const filters = {
-                kinds: [kindToUse],
-                authors: [userPubkey],
-                limit: 100, // Get up to 100 versions
-            };
+            const filters = [
+                {
+                    kinds: [kindToUse],
+                    authors: [userPubkey],
+                    limit: 100, // Get up to 100 versions
+                },
+            ];
 
             if (recoveryOldestTimestamp) {
-                filters.until = recoveryOldestTimestamp;
+                filters[0].until = recoveryOldestTimestamp;
             }
 
             console.log("Recovery filters:", filters);
-            const events = await fetchAllEvents(filters);
+
+            // Use queryEvents which checks IndexedDB cache first, then relay
+            const events = await queryEvents(filters, {
+                timeout: 30000,
+                cacheFirst: true, // Check cache first
+            });
+
             console.log("Recovery events received:", events.length);
             console.log(
                 "Recovery events kinds:",
@@ -721,46 +792,73 @@
     }
 
     async function repostEvent(event) {
-        if (!isLoggedIn || !userSigner) {
-            alert("Please log in to repost events");
+        if (!confirm("Are you sure you want to repost this event?")) {
             return;
         }
 
         try {
-            // Create a new event with the same content but current timestamp
-            const newEvent = {
-                kind: event.kind,
-                content: event.content,
-                tags: event.tags,
-                created_at: Math.floor(Date.now() / 1000),
-                pubkey: userPubkey,
-            };
-
-            // Sign and publish the event
-            const result = await publishEventWithAuth(
-                DEFAULT_RELAYS[0],
-                newEvent,
-                userSigner,
-                userPubkey,
+            const localRelayUrl = `wss://${window.location.host}/`;
+            console.log(
+                "Reposting event to local relay:",
+                localRelayUrl,
+                event,
             );
 
-            if (result.success) {
-                alert("Event reposted successfully!");
-                // Reload the recovery events to show the new current version
-                recoveryEvents = [];
-                recoveryOldestTimestamp = null;
-                await loadRecoveryEvents();
+            // Create a new event with updated timestamp
+            const newEvent = { ...event };
+            newEvent.created_at = Math.floor(Date.now() / 1000);
+            newEvent.id = ""; // Clear the old ID so it gets recalculated
+            newEvent.sig = ""; // Clear the old signature
+
+            // For addressable events, ensure the d tag matches
+            if (event.kind >= 30000 && event.kind <= 39999) {
+                const dTag = event.tags.find((tag) => tag[0] === "d");
+                if (dTag) {
+                    newEvent.tags = newEvent.tags.filter(
+                        (tag) => tag[0] !== "d",
+                    );
+                    newEvent.tags.push(dTag);
+                }
+            }
+
+            // Sign the event before publishing
+            if (userSigner) {
+                const signedEvent = await userSigner.sign(newEvent);
+                console.log("Signed event for repost:", signedEvent);
+
+                const result = await nostrClient.publish(signedEvent, [
+                    localRelayUrl,
+                ]);
+                console.log("Repost publish result:", result);
+
+                if (result.success && result.okCount > 0) {
+                    alert("Event reposted successfully!");
+                    recoveryHasMore = false; // Reset to allow reloading
+                    await loadRecoveryEvents(); // Reload the events to show the new version
+                } else {
+                    alert("Failed to repost event. Check console for details.");
+                }
             } else {
-                alert("Failed to repost event");
+                alert("No signer available. Please log in.");
             }
         } catch (error) {
-            console.error("Failed to repost event:", error);
-            alert("Failed to repost event: " + error.message);
+            console.error("Error reposting event:", error);
+            alert("Error reposting event: " + error.message);
         }
     }
 
-    function selectRecoveryKind(kind) {
-        recoverySelectedKind = kind;
+    function selectRecoveryKind() {
+        console.log(
+            "selectRecoveryKind called, recoverySelectedKind:",
+            recoverySelectedKind,
+        );
+        if (
+            recoverySelectedKind === null ||
+            recoverySelectedKind === undefined
+        ) {
+            console.log("No kind selected, skipping load");
+            return;
+        }
         recoveryCustomKind = ""; // Clear custom kind when selecting from dropdown
         recoveryEvents = [];
         recoveryOldestTimestamp = null;
@@ -769,7 +867,13 @@
     }
 
     function handleCustomKindInput() {
-        if (recoveryCustomKind) {
+        console.log(
+            "handleCustomKindInput called, recoveryCustomKind:",
+            recoveryCustomKind,
+        );
+        // Check if a valid number was entered (including 0)
+        const kindNum = parseInt(recoveryCustomKind);
+        if (recoveryCustomKind !== "" && !isNaN(kindNum) && kindNum >= 0) {
             recoverySelectedKind = null; // Clear dropdown selection when using custom
             recoveryEvents = [];
             recoveryOldestTimestamp = null;
@@ -2181,6 +2285,11 @@
             alert("Error publishing event: " + error.message);
         }
     }
+
+    // Persist selected tab to local storage
+    $: {
+        localStorage.setItem("selectedTab", selectedTab);
+    }
 </script>
 
 <!-- Header -->
@@ -2270,7 +2379,7 @@
         {#if selectedTab === "export"}
             {#if isLoggedIn}
                 <div class="export-section">
-                    <h2>Export My Events</h2>
+                    <h3>Export My Events</h3>
                     <p>Download your personal events as a JSONL file.</p>
                     <button class="export-btn" on:click={exportMyEvents}>
                         📤 Export My Events
@@ -2297,35 +2406,41 @@
                 </div>
             {/if}
         {:else if selectedTab === "import"}
-            <div class="import-view">
+            <div class="import-section">
                 {#if isLoggedIn && (userRole === "admin" || userRole === "owner")}
-                    <h2>Import Events</h2>
+                    <h3>Import Events</h3>
                     <p>
                         Upload a JSONL file to import events into the database.
                     </p>
-                    <input
-                        type="file"
-                        id="import-file"
-                        accept=".jsonl,.txt"
-                        on:change={handleFileSelect}
-                    />
-                    <button
-                        class="import-btn"
-                        on:click={importEvents}
-                        disabled={!selectedFile}
-                    >
-                        📥 Import Events
-                    </button>
+                    <div class="recovery-controls-card">
+                        <input
+                            type="file"
+                            id="import-file"
+                            accept=".jsonl,.txt"
+                            on:change={handleFileSelect}
+                        />
+                        <button
+                            class="import-btn"
+                            on:click={importEvents}
+                            disabled={!selectedFile}
+                        >
+                            Import Events
+                        </button>
+                    </div>
                 {:else if isLoggedIn}
                     <div class="permission-denied">
-                        <p>
+                        <h3 class="recovery-header">Import Events</h3>
+                        <p class="recovery-description">
                             ❌ Admin or owner permission required for import
                             functionality.
                         </p>
                     </div>
                 {:else}
                     <div class="login-prompt">
-                        <p>Please log in to access import functionality.</p>
+                        <h3 class="recovery-header">Import Events</h3>
+                        <p class="recovery-description">
+                            Please log in to access import functionality.
+                        </p>
                         <button class="login-btn" on:click={openLoginModal}
                             >Log In</button
                         >
@@ -2785,45 +2900,49 @@
             </div>
         {:else if selectedTab === "recovery"}
             <div class="recovery-tab">
-                <div class="recovery-header">
-                    <h2>🔄 Event Recovery</h2>
+                <div>
+                    <h3>Event Recovery</h3>
                     <p>Search and recover old versions of replaceable events</p>
                 </div>
 
-                <div class="recovery-controls">
-                    <div class="kind-selector">
-                        <label for="recovery-kind">Select Event Kind:</label>
-                        <select
-                            id="recovery-kind"
-                            bind:value={recoverySelectedKind}
-                            on:change={() =>
-                                selectRecoveryKind(recoverySelectedKind)}
-                        >
-                            <option value={null}
-                                >Choose a replaceable kind...</option
+                <div class="recovery-controls-card">
+                    <div class="recovery-controls">
+                        <div class="kind-selector">
+                            <label for="recovery-kind">Select Event Kind:</label
                             >
-                            {#each replaceableKinds as kind}
-                                <option value={kind.value}>{kind.label}</option>
-                            {/each}
-                        </select>
-                    </div>
+                            <select
+                                id="recovery-kind"
+                                bind:value={recoverySelectedKind}
+                                on:change={selectRecoveryKind}
+                            >
+                                <option value={null}
+                                    >Choose a replaceable kind...</option
+                                >
+                                {#each replaceableKinds as kind}
+                                    <option value={kind.value}
+                                        >{kind.label}</option
+                                    >
+                                {/each}
+                            </select>
+                        </div>
 
-                    <div class="custom-kind-input">
-                        <label for="custom-kind"
-                            >Or enter custom kind number:</label
-                        >
-                        <input
-                            id="custom-kind"
-                            type="number"
-                            bind:value={recoveryCustomKind}
-                            on:input={handleCustomKindInput}
-                            placeholder="e.g., 10001"
-                            min="0"
-                        />
+                        <div class="custom-kind-input">
+                            <label for="custom-kind"
+                                >Or enter custom kind number:</label
+                            >
+                            <input
+                                id="custom-kind"
+                                type="number"
+                                bind:value={recoveryCustomKind}
+                                on:input={handleCustomKindInput}
+                                placeholder="e.g., 10001"
+                                min="0"
+                            />
+                        </div>
                     </div>
                 </div>
 
-                {#if recoverySelectedKind || recoveryCustomKind}
+                {#if (recoverySelectedKind !== null && recoverySelectedKind !== undefined && recoverySelectedKind >= 0) || (recoveryCustomKind !== "" && parseInt(recoveryCustomKind) >= 0)}
                     <div class="recovery-results">
                         {#if isLoadingRecovery}
                             <div class="loading">Loading events...</div>
@@ -2840,75 +2959,49 @@
                                         class:old-version={!isCurrent}
                                     >
                                         <div class="event-header">
-                                            <span class="event-kind"
-                                                >Kind {event.kind}</span
-                                            >
-                                            <span class="event-timestamp">
-                                                {new Date(
-                                                    event.created_at * 1000,
-                                                ).toLocaleString()}
-                                            </span>
-                                            {#if !isCurrent}
-                                                <button
-                                                    class="repost-button"
-                                                    on:click={() =>
-                                                        repostEvent(event)}
+                                            <div class="event-header-left">
+                                                <span class="event-kind">
+                                                    {#if isCurrent}
+                                                        Current Version{/if}</span
                                                 >
-                                                    🔄 Repost
+                                                <span class="event-timestamp">
+                                                    {new Date(
+                                                        event.created_at * 1000,
+                                                    ).toLocaleString()}
+                                                </span>
+                                            </div>
+                                            <div class="event-header-actions">
+                                                {#if !isCurrent}
+                                                    <button
+                                                        class="repost-button"
+                                                        on:click={() =>
+                                                            repostEvent(event)}
+                                                    >
+                                                        🔄 Repost
+                                                    </button>
+                                                {/if}
+                                                <button
+                                                    class="copy-json-btn"
+                                                    on:click|stopPropagation={(
+                                                        e,
+                                                    ) =>
+                                                        copyEventToClipboard(
+                                                            event,
+                                                            e,
+                                                        )}
+                                                >
+                                                    📋 Copy JSON
                                                 </button>
-                                            {/if}
+                                            </div>
                                         </div>
 
                                         <div class="event-content">
-                                            {#if event.kind === 0}
-                                                <!-- Profile metadata -->
-                                                {#if event.content}
-                                                    <div
-                                                        class="profile-content"
-                                                    >
-                                                        <pre>{JSON.stringify(
-                                                                JSON.parse(
-                                                                    event.content,
-                                                                ),
-                                                                null,
-                                                                2,
-                                                            )}</pre>
-                                                    </div>
-                                                {/if}
-                                            {:else if event.kind === 3}
-                                                <!-- Follow list -->
-                                                <div class="follow-list">
-                                                    <p>
-                                                        Follows {event.tags.filter(
-                                                            (t) => t[0] === "p",
-                                                        ).length} people
-                                                    </p>
-                                                    <div class="follow-tags">
-                                                        {#each event.tags.filter((t) => t[0] === "p") as tag}
-                                                            <span
-                                                                class="pubkey-tag"
-                                                                >{tag[1].substring(
-                                                                    0,
-                                                                    8,
-                                                                )}...</span
-                                                            >
-                                                        {/each}
-                                                    </div>
-                                                </div>
-                                            {:else}
-                                                <!-- Generic content -->
-                                                <div class="generic-content">
-                                                    <pre>{event.content}</pre>
-                                                </div>
-                                            {/if}
-                                        </div>
-
-                                        <div class="event-tags">
-                                            {#each event.tags as tag}
-                                                <span class="tag"
-                                                    >{tag[0]}: {tag[1]}</span
-                                                >
-                                            {/each}
+                                            <pre
+                                                class="event-json">{JSON.stringify(
+                                                    event,
+                                                    null,
+                                                    2,
+                                                )}</pre>
                                         </div>
                                     </div>
                                 {/each}
@@ -3897,6 +3990,7 @@
         width: 2.5em;
         height: 2.5em;
         object-fit: cover;
+        border-radius: 50%;
     }
 
     .user-avatar-placeholder {
@@ -4108,9 +4202,9 @@
         padding: 1em;
         max-width: 32em;
         margin: 0;
-        background: var(--header-bg);
+        background: transparent;
         color: var(--text-color);
-        border-radius: 8px;
+        border-radius: 0;
     }
 
     /* Managed ACL View */
@@ -4195,7 +4289,7 @@
         box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
     }
 
-    .import-view h2 {
+    .import-view h3 {
         margin: 0 0 2rem 0;
         color: var(--text-color);
         font-size: 1.5rem;
@@ -4204,7 +4298,7 @@
 
     .export-section,
     .import-section {
-        background: var(--header-bg);
+        background: transparent;
         padding: 1em;
         border-radius: 8px;
         margin-bottom: 1.5rem;
@@ -4213,18 +4307,16 @@
 
     .export-section h3,
     .import-section h3 {
-        margin: 0 0 1rem 0;
+        margin: 0 0 10px 0;
         color: var(--text-color);
-        font-size: 1.2rem;
-        font-weight: 500;
     }
 
     .export-section p,
     .import-section p {
-        margin: 0 0 1rem 0;
+        margin: 0;
         color: var(--text-color);
-        opacity: 0.8;
-        line-height: 1.5;
+        opacity: 0.7;
+        padding: 0.5em;
     }
 
     .events-view-buttons {
@@ -4250,6 +4342,7 @@
         align-items: center;
         gap: 0.25rem;
         height: 2em;
+        margin: 1em;
     }
 
     .export-btn:hover,
@@ -4579,21 +4672,16 @@
     }
 
     .copy-json-btn {
-        position: absolute;
-        top: 0.5rem;
-        right: 0.5rem;
-        background: var(--button-bg);
+        background: var(--active-tab-bg);
         color: var(--button-text);
         border: 1px solid var(--border-color);
         border-radius: 0.25rem;
         padding: 0.5rem 1rem;
-        font-size: 1.6rem;
+        font-size: 1rem;
         cursor: pointer;
         transition:
             background-color 0.2s,
             border-color 0.2s;
-        z-index: 10;
-        opacity: 0.8;
         width: auto;
         height: auto;
         display: flex;
@@ -4604,13 +4692,10 @@
     .copy-json-btn:hover {
         background: var(--button-hover-bg);
         border-color: var(--button-hover-border);
-        opacity: 1;
     }
 
     .event-json {
         background: var(--bg-color);
-        border: 1px solid var(--border-color);
-        border-radius: 0.25rem;
         padding: 1rem;
         margin: 0;
         font-family: "Courier New", monospace;
@@ -4958,33 +5043,37 @@
     .recovery-tab {
         padding: 20px;
         max-width: 1200px;
-        margin: 0 auto;
+        margin: 0;
     }
 
     .recovery-header {
         margin-bottom: 30px;
-        text-align: center;
+        text-align: left;
     }
 
-    .recovery-header h2 {
+    .recovery-tab h3 {
         margin: 0 0 10px 0;
         color: var(--text-color);
     }
 
-    .recovery-header p {
+    .recovery-tab p {
         margin: 0;
         color: var(--text-color);
         opacity: 0.7;
+        padding: 0.5em;
+    }
+
+    .recovery-controls-card {
+        background-color: transparent;
+        border: none;
+        border-radius: 0;
+        padding: 0;
     }
 
     .recovery-controls {
         display: flex;
         gap: 20px;
         align-items: center;
-        margin-bottom: 30px;
-        padding: 20px;
-        background: var(--bg-color);
-        border-radius: 8px;
         flex-wrap: wrap;
     }
 
@@ -5039,8 +5128,8 @@
 
     .loading,
     .no-events {
-        text-align: center;
-        padding: 40px;
+        text-align: left;
+        padding: 40px 20px;
         color: var(--text-color);
         opacity: 0.7;
     }
@@ -5052,17 +5141,18 @@
     }
 
     .event-item {
-        background: var(--bg-color);
-        border: 1px solid var(--border-color);
+        background: var(--surface-bg);
+        border: 2px solid var(--primary);
         border-radius: 8px;
         padding: 20px;
         transition: all 0.2s ease;
+        background: var(--header-bg);
     }
 
     .event-item.old-version {
-        opacity: 0.7;
-        border-color: #ffc107;
-        background: rgba(255, 193, 7, 0.1);
+        opacity: 0.85;
+        border: none;
+        background: var(--header-bg);
     }
 
     .event-header {
@@ -5072,6 +5162,19 @@
         margin-bottom: 15px;
         flex-wrap: wrap;
         gap: 10px;
+    }
+
+    .event-header-left {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+
+    .event-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
     .event-kind {
@@ -5113,6 +5216,8 @@
         font-size: 0.9em;
         margin: 0;
         border: 1px solid var(--border-color);
+        white-space: pre-wrap;
+        word-wrap: break-word;
     }
 
     .follow-list p {
@@ -5177,7 +5282,115 @@
 
     /* Dark theme adjustments for recovery tab */
     :global(body.dark-theme) .event-item.old-version {
-        background: rgba(255, 193, 7, 0.1);
-        border-color: #ffc107;
+        background: var(--header-bg);
+        border: none;
+    }
+
+    .tab-panel {
+        display: none;
+        padding: 1em;
+        background-color: var(--panel-bg);
+        border-radius: 0 0 8px 8px;
+        color: var(--text-color);
+        text-align: left;
+    }
+
+    .tab-panel.active {
+        display: block;
+    }
+
+    .recovery-header {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-bottom: 0.5em;
+        color: var(--header-text-color);
+    }
+
+    .recovery-description {
+        margin-bottom: 1.5em;
+        color: var(--description-text-color);
+    }
+
+    .recovery-controls-card {
+        background-color: transparent;
+        border-radius: 8px;
+        padding: 1em;
+        margin-bottom: 1em;
+        width: 100%;
+    }
+
+    .form-group {
+        margin-bottom: 1em;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 0.5em;
+        font-weight: bold;
+    }
+
+    .form-group input,
+    .form-group select {
+        width: 100%;
+        padding: 0.5em;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background-color: var(--input-bg);
+        color: var(--input-text-color);
+    }
+
+    .form-group button {
+        background-color: var(--primary);
+        color: white;
+        border: none;
+        padding: 0.75em 1.5em;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .form-group button:disabled {
+        background-color: #6c757d;
+        cursor: not-allowed;
+    }
+
+    .status-message {
+        padding: 1em;
+        border-radius: 4px;
+        margin-top: 1em;
+    }
+
+    .status-message.success {
+        background-color: var(--success-bg);
+        color: var(--success-text);
+    }
+
+    .status-message.error {
+        background-color: var(--error-bg);
+        color: var(--error-text);
+    }
+
+    .export-results {
+        margin-top: 2em;
+    }
+
+    .export-results h3 {
+        margin-bottom: 1em;
+    }
+
+    .export-results button {
+        background-color: var(--primary);
+        color: white;
+        border: none;
+        padding: 0.75em 1.5em;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        margin-bottom: 1em;
+    }
+
+    .events-preview {
+        max-height: 400px;
+        overflow-y: auto;
     }
 </style>

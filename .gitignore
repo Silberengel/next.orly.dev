@@ -99,6 +99,13 @@ cmd/benchmark/data
 !.github/**
 !.github/workflows/**
 !app/web/dist/**
+!app/web/dist/*.js
+!app/web/dist/*.js.map
+!app/web/dist/*.css
+!app/web/dist/*.html
+!app/web/dist/*.ico
+!app/web/dist/*.png
+!app/web/dist/*.svg
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
