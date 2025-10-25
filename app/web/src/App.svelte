@@ -45,6 +45,8 @@
     let eventsPerPage = 100;
     let oldestEventTimestamp = null; // For timestamp-based pagination
     let newestEventTimestamp = null; // For loading newer events
+    let showPermissionMenu = false;
+    let viewAsRole = "";
 
     // Search results state
     let searchResults = new Map(); // Map of searchTabId -> { events, isLoading, hasMore, oldestTimestamp }
@@ -1374,7 +1376,7 @@
         { id: "export", icon: "📤", label: "Export" },
         { id: "import", icon: "💾", label: "Import", requiresAdmin: true },
         { id: "events", icon: "📡", label: "Events" },
-        { id: "compose", icon: "✏️", label: "Compose" },
+        { id: "compose", icon: "✏️", label: "Compose", requiresWrite: true },
         { id: "recovery", icon: "🔄", label: "Recovery" },
         {
             id: "managed-acl",
@@ -1385,15 +1387,21 @@
         { id: "sprocket", icon: "⚙️", label: "Sprocket", requiresOwner: true },
     ];
 
-    // Filter tabs based on user permissions
+    // Filter tabs based on current effective role (including view-as setting)
     $: filteredBaseTabs = baseTabs.filter((tab) => {
+        const currentRole = currentEffectiveRole;
+
         if (
             tab.requiresAdmin &&
-            (!isLoggedIn || (userRole !== "admin" && userRole !== "owner"))
+            (!isLoggedIn ||
+                (currentRole !== "admin" && currentRole !== "owner"))
         ) {
             return false;
         }
-        if (tab.requiresOwner && (!isLoggedIn || userRole !== "owner")) {
+        if (tab.requiresOwner && (!isLoggedIn || currentRole !== "owner")) {
+            return false;
+        }
+        if (tab.requiresWrite && (!isLoggedIn || currentRole === "read")) {
             return false;
         }
         // Hide sprocket tab if not enabled
@@ -1404,15 +1412,17 @@
         if (tab.id === "managed-acl" && aclMode !== "managed") {
             return false;
         }
-        // Debug logging for managed ACL tab
-        if (tab.id === "managed-acl") {
-            console.log("Managed ACL tab check:", {
-                isLoggedIn,
-                userRole,
-                requiresOwner: tab.requiresOwner,
-                aclMode,
-            });
-        }
+        // Debug logging for tab filtering
+        console.log(`Tab ${tab.id} filter check:`, {
+            isLoggedIn,
+            userRole,
+            viewAsRole,
+            currentRole,
+            requiresAdmin: tab.requiresAdmin,
+            requiresOwner: tab.requiresOwner,
+            requiresWrite: tab.requiresWrite,
+            visible: true,
+        });
         return true;
     });
 
@@ -1734,11 +1744,11 @@
             return;
         }
 
-        // Check permissions for exporting all events
+        // Check permissions for exporting all events using current effective role
         if (
             pubkeys.length === 0 &&
-            userRole !== "admin" &&
-            userRole !== "owner"
+            currentEffectiveRole !== "admin" &&
+            currentEffectiveRole !== "owner"
         ) {
             alert("Admin or owner permission required to export all events");
             return;
@@ -2290,6 +2300,33 @@
     $: {
         localStorage.setItem("selectedTab", selectedTab);
     }
+
+    // Handle permission view switching
+    function setViewAsRole(role) {
+        viewAsRole = role;
+        localStorage.setItem("viewAsRole", role);
+        console.log(
+            "View as role changed to:",
+            role,
+            "Current effective role:",
+            currentEffectiveRole,
+        );
+    }
+
+    // Reactive statement for current effective role
+    $: currentEffectiveRole =
+        viewAsRole && viewAsRole !== "" ? viewAsRole : userRole;
+
+    // Initialize viewAsRole from local storage if available
+    viewAsRole = localStorage.getItem("viewAsRole") || "";
+
+    // Get available roles based on user's actual role
+    function getAvailableRoles() {
+        const allRoles = ["owner", "admin", "write", "read"];
+        const userRoleIndex = allRoles.indexOf(userRole);
+        if (userRoleIndex === -1) return ["read"]; // Default to read if role not found
+        return allRoles.slice(userRoleIndex); // Return current role and all lower roles
+    }
 </script>
 
 <!-- Header -->
@@ -2311,7 +2348,9 @@
                 <span class="app-title">
                     ORLY? dashboard
                     {#if isLoggedIn && userRole}
-                        <span class="permission-badge">{userRole}</span>
+                        <span class="permission-badge"
+                            >{currentEffectiveRole}</span
+                        >
                     {/if}
                 </span>
             </div>
@@ -2385,7 +2424,7 @@
                         📤 Export My Events
                     </button>
                 </div>
-                {#if userRole === "admin" || userRole === "owner"}
+                {#if currentEffectiveRole === "admin" || currentEffectiveRole === "owner"}
                     <div class="export-section">
                         <h3>Export All Events</h3>
                         <p>
@@ -2407,7 +2446,7 @@
             {/if}
         {:else if selectedTab === "import"}
             <div class="import-section">
-                {#if isLoggedIn && (userRole === "admin" || userRole === "owner")}
+                {#if isLoggedIn && (currentEffectiveRole === "admin" || currentEffectiveRole === "owner")}
                     <h3>Import Events</h3>
                     <p>
                         Upload a JSONL file to import events into the database.
@@ -3246,6 +3285,40 @@
                             </div>
                         {/if}
                     </div>
+
+                    <!-- View as section -->
+                    {#if userRole && userRole !== "read"}
+                        <div class="view-as-section">
+                            <h3>View as Role</h3>
+                            <p>
+                                See the interface as it appears for different
+                                permission levels:
+                            </p>
+                            <div class="radio-group">
+                                {#each getAvailableRoles() as role}
+                                    <label class="radio-label">
+                                        <input
+                                            type="radio"
+                                            name="viewAsRole"
+                                            value={role}
+                                            checked={currentEffectiveRole ===
+                                                role}
+                                            on:change={() =>
+                                                setViewAsRole(
+                                                    role === userRole
+                                                        ? ""
+                                                        : role,
+                                                )}
+                                        />
+                                        {role.charAt(0).toUpperCase() +
+                                            role.slice(1)}{role === userRole
+                                            ? " (Default)"
+                                            : ""}
+                                    </label>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
                 {:else if isLoggedIn && userPubkey}
                     <div class="profile-loading-section">
                         <h3>Profile Loading</h3>
@@ -4126,13 +4199,13 @@
     .profile-username {
         margin: 0;
         font-size: 1.1rem;
-        color: #000; /* contrasting over banner */
+        color: var(--text-color); /* contrasting over banner */
         text-shadow: 0 3px 6px rgba(255, 255, 255, 1);
     }
 
     .profile-nip05-inline {
         font-size: 0.85rem;
-        color: #000; /* subtle but contrasting */
+        color: var(--text-color); /* subtle but contrasting */
         font-family: monospace;
         opacity: 0.95;
         text-shadow: 0 3px 6px rgba(255, 255, 255, 1);
@@ -4417,6 +4490,51 @@
         color: var(--warning);
         font-size: 1.1rem;
         font-weight: 500;
+    }
+
+    /* View as Section */
+    .view-as-section {
+        color: var(--text-color);
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+    }
+
+    .view-as-section h3 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1rem;
+        color: var(--primary);
+    }
+
+    .view-as-section p {
+        margin: 0.5rem 0;
+        font-size: 0.9rem;
+        opacity: 0.8;
+    }
+
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .radio-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 4px;
+        transition: background 0.2s;
+    }
+
+    .radio-label:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .radio-label input {
+        margin: 0;
     }
 
     /* Events View Container */
@@ -4979,9 +5097,11 @@
 
         .profile-username {
             font-size: 1rem;
+            color: var(--text-color);
         }
         .profile-nip05-inline {
             font-size: 0.8rem;
+            color: var(--text-color);
         }
 
         .import-view {
