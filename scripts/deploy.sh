@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 GO_VERSION="1.23.1"
-GOROOT="$HOME/.local/go"
+GOROOT="$HOME/go"
 GOPATH="$HOME"
 GOBIN="$HOME/.local/bin"
 GOENV_FILE="$HOME/.goenv"
@@ -84,13 +84,11 @@ install_go() {
     local download_url="https://golang.org/dl/${go_archive}"
     
     # Create directories
-    mkdir -p "$HOME/.local"
-    mkdir -p "$GOPATH"
     mkdir -p "$GOBIN"
     
-    # Download and extract Go
+    # Change to home directory and download Go
     log_info "Downloading Go from $download_url..."
-    cd /tmp
+    cd ~
     wget -q "$download_url" || {
         log_error "Failed to download Go"
         exit 1
@@ -104,8 +102,7 @@ install_go() {
     
     # Extract Go
     log_info "Extracting Go to $GOROOT..."
-    tar -xf "$go_archive" -C "$HOME/.local/"
-    mv "$HOME/.local/go" "$GOROOT"
+    tar -xf "$go_archive"
     
     # Clean up
     rm -f "$go_archive"
