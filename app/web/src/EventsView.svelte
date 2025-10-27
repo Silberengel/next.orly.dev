@@ -100,7 +100,7 @@
 </script>
 
 <div class="events-view-container">
-    {#if isLoggedIn && (userRole === "write" || userRole === "admin" || userRole === "owner")}
+    {#if isLoggedIn && (userRole === "read" || userRole === "write" || userRole === "admin" || userRole === "owner")}
         <div class="events-view-content" on:scroll={handleScroll}>
             {#if filteredEvents.length > 0}
                 {#each filteredEvents as event}
@@ -212,12 +212,12 @@
     {:else}
         <div class="permission-denied">
             <p>
-                ❌ Write, admin, or owner permission required to view all
+                ❌ Read, write, admin, or owner permission required to view all
                 events.
             </p>
         </div>
     {/if}
-    {#if isLoggedIn && (userRole === "write" || userRole === "admin" || userRole === "owner")}
+    {#if isLoggedIn && (userRole === "read" || userRole === "write" || userRole === "admin" || userRole === "owner")}
         <div class="events-view-header">
             <div class="events-view-toggle">
                 <label class="toggle-container">

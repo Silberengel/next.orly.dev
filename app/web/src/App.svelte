@@ -2213,7 +2213,8 @@
     $: if (
         selectedTab === "events" &&
         isLoggedIn &&
-        (userRole === "write" ||
+        (userRole === "read" ||
+            userRole === "write" ||
             userRole === "admin" ||
             userRole === "owner") &&
         allEvents.length === 0
