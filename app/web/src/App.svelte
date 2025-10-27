@@ -370,6 +370,9 @@
         // Toggle state is already updated by bind:checked
         console.log("Toggle changed, showOnlyMyEvents:", showOnlyMyEvents);
 
+        // Reset the attempt flag to allow reloading with new filter
+        hasAttemptedEventLoad = false;
+
         // Reload events with the new filter
         const authors =
             showOnlyMyEvents && isLoggedIn && userPubkey ? [userPubkey] : null;
@@ -2088,11 +2091,12 @@
     async function loadAllEvents(reset = false, authors = null) {
         if (
             !isLoggedIn ||
-            (userRole !== "write" &&
+            (userRole !== "read" &&
+                userRole !== "write" &&
                 userRole !== "admin" &&
                 userRole !== "owner")
         ) {
-            alert("Write, admin, or owner permission required");
+            alert("Read, write, admin, or owner permission required");
             return;
         }
 
@@ -2117,11 +2121,15 @@
                 authors,
                 "including delete events",
             );
+
+            // For reset, use current timestamp to get the most recent events
+            const untilTimestamp = reset
+                ? Math.floor(Date.now() / 1000)
+                : oldestEventTimestamp;
+
             const events = await fetchAllEvents({
                 limit: reset ? 100 : 200,
-                until: reset
-                    ? Math.floor(Date.now() / 1000)
-                    : oldestEventTimestamp,
+                until: untilTimestamp,
                 authors: authors,
             });
             console.log("Received events:", events.length, "events");
@@ -2210,6 +2218,9 @@
     }
 
     // Load events when events tab is selected (only if no events loaded yet)
+    // Track if we've already attempted to load events to prevent infinite loops
+    let hasAttemptedEventLoad = false;
+
     $: if (
         selectedTab === "events" &&
         isLoggedIn &&
@@ -2217,10 +2228,21 @@
             userRole === "write" ||
             userRole === "admin" ||
             userRole === "owner") &&
-        allEvents.length === 0
+        allEvents.length === 0 &&
+        !hasAttemptedEventLoad &&
+        !isLoadingEvents
     ) {
+        hasAttemptedEventLoad = true;
         const authors = showOnlyMyEvents && userPubkey ? [userPubkey] : null;
         loadAllEvents(true, authors);
+    }
+
+    // Reset the attempt flag when switching tabs or when showOnlyMyEvents changes
+    $: if (
+        selectedTab !== "events" ||
+        (selectedTab === "events" && allEvents.length > 0)
+    ) {
+        hasAttemptedEventLoad = false;
     }
 
     // NIP-98 authentication helper
@@ -2985,6 +3007,11 @@
                     {/if}
                 {:else if isLoggedIn && userPubkey}
                     <div class="profile-loading-section">
+                        <!-- Logout button in top-right corner -->
+                        <button
+                            class="logout-btn floating"
+                            on:click={handleLogout}>Log out</button
+                        >
                         <h3>Profile Loading</h3>
                         <p>Your profile metadata is being loaded...</p>
                         <button
@@ -3370,6 +3397,7 @@
     .profile-loading-section {
         padding: 1rem;
         text-align: center;
+        position: relative; /* Allow absolute positioning of floating logout button */
     }
 
     .profile-loading-section h3 {
