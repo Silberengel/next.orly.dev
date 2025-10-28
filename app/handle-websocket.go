@@ -56,6 +56,8 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 whitelist:
+	// Create an independent context for this connection
+	// This context will be cancelled when the connection closes or server shuts down
 	ctx, cancel := context.WithCancel(s.Ctx)
 	defer cancel()
 	var err error
@@ -107,7 +109,8 @@ whitelist:
 		log.D.F("AUTH challenge sent successfully to %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
-	go s.Pinger(ctx, conn, ticker, cancel)
+	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
+	go s.Pinger(ctx, conn, ticker)
 	defer func() {
 		log.D.F("closing websocket connection from %s", remote)
 
@@ -117,7 +120,11 @@ whitelist:
 
 		// Cancel all subscriptions for this connection
 		log.D.F("cancelling subscriptions for %s", remote)
-		listener.publishers.Receive(&W{Cancel: true})
+		listener.publishers.Receive(&W{
+			Cancel: true,
+			Conn:   listener.conn,
+			remote: listener.remote,
+		})
 
 		// Log detailed connection statistics
 		dur := time.Since(listener.startTime)
@@ -155,6 +162,11 @@ whitelist:
 		typ, msg, err = conn.Read(ctx)
 
 		if err != nil {
+			// Check if the error is due to context cancellation
+			if err == context.Canceled || strings.Contains(err.Error(), "context canceled") {
+				log.T.F("connection from %s cancelled (context done): %v", remote, err)
+				return
+			}
 			if strings.Contains(
 				err.Error(), "use of closed network connection",
 			) {
@@ -233,12 +245,12 @@ whitelist:
 
 func (s *Server) Pinger(
 	ctx context.Context, conn *websocket.Conn, ticker *time.Ticker,
-	cancel context.CancelFunc,
 ) {
 	defer func() {
 		log.D.F("pinger shutting down")
-		cancel()
 		ticker.Stop()
+		// DO NOT call cancel here - the pinger should not be able to cancel the connection context
+		// The connection handler will cancel the context when the connection is actually closing
 	}()
 	var err error
 	pingCount := 0
