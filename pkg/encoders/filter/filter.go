@@ -208,18 +208,16 @@ func (f *F) Marshal(dst []byte) (b []byte) {
 			} else {
 				first = true
 			}
-			// append the key with # prefix
-			dst = append(dst, '"', '#', tKey[0], '"', ':')
-			dst = append(dst, '[')
-			for i, value := range values {
-				dst = append(dst, '"')
-				dst = append(dst, value...)
-				dst = append(dst, '"')
-				if i < len(values)-1 {
-					dst = append(dst, ',')
-				}
+		// append the key with # prefix
+		dst = append(dst, '"', '#', tKey[0], '"', ':')
+		dst = append(dst, '[')
+		for i, value := range values {
+			dst = text.AppendQuote(dst, value, text.NostrEscape)
+			if i < len(values)-1 {
+				dst = append(dst, ',')
 			}
-			dst = append(dst, ']')
+		}
+		dst = append(dst, ']')
 		}
 	}
 	if f.Since != nil && f.Since.U64() > 0 {
