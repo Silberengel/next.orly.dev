@@ -431,7 +431,12 @@ func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubke
 			pTags := ev.Tags.GetAll([]byte("p"))
 			found := false
 			for _, pTag := range pTags {
-				if bytes.Equal(pTag.Value(), loggedInPubkey) {
+				// pTag.Value() returns hex-encoded string; decode to bytes
+				pt, err := hex.Dec(string(pTag.Value()))
+				if err != nil {
+					continue
+				}
+				if bytes.Equal(pt, loggedInPubkey) {
 					found = true
 					break
 				}

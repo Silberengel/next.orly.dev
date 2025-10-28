@@ -75,9 +75,9 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	// Validate message for invalid characters before processing
 	if err := validateJSONMessage(msg); err != nil {
 		log.E.F("%s message validation FAILED (len=%d): %v", remote, len(msg), err)
-		log.T.F("%s invalid message content: %q", remote, msgPreview)
-		// Send error notice to client
-		if noticeErr := noticeenvelope.NewFrom("invalid message format: " + err.Error()).Write(l); noticeErr != nil {
+		// Don't log the actual message content as it contains binary data
+		// Send generic error notice to client
+		if noticeErr := noticeenvelope.NewFrom("invalid message format: contains invalid characters").Write(l); noticeErr != nil {
 			log.E.F("%s failed to send validation error notice: %v", remote, noticeErr)
 		}
 		return
@@ -94,10 +94,10 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 			"%s envelope identification FAILED (len=%d): %v", remote, len(msg),
 			err,
 		)
-		log.T.F("%s malformed message content: %q", remote, msgPreview)
+		// Don't log message preview as it may contain binary data
 		chk.E(err)
 		// Send error notice to client
-		if noticeErr := noticeenvelope.NewFrom("malformed message: " + err.Error()).Write(l); noticeErr != nil {
+		if noticeErr := noticeenvelope.NewFrom("malformed message").Write(l); noticeErr != nil {
 			log.E.F(
 				"%s failed to send malformed message notice: %v", remote,
 				noticeErr,
@@ -132,18 +132,18 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	default:
 		err = fmt.Errorf("unknown envelope type %s", t)
 		log.E.F(
-			"%s unknown envelope type: %s (payload: %q)", remote, t,
-			string(rem),
+			"%s unknown envelope type: %s (payload_len: %d)", remote, t,
+			len(rem),
 		)
 	}
 
 	// Handle any processing errors
 	if err != nil {
 		log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
-		log.T.F("%s error context - original message: %q", remote, msgPreview)
+		// Don't log message preview as it may contain binary data
 
-		// Send error notice to client
-		noticeMsg := fmt.Sprintf("%s: %s", t, err.Error())
+		// Send error notice to client (use generic message to avoid control chars in errors)
+		noticeMsg := fmt.Sprintf("%s processing failed", t)
 		if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
 			log.E.F(
 				"%s failed to send error notice after %s processing failure: %v",

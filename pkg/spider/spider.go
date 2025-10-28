@@ -27,6 +27,8 @@ const (
 	ReconnectDelay = 5 * time.Second
 	// MaxReconnectDelay is the maximum delay between reconnection attempts
 	MaxReconnectDelay = 5 * time.Minute
+	// BlackoutPeriod is the duration to blacklist a relay after MaxReconnectDelay is reached
+	BlackoutPeriod = 24 * time.Hour
 )
 
 // Spider manages connections to admin relays and syncs events for followed pubkeys
@@ -64,8 +66,12 @@ type RelayConnection struct {
 	subscriptions map[string]*BatchSubscription
 
 	// Disconnection tracking
-	lastDisconnect time.Time
-	reconnectDelay time.Duration
+	lastDisconnect      time.Time
+	reconnectDelay      time.Duration
+	connectionStartTime time.Time
+
+	// Blackout tracking for IP filters
+	blackoutUntil time.Time
 }
 
 // BatchSubscription represents a subscription for a batch of pubkeys
@@ -261,6 +267,20 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 		default:
 		}
 
+		// Check if relay is blacked out
+		if rc.isBlackedOut() {
+			log.D.F("spider: %s is blacked out until %v", rc.url, rc.blackoutUntil)
+			select {
+			case <-rc.ctx.Done():
+				return
+			case <-time.After(time.Until(rc.blackoutUntil)):
+				// Blackout expired, reset delay and try again
+				rc.reconnectDelay = ReconnectDelay
+				log.I.F("spider: blackout period ended for %s, retrying", rc.url)
+			}
+			continue
+		}
+
 		// Attempt to connect
 		if err := rc.connect(); chk.E(err) {
 			log.W.F("spider: failed to connect to %s: %v", rc.url, err)
@@ -269,7 +289,9 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 		}
 
 		log.I.F("spider: connected to %s", rc.url)
+		rc.connectionStartTime = time.Now()
 		rc.reconnectDelay = ReconnectDelay // Reset delay on successful connection
+		rc.blackoutUntil = time.Time{}     // Clear blackout on successful connection
 
 		// Create subscriptions for follow list
 		rc.createSubscriptions(followList)
@@ -278,6 +300,19 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 		<-rc.client.Context().Done()
 
 		log.W.F("spider: disconnected from %s: %v", rc.url, rc.client.ConnectionCause())
+		
+		// Check if disconnection happened very quickly (likely IP filter)
+		connectionDuration := time.Since(rc.connectionStartTime)
+		const quickDisconnectThreshold = 30 * time.Second
+		if connectionDuration < quickDisconnectThreshold {
+			log.W.F("spider: quick disconnection from %s after %v (likely IP filter)", rc.url, connectionDuration)
+			// Don't reset the delay, keep the backoff
+			rc.waitBeforeReconnect()
+		} else {
+			// Normal disconnection, reset backoff for future connections
+			rc.reconnectDelay = ReconnectDelay
+		}
+		
 		rc.handleDisconnection()
 
 		// Clean up
@@ -306,11 +341,19 @@ func (rc *RelayConnection) waitBeforeReconnect() {
 	case <-time.After(rc.reconnectDelay):
 	}
 
-	// Exponential backoff
+	// Exponential backoff - double every time
 	rc.reconnectDelay *= 2
-	if rc.reconnectDelay > MaxReconnectDelay {
-		rc.reconnectDelay = MaxReconnectDelay
+	
+	// If backoff exceeds 5 minutes, blackout for 24 hours
+	if rc.reconnectDelay >= MaxReconnectDelay {
+		rc.blackoutUntil = time.Now().Add(BlackoutPeriod)
+		log.W.F("spider: max backoff exceeded for %s (reached %v), blacking out for 24 hours", rc.url, rc.reconnectDelay)
 	}
+}
+
+// isBlackedOut returns true if the relay is currently blacked out
+func (rc *RelayConnection) isBlackedOut() bool {
+	return !rc.blackoutUntil.IsZero() && time.Now().Before(rc.blackoutUntil)
 }
 
 // handleDisconnection records disconnection time for catch-up logic

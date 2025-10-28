@@ -176,7 +176,8 @@ func TestCheckKindsPolicy(t *testing.T) {
 func TestCheckRulePolicy(t *testing.T) {
 	// Create test event
 	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
-	addTag(testEvent, "p", "test-pubkey-2")
+	// Add p tag with hex-encoded pubkey
+	addTag(testEvent, "p", hex.Enc([]byte("test-pubkey-2")))
 	addTag(testEvent, "expiration", "1234567890")
 
 	tests := []struct {
