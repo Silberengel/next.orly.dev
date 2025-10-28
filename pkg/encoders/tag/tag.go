@@ -144,6 +144,7 @@ func (t *T) Key() (key []byte) {
 }
 
 func (t *T) Value() (key []byte) {
+	if t==nil {return}
 	if len(t.T) > Value {
 		return t.T[Value]
 	}

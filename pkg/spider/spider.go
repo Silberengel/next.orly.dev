@@ -2,7 +2,6 @@ package spider
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +11,7 @@ import (
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
 	"next.orly.dev/pkg/interfaces/publisher"
@@ -414,17 +414,20 @@ func (rc *RelayConnection) createBatchSubscription(batchID string, pubkeys [][]b
 	}
 
 	// Create filters: one for authors, one for p tags
-	var pTags tag.S
+	// For #p tag filters, all pubkeys must be in a single tag array as hex-encoded strings
+	tagElements := [][]byte{[]byte("p")} // First element is the key
 	for _, pk := range pubkeys {
-		pTags = append(pTags, tag.NewFromAny("p", pk))
+		pkHex := hex.EncAppend(nil, pk)
+		tagElements = append(tagElements, pkHex)
 	}
+	pTags := &tag.S{tag.NewFromBytesSlice(tagElements...)}
 
 	filters := filter.NewS(
 		&filter.F{
 			Authors: tag.NewFromBytesSlice(pubkeys...),
 		},
 		&filter.F{
-			Tags: tag.NewS(pTags...),
+			Tags: pTags,
 		},
 	)
 
@@ -465,10 +468,6 @@ func (bs *BatchSubscription) handleEvents() {
 
 			// Save event to database
 			if _, err := bs.relay.spider.db.SaveEvent(bs.relay.ctx, ev); err != nil {
-				if !chk.E(err) {
-					log.T.F("spider: saved event %s from %s",
-						hex.EncodeToString(ev.ID[:]), bs.relay.url)
-				}
 			} else {
 				// Publish event if it was newly saved
 				if bs.relay.spider.pub != nil {
@@ -527,10 +526,14 @@ func (rc *RelayConnection) performCatchup(sub *BatchSubscription, disconnectTime
 	sinceTs := timestamp.T{V: since.Unix()}
 	untilTs := timestamp.T{V: until.Unix()}
 
-	var pTags tag.S
+	// Create filters with hex-encoded pubkeys for #p tags
+	// All pubkeys must be in a single tag array
+	tagElements := [][]byte{[]byte("p")} // First element is the key
 	for _, pk := range sub.pubkeys {
-		pTags = append(pTags, tag.NewFromAny("p", pk))
+		pkHex := hex.EncAppend(nil, pk)
+		tagElements = append(tagElements, pkHex)
 	}
+	pTags := &tag.S{tag.NewFromBytesSlice(tagElements...)}
 
 	filters := filter.NewS(
 		&filter.F{
@@ -539,7 +542,7 @@ func (rc *RelayConnection) performCatchup(sub *BatchSubscription, disconnectTime
 			Until:   &untilTs,
 		},
 		&filter.F{
-			Tags:  tag.NewS(pTags...),
+			Tags:  pTags,
 			Since: &sinceTs,
 			Until: &untilTs,
 		},
@@ -582,7 +585,7 @@ func (rc *RelayConnection) performCatchup(sub *BatchSubscription, disconnectTime
 			if _, err := rc.spider.db.SaveEvent(rc.ctx, ev); err != nil {
 				if !chk.E(err) {
 					log.T.F("spider: catch-up saved event %s from %s",
-						hex.EncodeToString(ev.ID[:]), rc.url)
+						hex.Enc(ev.ID[:]), rc.url)
 				}
 			} else {
 				// Publish event if it was newly saved

@@ -75,9 +75,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	// Validate message for invalid characters before processing
 	if err := validateJSONMessage(msg); err != nil {
 		log.E.F("%s message validation FAILED (len=%d): %v", remote, len(msg), err)
-		// Don't log the actual message content as it contains binary data
-		// Send generic error notice to client
-		if noticeErr := noticeenvelope.NewFrom("invalid message format: contains invalid characters").Write(l); noticeErr != nil {
+		if noticeErr := noticeenvelope.NewFrom(fmt.Sprintf("invalid message format: contains invalid characters: %s", msg)).Write(l); noticeErr != nil {
 			log.E.F("%s failed to send validation error notice: %v", remote, noticeErr)
 		}
 		return

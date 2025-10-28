@@ -307,7 +307,7 @@ func (r *Client) ConnectWithTLS(
 					if r.notices != nil {
 						r.notices <- env.Message
 					} else {
-						log.E.F("NOTICE from %s: '%s'\n", r.URL, env.Message)
+						log.E.F("NOTICE from %s: '%s'", r.URL, env.Message)
 					}
 				case authenvelope.L:
 					env := authenvelope.NewChallenge()
