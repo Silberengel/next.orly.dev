@@ -6,9 +6,7 @@ import (
 	"net/http"
 	pp "net/http/pprof"
 	"os"
-	"os/exec"
 	"os/signal"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -26,33 +24,7 @@ import (
 	"next.orly.dev/pkg/version"
 )
 
-// openBrowser attempts to open the specified URL in the default browser.
-// It supports multiple platforms including Linux, macOS, and Windows.
-func openBrowser(url string) {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
-	case "windows":
-		err = exec.Command(
-			"rundll32", "url.dll,FileProtocolHandler", url,
-		).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	default:
-		log.W.F("unsupported platform for opening browser: %s", runtime.GOOS)
-		return
-	}
-
-	if err != nil {
-		log.E.F("failed to open browser: %v", err)
-	} else {
-		log.I.F("opened browser to %s", url)
-	}
-}
-
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
 	var err error
 	var cfg *config.C
 	if cfg, err = config.New(); chk.T(err) {
@@ -80,11 +52,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
-	if cfg.OpenPprofWeb && cfg.Pprof != "" && !cfg.PprofHTTP {
-		log.I.F("enabling HTTP pprof server to support web viewer")
-		cfg.PprofHTTP = true
-	}
 	// Ensure profiling is stopped on interrupts (SIGINT/SIGTERM) as well as on normal exit
 	var profileStopOnce sync.Once
 	profileStop := func() {}
@@ -318,16 +285,6 @@ func main() {
 			defer cancelShutdown()
 			_ = ppSrv.Shutdown(shutdownCtx)
 		}()
-
-		// Open the pprof web viewer if enabled
-		if cfg.OpenPprofWeb && cfg.Pprof != "" {
-			pprofURL := "http://localhost:6060/debug/pprof/"
-			go func() {
-				// Wait a moment for the server to start
-				time.Sleep(500 * time.Millisecond)
-				openBrowser(pprofURL)
-			}()
-		}
 	}
 
 	// Start health check HTTP server if configured
