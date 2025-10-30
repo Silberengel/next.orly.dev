@@ -161,6 +161,175 @@ func (s *TestSuite) registerTests() {
 			Required: true,
 			Func:     testSubscriptionClose,
 		},
+		// Filter tests
+		{
+			Name:         "Since and until filters are inclusive",
+			Required:     true,
+			Func:         testSinceUntilAreInclusive,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:     "Limit zero works",
+			Required: true,
+			Func:     testLimitZero,
+		},
+		// Find tests
+		{
+			Name:         "Events are ordered from newest to oldest",
+			Required:     true,
+			Func:         testEventsOrderedFromNewestToOldest,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Newest events are returned when filter is limited",
+			Required:     true,
+			Func:         testNewestEventsWhenLimited,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Finds by pubkey and kind",
+			Required:     true,
+			Func:         testFindByPubkeyAndKind,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Finds by pubkey and tags",
+			Required:     true,
+			Func:         testFindByPubkeyAndTags,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Finds by kind and tags",
+			Required:     true,
+			Func:         testFindByKindAndTags,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Finds by scrape",
+			Required:     true,
+			Func:         testFindByScrape,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		// Replaceable event tests
+		{
+			Name:         "Replaces metadata",
+			Required:     true,
+			Func:         testReplacesMetadata,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Replaces contact list",
+			Required:     true,
+			Func:         testReplacesContactList,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Replaced events are still available by ID",
+			Required:     false,
+			Func:         testReplacedEventsStillAvailableByID,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Replaceable events replace older ones",
+			Required:     true,
+			Func:         testReplaceableEventRemovesPrevious,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Replaceable events rejected if a newer one exists",
+			Required:     true,
+			Func:         testReplaceableEventRejectedIfFuture,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Addressable events replace older ones",
+			Required:     true,
+			Func:         testAddressableEventRemovesPrevious,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Addressable events rejected if a newer one exists",
+			Required:     true,
+			Func:         testAddressableEventRejectedIfFuture,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		// Deletion tests
+		{
+			Name:         "Deletes by a-tag address",
+			Required:     true,
+			Func:         testDeleteByAddr,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Delete by a-tag deletes older but not newer",
+			Required:     true,
+			Func:         testDeleteByAddrOnlyDeletesOlder,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Delete by a-tag is bound by a-tag",
+			Required:     true,
+			Func:         testDeleteByAddrIsBoundByTag,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		// Ephemeral tests
+		{
+			Name:         "Ephemeral subscriptions work",
+			Required:     false,
+			Func:         testEphemeralSubscriptionsWork,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Persists ephemeral events",
+			Required:     false,
+			Func:         testPersistsEphemeralEvents,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		// EOSE tests
+		{
+			Name:     "Supports EOSE",
+			Required: true,
+			Func:     testSupportsEose,
+		},
+		{
+			Name:     "Closes complete subscriptions after EOSE",
+			Required: false,
+			Func:     testClosesCompleteSubscriptionsAfterEose,
+		},
+		{
+			Name:     "Keeps open incomplete subscriptions after EOSE",
+			Required: true,
+			Func:     testKeepsOpenIncompleteSubscriptionsAfterEose,
+		},
+		// JSON tests
+		{
+			Name:         "Accepts events with empty tags",
+			Required:     false,
+			Func:         testAcceptsEventsWithEmptyTags,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		{
+			Name:         "Accepts NIP-01 JSON escape sequences",
+			Required:     true,
+			Func:         testAcceptsNip1JsonEscapeSequences,
+			Dependencies: []string{"Publishes basic event"},
+		},
+		// Registration tests
+		{
+			Name:     "Sends OK after EVENT",
+			Required: true,
+			Func:     testSendsOkAfterEvent,
+		},
+		{
+			Name:     "Verifies event signatures",
+			Required: true,
+			Func:     testVerifiesSignatures,
+		},
+		{
+			Name:     "Verifies event ID hashes",
+			Required: true,
+			Func:     testVerifiesIdHashes,
+		},
 	}
 	for _, tc := range allTests {
 		s.AddTest(tc)
