@@ -283,17 +283,36 @@ func (p *P) Deliver(ev *event.E) {
 				hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
 
 			// Check for timeout specifically
-			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+			isTimeout := strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded")
+			if isTimeout {
 				log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)",
 					hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
 			}
 
-			// Log connection cleanup
-			log.D.F("removing failed subscriber connection: %s", d.sub.remote)
+			// Only close connection on permanent errors, not transient timeouts
+			// WebSocket write errors typically indicate connection issues, but we should
+			// distinguish between timeouts (client might be slow) and connection errors
+			isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
+				strings.Contains(err.Error(), "broken pipe") ||
+				strings.Contains(err.Error(), "connection reset") ||
+				websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
+					websocket.CloseGoingAway,
+					websocket.CloseNoStatusReceived)
 
-			// On error, remove the subscriber connection safely
-			p.removeSubscriber(d.w)
-			_ = d.w.Close()
+			if isConnectionError {
+				log.D.F("removing failed subscriber connection due to connection error: %s", d.sub.remote)
+				p.removeSubscriber(d.w)
+				_ = d.w.Close()
+			} else if isTimeout {
+				// For timeouts, log but don't immediately close - give it another chance
+				// The read deadline will catch dead connections eventually
+				log.W.F("subscription delivery timeout for %s (client may be slow), skipping event but keeping connection", d.sub.remote)
+			} else {
+				// Unknown error - be conservative and close
+				log.D.F("removing failed subscriber connection due to unknown error: %s", d.sub.remote)
+				p.removeSubscriber(d.w)
+				_ = d.w.Close()
+			}
 			continue
 		}
 
