@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
 	"testing"
 	"time"
 
@@ -34,7 +33,8 @@ func TestRelay(t *testing.T) {
 		relayURL = testRelayURL
 	} else {
 		// Start local relay for testing
-		if relay, err = startTestRelay(); err != nil {
+		var port int
+		if relay, port, err = startTestRelay(); err != nil {
 			t.Fatalf("Failed to start test relay: %v", err)
 		}
 		defer func() {
@@ -42,20 +42,22 @@ func TestRelay(t *testing.T) {
 				t.Logf("Error stopping relay: %v", stopErr)
 			}
 		}()
-		port := relayPort
-		if port == 0 {
-			port = 3334 // Default port
-		}
 		relayURL = fmt.Sprintf("ws://127.0.0.1:%d", port)
-		// Wait for relay to be ready
-		time.Sleep(2 * time.Second)
+		t.Logf("Waiting for relay to be ready at %s...", relayURL)
+		// Wait for relay to be ready - try connecting to verify it's up
+		if err = waitForRelay(relayURL, 10*time.Second); err != nil {
+			t.Fatalf("Relay not ready after timeout: %v", err)
+		}
+		t.Logf("Relay is ready at %s", relayURL)
 	}
 
 	// Create test suite
+	t.Logf("Creating test suite for %s...", relayURL)
 	suite, err := relaytester.NewTestSuite(relayURL)
 	if err != nil {
 		t.Fatalf("Failed to create test suite: %v", err)
 	}
+	t.Logf("Test suite created, running tests...")
 
 	// Run tests
 	var results []relaytester.TestResult
@@ -92,20 +94,43 @@ func TestRelay(t *testing.T) {
 	}
 }
 
-func startTestRelay() (relay *run.Relay, err error) {
+func startTestRelay() (relay *run.Relay, port int, err error) {
 	cfg := &config.C{
-		AppName:    "ORLY-TEST",
-		DataDir:    relayDataDir,
-		Listen:     "127.0.0.1",
-		Port:       relayPort,
-		LogLevel:   "warn",
-		DBLogLevel: "warn",
-		ACLMode:    "none",
+		AppName:             "ORLY-TEST",
+		DataDir:             relayDataDir,
+		Listen:              "127.0.0.1",
+		Port:                0, // Always use random port, unless overridden via -port flag
+		HealthPort:          0,
+		EnableShutdown:      false,
+		LogLevel:            "warn",
+		DBLogLevel:          "warn",
+		DBBlockCacheMB:      512,
+		DBIndexCacheMB:      256,
+		LogToStdout:         false,
+		PprofHTTP:           false,
+		ACLMode:             "none",
+		AuthRequired:        false,
+		AuthToWrite:         false,
+		SubscriptionEnabled: false,
+		MonthlyPriceSats:    6000,
+		FollowListFrequency: time.Hour,
+		WebDisableEmbedded:  false,
+		SprocketEnabled:     false,
+		SpiderMode:          "none",
+		PolicyEnabled:       false,
 	}
 
-	// Set default port if not specified
-	if cfg.Port == 0 {
-		cfg.Port = 3334
+	// Use explicitly set port if provided via flag, otherwise find an available port
+	if relayPort > 0 {
+		cfg.Port = relayPort
+	} else {
+		var listener net.Listener
+		if listener, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+			return nil, 0, fmt.Errorf("failed to find available port: %w", err)
+		}
+		addr := listener.Addr().(*net.TCPAddr)
+		cfg.Port = addr.Port
+		listener.Close()
 	}
 
 	// Set default data dir if not specified
@@ -125,21 +150,34 @@ func startTestRelay() (relay *run.Relay, err error) {
 
 	// Start relay
 	if relay, err = run.Start(cfg, opts); err != nil {
-		return nil, fmt.Errorf("failed to start relay: %w", err)
+		return nil, 0, fmt.Errorf("failed to start relay: %w", err)
 	}
 
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		if relay != nil {
-			relay.Stop()
-		}
-		os.Exit(0)
-	}()
+	return relay, cfg.Port, nil
+}
 
-	return relay, nil
+// waitForRelay waits for the relay to be ready by attempting to connect
+func waitForRelay(url string, timeout time.Duration) error {
+	// Extract host:port from ws:// URL
+	addr := url
+	if len(url) > 7 && url[:5] == "ws://" {
+		addr = url[5:]
+	}
+	deadline := time.Now().Add(timeout)
+	attempts := 0
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+		attempts++
+		if attempts%10 == 0 {
+			// Log every 10th attempt (every second)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timeout waiting for relay at %s after %d attempts", url, attempts)
 }
 
 func outputResults(results []relaytester.TestResult, t *testing.T) {

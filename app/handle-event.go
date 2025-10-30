@@ -176,6 +176,18 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 		return
 	}
+	// validate timestamp - reject events too far in the future (more than 1 hour)
+	now := time.Now().Unix()
+	if env.E.CreatedAt > now+3600 {
+		if err = Ok.Invalid(
+			l, env,
+			"timestamp too far in the future",
+		); chk.E(err) {
+			return
+		}
+		return
+	}
+
 	// verify the signature
 	var ok bool
 	if ok, err = env.Verify(); chk.T(err) {

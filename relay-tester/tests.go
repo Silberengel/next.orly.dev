@@ -260,7 +260,7 @@ func testRejectFutureEvent(client *Client, key1, key2 *KeyPair) (result TestResu
 	if err != nil {
 		return TestResult{Pass: false, Info: fmt.Sprintf("failed to create event: %v", err)}
 	}
-	ev.CreatedAt = time.Now().Unix() + 3600 // 1 hour in the future
+	ev.CreatedAt = time.Now().Unix() + 3601 // More than 1 hour in the future (should be rejected)
 	// Re-sign with new timestamp
 	if err = ev.Sign(key1.Secret); err != nil {
 		return TestResult{Pass: false, Info: fmt.Sprintf("failed to re-sign: %v", err)}
@@ -327,12 +327,14 @@ func testReplaceableEvents(client *Client, key1, key2 *KeyPair) (result TestResu
 	if err != nil || !accepted {
 		return TestResult{Pass: false, Info: "second event not accepted"}
 	}
-	time.Sleep(200 * time.Millisecond)
+	// Wait longer for replacement to complete
+	time.Sleep(500 * time.Millisecond)
 	filter := map[string]interface{}{
 		"kinds":   []int{int(kind.ProfileMetadata.K)},
 		"authors": []string{hex.Enc(key1.Pubkey)},
+		"limit":   2, // Set limit > 1 to get multiple versions of replaceable events
 	}
-	events, err := client.GetEvents("test-replaceable", []interface{}{filter}, 2*time.Second)
+	events, err := client.GetEvents("test-replaceable", []interface{}{filter}, 3*time.Second)
 	if err != nil {
 		return TestResult{Pass: false, Info: fmt.Sprintf("failed to get events: %v", err)}
 	}
@@ -419,7 +421,8 @@ func testDeletionEvents(client *Client, key1, key2 *KeyPair) (result TestResult)
 	if err != nil || !accepted {
 		return TestResult{Pass: false, Info: "target event not accepted"}
 	}
-	time.Sleep(200 * time.Millisecond)
+	// Wait longer for event to be indexed
+	time.Sleep(500 * time.Millisecond)
 	// Now create deletion event
 	deleteEv, err := CreateDeleteEvent(key1.Secret, [][]byte{targetEv.ID}, "deletion reason")
 	if err != nil {

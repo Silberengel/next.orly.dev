@@ -91,7 +91,8 @@ func CreateEphemeralEvent(signer *p256k.Signer, kindNum uint16, content string) 
 func CreateDeleteEvent(signer *p256k.Signer, eventIDs [][]byte, reason string) (ev *event.E, err error) {
 	tags := tag.NewS()
 	for _, id := range eventIDs {
-		tags.Append(tag.NewFromBytesSlice([]byte("e"), id))
+		// e tags must contain hex-encoded event IDs
+		tags.Append(tag.NewFromBytesSlice([]byte("e"), []byte(hex.Enc(id))))
 	}
 	if reason != "" {
 		tags.Append(tag.NewFromBytesSlice([]byte("content"), []byte(reason)))

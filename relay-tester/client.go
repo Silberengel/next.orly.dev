@@ -18,6 +18,8 @@ type Client struct {
 	url    string
 	mu     sync.Mutex
 	subs   map[string]chan []byte
+	okCh   chan []byte // Channel for OK messages
+	countCh chan []byte // Channel for COUNT messages
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -34,11 +36,13 @@ func NewClient(url string) (c *Client, err error) {
 		return
 	}
 	c = &Client{
-		conn:   conn,
-		url:    url,
-		subs:   make(map[string]chan []byte),
-		ctx:    ctx,
-		cancel: cancel,
+		conn:    conn,
+		url:     url,
+		subs:    make(map[string]chan []byte),
+		okCh:    make(chan []byte, 100),
+		countCh: make(chan []byte, 100),
+		ctx:     ctx,
+		cancel:  cancel,
 	}
 	go c.readLoop()
 	return
@@ -106,11 +110,22 @@ func (c *Client) readLoop() {
 				if subID, ok := raw[1].(string); ok {
 					if ch, exists := c.subs[subID]; exists {
 						close(ch)
+						delete(c.subs, subID)
 					}
 				}
 			}
 		case "OK":
-			// OK messages are handled by WaitForOK
+			// Route OK messages to okCh for WaitForOK
+			select {
+			case c.okCh <- msg:
+			default:
+			}
+		case "COUNT":
+			// Route COUNT messages to countCh for Count
+			select {
+			case c.countCh <- msg:
+			default:
+			}
 		case "NOTICE":
 			// Notice messages are logged
 		case "CLOSED":
@@ -140,7 +155,15 @@ func (c *Client) Subscribe(subID string, filters []interface{}) (ch chan []byte,
 func (c *Client) Unsubscribe(subID string) error {
 	c.mu.Lock()
 	if ch, exists := c.subs[subID]; exists {
-		close(ch)
+		// Channel might already be closed by EOSE, so use recover to handle gracefully
+		func() {
+			defer func() {
+				if recover() != nil {
+					// Channel was already closed, ignore
+				}
+			}()
+			close(ch)
+		}()
 		delete(c.subs, subID)
 	}
 	c.mu.Unlock()
@@ -149,10 +172,7 @@ func (c *Client) Unsubscribe(subID string) error {
 
 // Publish sends an EVENT message to the relay.
 func (c *Client) Publish(ev *event.E) (err error) {
-	evJSON, err := json.Marshal(ev.Serialize())
-	if err != nil {
-		return errorf.E("failed to marshal event: %w", err)
-	}
+	evJSON := ev.Serialize()
 	var evMap map[string]interface{}
 	if err = json.Unmarshal(evJSON, &evMap); err != nil {
 		return errorf.E("failed to unmarshal event: %w", err)
@@ -169,21 +189,14 @@ func (c *Client) WaitForOK(eventID []byte, timeout time.Duration) (accepted bool
 		select {
 		case <-ctx.Done():
 			return false, "", errorf.E("timeout waiting for OK response")
-		default:
-		}
-		var msg []byte
-		_, msg, err = c.conn.ReadMessage()
-		if err != nil {
-			return false, "", errorf.E("connection closed: %w", err)
-		}
-		var raw []interface{}
-		if err = json.Unmarshal(msg, &raw); err != nil {
-			continue
-		}
-		if len(raw) < 3 {
-			continue
-		}
-		if typ, ok := raw[0].(string); ok && typ == "OK" {
+		case msg := <-c.okCh:
+			var raw []interface{}
+			if err = json.Unmarshal(msg, &raw); err != nil {
+				continue
+			}
+			if len(raw) < 3 {
+				continue
+			}
 			if id, ok := raw[1].(string); ok && id == idStr {
 				accepted, _ = raw[2].(bool)
 				if len(raw) > 3 {
@@ -208,23 +221,16 @@ func (c *Client) Count(filters []interface{}) (count int64, err error) {
 		select {
 		case <-ctx.Done():
 			return 0, errorf.E("timeout waiting for COUNT response")
-		default:
-		}
-		_, msg, err := c.conn.ReadMessage()
-		if err != nil {
-			return 0, errorf.E("connection closed: %w", err)
-		}
-		var raw []interface{}
-		if err = json.Unmarshal(msg, &raw); err != nil {
-			continue
-		}
-		if len(raw) >= 3 {
-			if typ, ok := raw[0].(string); ok && typ == "COUNT" {
+		case msg := <-c.countCh:
+			var raw []interface{}
+			if err = json.Unmarshal(msg, &raw); err != nil {
+				continue
+			}
+			if len(raw) >= 3 {
 				if subID, ok := raw[1].(string); ok && subID == "count-sub" {
-					if countObj, ok := raw[2].(map[string]interface{}); ok {
-						if c, ok := countObj["count"].(float64); ok {
-							return int64(c), nil
-						}
+					// COUNT response format: ["COUNT", "subscription-id", count, approximate?]
+					if cnt, ok := raw[2].(float64); ok {
+						return int64(cnt), nil
 					}
 				}
 			}
@@ -234,12 +240,9 @@ func (c *Client) Count(filters []interface{}) (count int64, err error) {
 
 // Auth sends an AUTH message with the signed event.
 func (c *Client) Auth(ev *event.E) error {
-	evJSON, err := json.Marshal(ev.Serialize())
-	if err != nil {
-		return errorf.E("failed to marshal event: %w", err)
-	}
+	evJSON := ev.Serialize()
 	var evMap map[string]interface{}
-	if err = json.Unmarshal(evJSON, &evMap); err != nil {
+	if err := json.Unmarshal(evJSON, &evMap); err != nil {
 		return errorf.E("failed to unmarshal event: %w", err)
 	}
 	return c.Send([]interface{}{"AUTH", evMap})
