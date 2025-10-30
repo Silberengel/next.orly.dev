@@ -357,6 +357,57 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				)
 			}
 		} else {
+			// Check if policy defines this event as privileged (even if not in hardcoded list)
+			// Policy check will handle this later, but we can skip it here if not authenticated
+			// to avoid unnecessary processing
+			if l.policyManager != nil && l.policyManager.Manager != nil && l.policyManager.Manager.IsEnabled() {
+				rule, hasRule := l.policyManager.Rules[int(ev.Kind)]
+				if hasRule && rule.Privileged && accessLevel != "admin" {
+					pk := l.authedPubkey.Load()
+					if pk == nil {
+						// Not authenticated - cannot see policy-privileged events
+						log.T.C(
+							func() string {
+								return fmt.Sprintf(
+									"policy-privileged event %s denied - not authenticated",
+									ev.ID,
+								)
+							},
+						)
+						continue
+					}
+					// Policy check will verify authorization later, but we need to check
+					// if user is party to the event here
+					authorized := false
+					if utils.FastEqual(ev.Pubkey, pk) {
+						authorized = true
+					} else {
+						// Check p tags
+						pTags := ev.Tags.GetAll([]byte("p"))
+						for _, pTag := range pTags {
+							var pt []byte
+							if pt, err = hexenc.Dec(string(pTag.Value())); chk.E(err) {
+								continue
+							}
+							if utils.FastEqual(pt, pk) {
+								authorized = true
+								break
+							}
+						}
+					}
+					if !authorized {
+						log.T.C(
+							func() string {
+								return fmt.Sprintf(
+									"policy-privileged event %s does not contain the logged in pubkey %0x",
+									ev.ID, pk,
+								)
+							},
+						)
+						continue
+					}
+				}
+			}
 			tmp = append(tmp, ev)
 		}
 	}

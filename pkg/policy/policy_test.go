@@ -1495,3 +1495,363 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 		t.Error("Expected kind 2 to be allowed (no rule, default policy is allow)")
 	}
 }
+
+func TestPolicyFilterProcessing(t *testing.T) {
+	// Test policy filter processing using the provided filter JSON specification
+	filterJSON := []byte(`{
+		"kind": {
+			"whitelist": [4678, 10306, 30520, 30919]
+		},
+		"rules": {
+			"4678": {
+				"description": "Zenotp message events",
+				"script": "/home/orly/.config/ORLY/validate4678.js",
+				"privileged": true
+			},
+			"10306": {
+				"description": "End user whitelist changes",
+				"read_allow": [
+					"04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+				],
+				"privileged": true
+			},
+			"30520": {
+				"description": "Zenotp events",
+				"write_allow": [
+					"04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+				],
+				"privileged": true
+			},
+			"30919": {
+				"description": "Zenotp events",
+				"write_allow": [
+					"04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+				],
+				"privileged": true
+			}
+		}
+	}`)
+
+	// Create policy from JSON
+	policy, err := New(filterJSON)
+	if err != nil {
+		t.Fatalf("Failed to create policy from JSON: %v", err)
+	}
+
+	// Verify whitelist is set correctly
+	if len(policy.Kind.Whitelist) != 4 {
+		t.Errorf("Expected whitelist to have 4 kinds, got %d", len(policy.Kind.Whitelist))
+	}
+	expectedKinds := map[int]bool{4678: true, 10306: true, 30520: true, 30919: true}
+	for _, kind := range policy.Kind.Whitelist {
+		if !expectedKinds[kind] {
+			t.Errorf("Unexpected kind in whitelist: %d", kind)
+		}
+	}
+
+	// Verify rules are loaded correctly
+	if len(policy.Rules) != 4 {
+		t.Errorf("Expected 4 rules, got %d", len(policy.Rules))
+	}
+
+	// Verify rule 4678 (script-based)
+	rule4678, ok := policy.Rules[4678]
+	if !ok {
+		t.Fatal("Rule 4678 not found")
+	}
+	if rule4678.Description != "Zenotp message events" {
+		t.Errorf("Expected description 'Zenotp message events', got '%s'", rule4678.Description)
+	}
+	if rule4678.Script != "/home/orly/.config/ORLY/validate4678.js" {
+		t.Errorf("Expected script path '/home/orly/.config/ORLY/validate4678.js', got '%s'", rule4678.Script)
+	}
+	if !rule4678.Privileged {
+		t.Error("Expected rule 4678 to be privileged")
+	}
+
+	// Verify rule 10306 (read_allow)
+	rule10306, ok := policy.Rules[10306]
+	if !ok {
+		t.Fatal("Rule 10306 not found")
+	}
+	if rule10306.Description != "End user whitelist changes" {
+		t.Errorf("Expected description 'End user whitelist changes', got '%s'", rule10306.Description)
+	}
+	if len(rule10306.ReadAllow) != 1 {
+		t.Errorf("Expected 1 read_allow pubkey, got %d", len(rule10306.ReadAllow))
+	}
+	if rule10306.ReadAllow[0] != "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5" {
+		t.Errorf("Expected read_allow pubkey '04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5', got '%s'", rule10306.ReadAllow[0])
+	}
+	if !rule10306.Privileged {
+		t.Error("Expected rule 10306 to be privileged")
+	}
+
+	// Verify rule 30520 (write_allow)
+	rule30520, ok := policy.Rules[30520]
+	if !ok {
+		t.Fatal("Rule 30520 not found")
+	}
+	if rule30520.Description != "Zenotp events" {
+		t.Errorf("Expected description 'Zenotp events', got '%s'", rule30520.Description)
+	}
+	if len(rule30520.WriteAllow) != 1 {
+		t.Errorf("Expected 1 write_allow pubkey, got %d", len(rule30520.WriteAllow))
+	}
+	if rule30520.WriteAllow[0] != "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5" {
+		t.Errorf("Expected write_allow pubkey '04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5', got '%s'", rule30520.WriteAllow[0])
+	}
+	if !rule30520.Privileged {
+		t.Error("Expected rule 30520 to be privileged")
+	}
+
+	// Verify rule 30919 (write_allow)
+	rule30919, ok := policy.Rules[30919]
+	if !ok {
+		t.Fatal("Rule 30919 not found")
+	}
+	if rule30919.Description != "Zenotp events" {
+		t.Errorf("Expected description 'Zenotp events', got '%s'", rule30919.Description)
+	}
+	if len(rule30919.WriteAllow) != 1 {
+		t.Errorf("Expected 1 write_allow pubkey, got %d", len(rule30919.WriteAllow))
+	}
+	if rule30919.WriteAllow[0] != "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5" {
+		t.Errorf("Expected write_allow pubkey '04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5', got '%s'", rule30919.WriteAllow[0])
+	}
+	if !rule30919.Privileged {
+		t.Error("Expected rule 30919 to be privileged")
+	}
+
+	// Test kind whitelist filtering
+	t.Run("kind whitelist filtering", func(t *testing.T) {
+		eventSigner, eventPubkey := generateTestKeypair(t)
+		_, loggedInPubkey := generateTestKeypair(t)
+
+		// Test whitelisted kind (should pass kind check, but may fail other checks)
+		whitelistedEvent := createTestEvent(t, eventSigner, "test content", 4678)
+		addPTag(whitelistedEvent, loggedInPubkey)
+		allowed, err := policy.CheckPolicy("write", whitelistedEvent, loggedInPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		// Should be allowed because script isn't running (falls back to default "allow")
+		// and privileged check passes (loggedInPubkey is in p tag)
+		if !allowed {
+			t.Error("Expected whitelisted kind to be allowed when script not running and privileged check passes")
+		}
+
+		// Test non-whitelisted kind (should be denied)
+		nonWhitelistedEvent := createTestEvent(t, eventSigner, "test content", 1)
+		allowed, err = policy.CheckPolicy("write", nonWhitelistedEvent, eventPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected non-whitelisted kind to be denied")
+		}
+	})
+
+	// Test read access for kind 10306
+	t.Run("read access for kind 10306", func(t *testing.T) {
+		allowedPubkeyHex := "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+		allowedPubkeyBytes, err := hex.Dec(allowedPubkeyHex)
+		if err != nil {
+			t.Fatalf("Failed to decode allowed pubkey: %v", err)
+		}
+
+		// Create event with allowed pubkey using a temporary signer
+		// Note: We can't actually sign with just the pubkey, so we'll create the event
+		// with a random signer and then manually set the pubkey for testing
+		tempSigner, _ := generateTestKeypair(t)
+		event10306 := createTestEvent(t, tempSigner, "test content", 10306)
+		event10306.Pubkey = allowedPubkeyBytes
+		// Re-sign won't work without private key, but policy checks use the pubkey field
+		// So we'll test with the pubkey set correctly
+
+		// Test read access with allowed pubkey (logged in user matches event pubkey)
+		allowed, err := policy.CheckPolicy("read", event10306, allowedPubkeyBytes, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !allowed {
+			t.Error("Expected event to be allowed for read access with allowed pubkey")
+		}
+
+		// Test read access with non-allowed pubkey
+		_, unauthorizedPubkey := generateTestKeypair(t)
+		allowed, err = policy.CheckPolicy("read", event10306, unauthorizedPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for read access with non-allowed pubkey")
+		}
+
+		// Test read access without authentication (privileged check)
+		allowed, err = policy.CheckPolicy("read", event10306, nil, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for read access without authentication (privileged)")
+		}
+	})
+
+	// Test write access for kind 30520
+	t.Run("write access for kind 30520", func(t *testing.T) {
+		allowedPubkeyHex := "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+		allowedPubkeyBytes, err := hex.Dec(allowedPubkeyHex)
+		if err != nil {
+			t.Fatalf("Failed to decode allowed pubkey: %v", err)
+		}
+
+		// Create event with allowed pubkey using a temporary signer
+		// We'll set the pubkey manually for testing since we don't have the private key
+		tempSigner, _ := generateTestKeypair(t)
+		event30520 := createTestEvent(t, tempSigner, "test content", 30520)
+		event30520.Pubkey = allowedPubkeyBytes
+
+		// Test write access with allowed pubkey (event pubkey matches write_allow)
+		allowed, err := policy.CheckPolicy("write", event30520, allowedPubkeyBytes, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !allowed {
+			t.Error("Expected event to be allowed for write access with allowed pubkey")
+		}
+
+		// Test write access with non-allowed pubkey
+		unauthorizedSigner, unauthorizedPubkey := generateTestKeypair(t)
+		unauthorizedEvent := createTestEvent(t, unauthorizedSigner, "test content", 30520)
+		allowed, err = policy.CheckPolicy("write", unauthorizedEvent, unauthorizedPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for write access with non-allowed pubkey")
+		}
+
+		// Test write access without authentication (privileged check)
+		allowed, err = policy.CheckPolicy("write", event30520, nil, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for write access without authentication (privileged)")
+		}
+	})
+
+	// Test write access for kind 30919
+	t.Run("write access for kind 30919", func(t *testing.T) {
+		allowedPubkeyHex := "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+		allowedPubkeyBytes, err := hex.Dec(allowedPubkeyHex)
+		if err != nil {
+			t.Fatalf("Failed to decode allowed pubkey: %v", err)
+		}
+
+		// Create event with allowed pubkey using a temporary signer
+		// We'll set the pubkey manually for testing since we don't have the private key
+		tempSigner, _ := generateTestKeypair(t)
+		event30919 := createTestEvent(t, tempSigner, "test content", 30919)
+		event30919.Pubkey = allowedPubkeyBytes
+
+		// Test write access with allowed pubkey (event pubkey matches write_allow)
+		allowed, err := policy.CheckPolicy("write", event30919, allowedPubkeyBytes, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !allowed {
+			t.Error("Expected event to be allowed for write access with allowed pubkey")
+		}
+
+		// Test write access with non-allowed pubkey
+		unauthorizedSigner, unauthorizedPubkey := generateTestKeypair(t)
+		unauthorizedEvent := createTestEvent(t, unauthorizedSigner, "test content", 30919)
+		allowed, err = policy.CheckPolicy("write", unauthorizedEvent, unauthorizedPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for write access with non-allowed pubkey")
+		}
+
+		// Test write access without authentication (privileged check)
+		allowed, err = policy.CheckPolicy("write", event30919, nil, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied for write access without authentication (privileged)")
+		}
+	})
+
+	// Test privileged flag behavior with p tags
+	t.Run("privileged flag with p tags", func(t *testing.T) {
+		eventSigner, _ := generateTestKeypair(t)
+		_, loggedInPubkey := generateTestKeypair(t)
+		allowedPubkeyHex := "04eeb1ed409c0b9205e722f8bf1780f553b61876ef323aff16c9f80a9d8ee9f5"
+		allowedPubkeyBytes, err := hex.Dec(allowedPubkeyHex)
+		if err != nil {
+			t.Fatalf("Failed to decode allowed pubkey: %v", err)
+		}
+
+		// Create event with allowed pubkey and logged-in pubkey in p tag
+		event30520 := createTestEvent(t, eventSigner, "test content", 30520)
+		event30520.Pubkey = allowedPubkeyBytes
+		addPTag(event30520, loggedInPubkey)
+
+		// Test that event is allowed when logged-in pubkey is in p tag (privileged)
+		// and event pubkey matches write_allow
+		allowed, err := policy.CheckPolicy("write", event30520, loggedInPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if !allowed {
+			t.Error("Expected event to be allowed when event pubkey matches write_allow and logged-in pubkey is in p tag")
+		}
+
+		// Test that event is denied when logged-in pubkey is not in p tag and doesn't match event pubkey
+		event30520NoPTag := createTestEvent(t, eventSigner, "test content", 30520)
+		event30520NoPTag.Pubkey = allowedPubkeyBytes
+		allowed, err = policy.CheckPolicy("write", event30520NoPTag, loggedInPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event to be denied when logged-in pubkey is not in p tag (privileged check fails)")
+		}
+	})
+
+	// Test script-based rule (kind 4678)
+	t.Run("script-based rule for kind 4678", func(t *testing.T) {
+		eventSigner, _ := generateTestKeypair(t)
+		_, loggedInPubkey := generateTestKeypair(t)
+
+		event4678 := createTestEvent(t, eventSigner, "test content", 4678)
+		addPTag(event4678, loggedInPubkey)
+
+		// Test with script not running (should fall back to default policy)
+		allowed, err := policy.CheckPolicy("write", event4678, loggedInPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		// Should allow because default policy is "allow" and script is not running
+		// and privileged check passes (loggedInPubkey is in p tag)
+		if !allowed {
+			t.Error("Expected event to be allowed when script is not running (falls back to default 'allow') and privileged check passes")
+		}
+
+		// Test without authentication (privileged check should fail)
+		allowed, err = policy.CheckPolicy("write", event4678, nil, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		// Should be denied because privileged check fails without authentication
+		// The privileged check happens in checkRulePolicy before script check
+		// So it should be denied even though script is not running
+		if allowed {
+			t.Error("Expected event to be denied without authentication (privileged check)")
+		}
+	})
+}
