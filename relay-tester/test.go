@@ -292,6 +292,11 @@ func (s *TestSuite) registerTests() {
 			Func:     testSupportsEose,
 		},
 		{
+			Name:     "Subscription receives event after ping period",
+			Required: true,
+			Func:     testSubscriptionReceivesEventAfterPingPeriod,
+		},
+		{
 			Name:     "Closes complete subscriptions after EOSE",
 			Required: false,
 			Func:     testClosesCompleteSubscriptionsAfterEose,
@@ -418,6 +423,20 @@ func (s *TestSuite) RunTest(testName string) (result TestResult, err error) {
 // GetResults returns all test results.
 func (s *TestSuite) GetResults() map[string]TestResult {
 	return s.results
+}
+
+// ListTests returns a list of all test names in execution order.
+func (s *TestSuite) ListTests() []string {
+	return s.order
+}
+
+// GetTestNames returns all registered test names as a map (name -> required).
+func (s *TestSuite) GetTestNames() map[string]bool {
+	result := make(map[string]bool)
+	for name, tc := range s.tests {
+		result[name] = tc.Required
+	}
+	return result
 }
 
 // FormatJSON formats results as JSON.

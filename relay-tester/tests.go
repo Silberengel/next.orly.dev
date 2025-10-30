@@ -1632,6 +1632,96 @@ func testSupportsEose(client *Client, key1, key2 *KeyPair) (result TestResult) {
 	}
 }
 
+func testSubscriptionReceivesEventAfterPingPeriod(client *Client, key1, key2 *KeyPair) (result TestResult) {
+	// Create a second client for publishing
+	publisherClient, err := NewClient(client.URL())
+	if err != nil {
+		return TestResult{Pass: false, Info: fmt.Sprintf("failed to create publisher client: %v", err)}
+	}
+	defer publisherClient.Close()
+
+	// Subscribe to events from key1
+	filter := map[string]interface{}{
+		"authors": []string{hex.Enc(key1.Pubkey)},
+		"kinds":   []int{int(kind.TextNote.K)},
+	}
+	ch, err := client.Subscribe("test-ping-period", []interface{}{filter})
+	if err != nil {
+		return TestResult{Pass: false, Info: fmt.Sprintf("failed to subscribe: %v", err)}
+	}
+	defer client.Unsubscribe("test-ping-period")
+
+	// Wait for EOSE to ensure subscription is established
+	eoseTimeout := time.After(3 * time.Second)
+	gotEose := false
+	for !gotEose {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return TestResult{Pass: false, Info: "channel closed before EOSE"}
+			}
+			var raw []interface{}
+			if err = json.Unmarshal(msg, &raw); err != nil {
+				continue
+			}
+			if len(raw) >= 2 {
+				if typ, ok := raw[0].(string); ok && typ == "EOSE" {
+					gotEose = true
+					break
+				}
+			}
+		case <-eoseTimeout:
+			return TestResult{Pass: false, Info: "timeout waiting for EOSE"}
+		}
+	}
+
+	// Wait for at least one ping period (30 seconds) to ensure connection is idle
+	// and has been pinged at least once
+	pingPeriod := 35 * time.Second // Slightly longer than 30s to ensure at least one ping
+	time.Sleep(pingPeriod)
+
+	// Now publish an event from the publisher client that matches the subscription
+	ev, err := CreateEvent(key1.Secret, kind.TextNote.K, "event after ping period", nil)
+	if err != nil {
+		return TestResult{Pass: false, Info: fmt.Sprintf("failed to create event: %v", err)}
+	}
+	if err = publisherClient.Publish(ev); err != nil {
+		return TestResult{Pass: false, Info: fmt.Sprintf("failed to publish: %v", err)}
+	}
+	accepted, _, err := publisherClient.WaitForOK(ev.ID, 5*time.Second)
+	if err != nil || !accepted {
+		return TestResult{Pass: false, Info: "event not accepted"}
+	}
+
+	// Wait for event to come through subscription (should work even after ping period)
+	eventTimeout := time.After(5 * time.Second)
+	for {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return TestResult{Pass: false, Info: "subscription closed"}
+			}
+			var raw []interface{}
+			if err = json.Unmarshal(msg, &raw); err != nil {
+				continue
+			}
+			if len(raw) >= 3 && raw[0] == "EVENT" {
+				if evData, ok := raw[2].(map[string]interface{}); ok {
+					evJSON, _ := json.Marshal(evData)
+					receivedEv := event.New()
+					if _, err = receivedEv.Unmarshal(evJSON); err == nil {
+						if string(receivedEv.ID) == string(ev.ID) {
+							return TestResult{Pass: true}
+						}
+					}
+				}
+			}
+		case <-eventTimeout:
+			return TestResult{Pass: false, Info: "timeout waiting for event after ping period"}
+		}
+	}
+}
+
 func testClosesCompleteSubscriptionsAfterEose(client *Client, key1, key2 *KeyPair) (result TestResult) {
 	// Create a filter that fetches a specific event by ID (complete subscription)
 	fakeID := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"

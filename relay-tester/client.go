@@ -56,6 +56,11 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+// URL returns the relay URL.
+func (c *Client) URL() string {
+	return c.url
+}
+
 // Send sends a JSON message to the relay.
 func (c *Client) Send(msg interface{}) (err error) {
 	c.mu.Lock()
