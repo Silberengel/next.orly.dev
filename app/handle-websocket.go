@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
@@ -24,20 +24,15 @@ const (
 	// ClientMessageSizeLimit is the maximum message size that clients can handle
 	// This is set to 100MB to allow large messages
 	ClientMessageSizeLimit = 100 * 1024 * 1024 // 100MB
-
-	// CloseMessage denotes a close control message. The optional message
-	// payload contains a numeric code and text. Use the FormatCloseMessage
-	// function to format a close message payload.
-	CloseMessage = 8
-
-	// PingMessage denotes a ping control message. The optional message payload
-	// is UTF-8 encoded text.
-	PingMessage = 9
-
-	// PongMessage denotes a pong control message. The optional message payload
-	// is UTF-8 encoded text.
-	PongMessage = 10
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for proxy compatibility
+	},
+}
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	remote := GetRemoteFromReq(r)
@@ -62,16 +57,12 @@ whitelist:
 	defer cancel()
 	var err error
 	var conn *websocket.Conn
-	// Configure WebSocket accept options for proxy compatibility
-	acceptOptions := &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"}, // Allow all origins for proxy compatibility
-		// Don't check origin when behind a proxy - let the proxy handle it
-		InsecureSkipVerify: true,
-		// Try to set a higher compression threshold to allow larger messages
-		CompressionMode: websocket.CompressionDisabled,
-	}
 
-	if conn, err = websocket.Accept(w, r, acceptOptions); chk.E(err) {
+	// Configure upgrader for this connection
+	upgrader.ReadBufferSize = int(DefaultMaxMessageSize)
+	upgrader.WriteBufferSize = int(DefaultMaxMessageSize)
+
+	if conn, err = upgrader.Upgrade(w, r, nil); chk.E(err) {
 		log.E.F("websocket accept failed from %s: %v", remote, err)
 		return
 	}
@@ -80,7 +71,7 @@ whitelist:
 	// Set read limit immediately after connection is established
 	conn.SetReadLimit(DefaultMaxMessageSize)
 	log.D.F("set read limit to %d bytes (%d MB) for %s", DefaultMaxMessageSize, DefaultMaxMessageSize/units.Mb, remote)
-	defer conn.CloseNow()
+	defer conn.Close()
 	listener := &Listener{
 		ctx:       ctx,
 		Server:    s,
@@ -109,6 +100,16 @@ whitelist:
 		log.D.F("AUTH challenge sent successfully to %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
+	// Set pong handler
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
+		return nil
+	})
+	// Set ping handler
+	conn.SetPingHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
+		return conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(DefaultWriteTimeout))
+	})
 	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
 	go s.Pinger(ctx, conn, ticker)
 	defer func() {
@@ -154,12 +155,19 @@ whitelist:
 			return
 		}
 
-		var typ websocket.MessageType
+		var typ int
 		var msg []byte
 		log.T.F("waiting for message from %s", remote)
 
+		// Set read deadline for context cancellation
+		deadline := time.Now().Add(DefaultPongWait)
+		if ctx.Err() != nil {
+			return
+		}
+		conn.SetReadDeadline(deadline)
+
 		// Block waiting for message; rely on pings and context cancellation to detect dead peers
-		typ, msg, err = conn.Read(ctx)
+		typ, msg, err = conn.ReadMessage()
 
 		if err != nil {
 			// Check if the error is due to context cancellation
@@ -180,50 +188,40 @@ whitelist:
 				return
 			}
 			// Handle message too big errors specifically
-			if strings.Contains(err.Error(), "MessageTooBig") ||
+			if strings.Contains(err.Error(), "message too large") ||
 				strings.Contains(err.Error(), "read limited at") {
 				log.D.F("client %s hit message size limit: %v", remote, err)
 				// Don't log this as an error since it's a client-side limit
 				// Just close the connection gracefully
 				return
 			}
-			status := websocket.CloseStatus(err)
-			switch status {
-			case websocket.StatusNormalClosure,
-				websocket.StatusGoingAway,
-				websocket.StatusNoStatusRcvd,
-				websocket.StatusAbnormalClosure,
-				websocket.StatusProtocolError:
-				log.T.F(
-					"connection from %s closed with status: %v", remote, status,
-				)
-			case websocket.StatusMessageTooBig:
+			// Check for websocket close errors
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure,
+				websocket.CloseGoingAway,
+				websocket.CloseNoStatusReceived,
+				websocket.CloseAbnormalClosure,
+				websocket.CloseUnsupportedData,
+				websocket.CloseInvalidFramePayloadData) {
+				log.T.F("connection from %s closed: %v", remote, err)
+			} else if websocket.IsCloseError(err, websocket.CloseMessageTooBig) {
 				log.D.F("client %s sent message too big: %v", remote, err)
-			default:
+			} else {
 				log.E.F("unexpected close error from %s: %v", remote, err)
 			}
 			return
 		}
-		if typ == PingMessage {
+		if typ == websocket.PingMessage {
 			log.D.F("received PING from %s, sending PONG", remote)
 			// Create a write context with timeout for pong response
-			writeCtx, writeCancel := context.WithTimeout(
-				ctx, DefaultWriteTimeout,
-			)
+			deadline := time.Now().Add(DefaultWriteTimeout)
+			conn.SetWriteDeadline(deadline)
 			pongStart := time.Now()
-			if err = conn.Write(writeCtx, PongMessage, msg); chk.E(err) {
+			if err = conn.WriteControl(websocket.PongMessage, msg, deadline); chk.E(err) {
 				pongDuration := time.Since(pongStart)
 				log.E.F(
 					"failed to send PONG to %s after %v: %v", remote,
 					pongDuration, err,
 				)
-				if writeCtx.Err() != nil {
-					log.E.F(
-						"PONG write timeout to %s after %v (limit=%v)", remote,
-						pongDuration, DefaultWriteTimeout,
-					)
-				}
-				writeCancel()
 				return
 			}
 			pongDuration := time.Since(pongStart)
@@ -231,7 +229,6 @@ whitelist:
 			if pongDuration > time.Millisecond*50 {
 				log.D.F("SLOW PONG to %s: %v (>50ms)", remote, pongDuration)
 			}
-			writeCancel()
 			continue
 		}
 		// Log message size for debugging
@@ -260,26 +257,18 @@ func (s *Server) Pinger(
 			pingCount++
 			log.D.F("sending PING #%d", pingCount)
 
-			// Create a write context with timeout for ping operation
-			pingCtx, pingCancel := context.WithTimeout(ctx, DefaultWriteTimeout)
+			// Set write deadline for ping operation
+			deadline := time.Now().Add(DefaultWriteTimeout)
+			conn.SetWriteDeadline(deadline)
 			pingStart := time.Now()
 
-			if err = conn.Ping(pingCtx); err != nil {
+			if err = conn.WriteControl(websocket.PingMessage, []byte{}, deadline); err != nil {
 				pingDuration := time.Since(pingStart)
 				log.E.F(
 					"PING #%d FAILED after %v: %v", pingCount, pingDuration,
 					err,
 				)
-
-				if pingCtx.Err() != nil {
-					log.E.F(
-						"PING #%d timeout after %v (limit=%v)", pingCount,
-						pingDuration, DefaultWriteTimeout,
-					)
-				}
-
 				chk.E(err)
-				pingCancel()
 				return
 			}
 
@@ -289,8 +278,6 @@ func (s *Server) Pinger(
 			if pingDuration > time.Millisecond*100 {
 				log.D.F("SLOW PING #%d: %v (>100ms)", pingCount, pingDuration)
 			}
-
-			pingCancel()
 		case <-ctx.Done():
 			log.T.F("pinger context cancelled after %d pings", pingCount)
 			return

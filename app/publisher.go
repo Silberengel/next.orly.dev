@@ -3,10 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
@@ -270,15 +271,11 @@ func (p *P) Deliver(ev *event.E) {
 
 		// Use a separate context with timeout for writes to prevent race conditions
 		// where the publisher context gets cancelled while writing events
-		writeCtx, cancel := context.WithTimeout(
-			context.Background(), DefaultWriteTimeout,
-		)
-		defer cancel()
+		deadline := time.Now().Add(DefaultWriteTimeout)
+		d.w.SetWriteDeadline(deadline)
 
 		deliveryStart := time.Now()
-		if err = d.w.Write(
-			writeCtx, websocket.MessageText, msgData,
-		); err != nil {
+		if err = d.w.WriteMessage(websocket.TextMessage, msgData); err != nil {
 			deliveryDuration := time.Since(deliveryStart)
 
 			// Log detailed failure information
@@ -286,7 +283,7 @@ func (p *P) Deliver(ev *event.E) {
 				hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
 
 			// Check for timeout specifically
-			if writeCtx.Err() != nil {
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
 				log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)",
 					hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
 			}
@@ -296,7 +293,7 @@ func (p *P) Deliver(ev *event.E) {
 
 			// On error, remove the subscriber connection safely
 			p.removeSubscriber(d.w)
-			_ = d.w.CloseNow()
+			_ = d.w.Close()
 			continue
 		}
 

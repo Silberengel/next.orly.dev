@@ -4,9 +4,9 @@ go 1.25.0
 
 require (
 	github.com/adrg/xdg v0.5.3
-	github.com/coder/websocket v1.8.14
 	github.com/davecgh/go-spew v1.1.1
 	github.com/dgraph-io/badger/v4 v4.8.0
+	github.com/gorilla/websocket v1.5.3
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/pkg/profile v1.7.0

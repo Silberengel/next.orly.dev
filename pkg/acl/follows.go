@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
@@ -396,12 +396,15 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 				headers.Set("Origin", "https://orly.dev")
 
 				// Use proper WebSocket dial options
-				dialOptions := &websocket.DialOptions{
-					HTTPHeader: headers,
+				dialer := websocket.Dialer{
+					HandshakeTimeout: 10 * time.Second,
 				}
 
-				c, _, err := websocket.Dial(connCtx, u, dialOptions)
+				c, resp, err := dialer.DialContext(connCtx, u, headers)
 				cancel()
+				if resp != nil {
+					resp.Body.Close()
+				}
 				if err != nil {
 					log.W.F("follows syncer: dial %s failed: %v", u, err)
 
@@ -480,13 +483,12 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 				req := reqenvelope.NewFrom([]byte(subID), ff)
 				reqBytes := req.Marshal(nil)
 				log.T.F("follows syncer: outbound REQ to %s: %s", u, string(reqBytes))
-				if err = c.Write(
-					ctx, websocket.MessageText, reqBytes,
-				); chk.E(err) {
+				c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err = c.WriteMessage(websocket.TextMessage, reqBytes); chk.E(err) {
 					log.W.F(
 						"follows syncer: failed to send event REQ to %s: %v", u, err,
 					)
-					_ = c.Close(websocket.StatusInternalError, "write failed")
+					_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "write failed"), time.Now().Add(time.Second))
 					continue
 				}
 				log.T.F(
@@ -501,11 +503,12 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 				for {
 					select {
 					case <-ctx.Done():
-						_ = c.Close(websocket.StatusNormalClosure, "ctx done")
+						_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "ctx done"), time.Now().Add(time.Second))
 						return
 					case <-keepaliveTicker.C:
 						// Send ping to keep connection alive
-						if err := c.Ping(ctx); err != nil {
+						c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+						if err := c.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
 							log.T.F("follows syncer: ping failed for %s: %v", u, err)
 							break readLoop
 						}
@@ -513,11 +516,10 @@ func (f *Follows) startEventSubscriptions(ctx context.Context) {
 						continue
 					default:
 						// Set a read timeout to avoid hanging
-						readCtx, readCancel := context.WithTimeout(ctx, 60*time.Second)
-						_, data, err := c.Read(readCtx)
-						readCancel()
+						c.SetReadDeadline(time.Now().Add(60 * time.Second))
+						_, data, err := c.ReadMessage()
 						if err != nil {
-							_ = c.Close(websocket.StatusNormalClosure, "read err")
+							_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "read err"), time.Now().Add(time.Second))
 							break readLoop
 						}
 						label, rem, err := envelopes.Identify(data)
@@ -714,16 +716,19 @@ func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
 	headers.Set("Origin", "https://orly.dev")
 
 	// Use proper WebSocket dial options
-	dialOptions := &websocket.DialOptions{
-		HTTPHeader: headers,
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
 	}
 
-	c, _, err := websocket.Dial(ctx, relayURL, dialOptions)
+	c, resp, err := dialer.DialContext(ctx, relayURL, headers)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	if err != nil {
 		log.W.F("follows syncer: failed to connect to %s for follow list fetch: %v", relayURL, err)
 		return
 	}
-	defer c.Close(websocket.StatusNormalClosure, "follow list fetch complete")
+	defer c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "follow list fetch complete"), time.Now().Add(time.Second))
 
 	log.I.F("follows syncer: fetching follow lists from relay %s", relayURL)
 
@@ -746,7 +751,8 @@ func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
 	req := reqenvelope.NewFrom([]byte(subID), ff)
 	reqBytes := req.Marshal(nil)
 	log.T.F("follows syncer: outbound REQ to %s: %s", relayURL, string(reqBytes))
-	if err = c.Write(ctx, websocket.MessageText, reqBytes); chk.E(err) {
+	c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err = c.WriteMessage(websocket.TextMessage, reqBytes); chk.E(err) {
 		log.W.F("follows syncer: failed to send follow list REQ to %s: %v", relayURL, err)
 		return
 	}
@@ -769,7 +775,8 @@ func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
 		default:
 		}
 
-		_, data, err := c.Read(ctx)
+		c.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_, data, err := c.ReadMessage()
 		if err != nil {
 			log.T.F("follows syncer: error reading events from %s: %v", relayURL, err)
 			goto processEvents

@@ -5,32 +5,21 @@ package ws
 import (
 	"crypto/tls"
 	"net/http"
-	"net/textproto"
+	"time"
 
-	ws "github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 )
-
-var defaultConnectionOptions = &ws.DialOptions{
-	CompressionMode: ws.CompressionContextTakeover,
-	HTTPHeader: http.Header{
-		textproto.CanonicalMIMEHeaderKey("User-Agent"): {"github.com/nbd-wtf/go-nostr"},
-	},
-}
 
 func getConnectionOptions(
 	requestHeader http.Header, tlsConfig *tls.Config,
-) *ws.DialOptions {
-	if requestHeader == nil && tlsConfig == nil {
-		return defaultConnectionOptions
+) *websocket.Dialer {
+	dialer := &websocket.Dialer{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		TLSClientConfig: tlsConfig,
+		HandshakeTimeout: 10 * time.Second,
 	}
-
-	return &ws.DialOptions{
-		HTTPHeader:      requestHeader,
-		CompressionMode: ws.CompressionContextTakeover,
-		HTTPClient: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-			},
-		},
-	}
+	// Headers are passed directly to DialContext, not set on Dialer
+	// The User-Agent header will be set when calling DialContext if not present
+	return dialer
 }

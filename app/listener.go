@@ -3,9 +3,10 @@ package app
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
@@ -54,14 +55,12 @@ func (l *Listener) Write(p []byte) (n int, err error) {
 
 	// Use a separate context with timeout for writes to prevent race conditions
 	// where the main connection context gets cancelled while writing events
-	writeCtx, cancel := context.WithTimeout(
-		context.Background(), DefaultWriteTimeout,
-	)
-	defer cancel()
+	deadline := time.Now().Add(DefaultWriteTimeout)
+	l.conn.SetWriteDeadline(deadline)
 
 	// Attempt the write operation
 	writeStart := time.Now()
-	if err = l.conn.Write(writeCtx, websocket.MessageText, p); err != nil {
+	if err = l.conn.WriteMessage(websocket.TextMessage, p); err != nil {
 		writeDuration := time.Since(writeStart)
 		totalDuration := time.Since(start)
 
@@ -72,7 +71,7 @@ func (l *Listener) Write(p []byte) (n int, err error) {
 		)
 
 		// Check if this is a context timeout
-		if writeCtx.Err() != nil {
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
 			log.E.F(
 				"ws->%s write timeout after %v (limit=%v)", l.remote,
 				writeDuration, DefaultWriteTimeout,
