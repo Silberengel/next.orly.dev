@@ -71,6 +71,9 @@ check_go_installation() {
 install_go() {
     log_info "Installing Go $GO_VERSION..."
     
+    # Save original directory
+    local original_dir=$(pwd)
+    
     # Determine architecture
     local arch=$(uname -m)
     case $arch in
@@ -100,12 +103,16 @@ install_go() {
         rm -rf "$GOROOT"
     fi
     
-    # Extract Go
-    log_info "Extracting Go to $GOROOT..."
-    tar -xf "$go_archive"
-    
+    # Extract Go to a temporary location first, then move to final destination
+    log_info "Extracting Go..."
+    tar -xf "$go_archive" -C /tmp
+    mv /tmp/go "$GOROOT"
+
     # Clean up
     rm -f "$go_archive"
+    
+    # Return to original directory
+    cd "$original_dir"
     
     log_success "Go $GO_VERSION installed successfully"
 }
@@ -167,7 +174,10 @@ build_application() {
     log_info "Updating embedded web assets..."
     ./scripts/update-embedded-web.sh
     
-    # The update-embedded-web.sh script should have built the binary
+    # Build the binary in the current directory
+    log_info "Building binary in current directory..."
+    CGO_ENABLED=1 go build -o "$BINARY_NAME"
+    
     if [[ -f "./$BINARY_NAME" ]]; then
         log_success "ORLY relay built successfully"
     else
