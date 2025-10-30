@@ -1136,11 +1136,11 @@ func TestMaxAgeChecks(t *testing.T) {
 	}
 }
 
-func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
+func TestScriptPolicyDisabledFallsBackToDefault(t *testing.T) {
 	// Generate real keypair for testing
 	eventSigner, eventPubkey := generateTestKeypair(t)
 
-	// Create a policy with a script rule but no running manager, default policy is "allow"
+	// Create a policy with a script rule but policy is disabled, default policy is "allow"
 	policy := &P{
 		DefaultPolicy: "allow",
 		Rules: map[int]Rule{
@@ -1150,21 +1150,21 @@ func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
 			},
 		},
 		Manager: &PolicyManager{
-			enabled:   true,
-			isRunning: false, // Script is not running
+			enabled:   false, // Policy is disabled
+			isRunning: false,
 		},
 	}
 
 	// Create real test event with proper signing
 	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
-	// Should allow the event when script is configured but not running (falls back to default "allow")
+	// Should allow the event when policy is disabled (falls back to default "allow")
 	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	if !allowed {
-		t.Error("Expected event to be allowed when script is not running (should fall back to default policy 'allow')")
+		t.Error("Expected event to be allowed when policy is disabled (should fall back to default policy 'allow')")
 	}
 
 	// Test with default policy "deny"
@@ -1174,7 +1174,7 @@ func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err2)
 	}
 	if allowed2 {
-		t.Error("Expected event to be denied when script is not running and default policy is 'deny'")
+		t.Error("Expected event to be denied when policy is disabled and default policy is 'deny'")
 	}
 }
 
@@ -1340,12 +1340,11 @@ func TestNewPolicyWithDefaultPolicyJSON(t *testing.T) {
 	}
 }
 
-func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
+func TestScriptProcessingDisabledFallsBackToDefault(t *testing.T) {
 	// Generate real keypair for testing
 	eventSigner, eventPubkey := generateTestKeypair(t)
 
-	// Test that script processing failures fall back to default policy
-	// We'll test this by using a manager that's not running (simulating failure)
+	// Test that when policy is disabled, it falls back to default policy
 	policy := &P{
 		DefaultPolicy: "allow",
 		Rules: map[int]Rule{
@@ -1355,21 +1354,21 @@ func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
 			},
 		},
 		Manager: &PolicyManager{
-			enabled:   true,
-			isRunning: false, // Script is not running (simulating failure)
+			enabled:   false, // Policy is disabled
+			isRunning: false,
 		},
 	}
 
 	// Create real test event with proper signing
 	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
-	// Should allow the event when script is not running (falls back to default "allow")
+	// Should allow the event when policy is disabled (falls back to default "allow")
 	allowed, err := policy.checkScriptPolicy("write", testEvent, "policy.sh", eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
 	if !allowed {
-		t.Error("Expected event to be allowed when script is not running (should fall back to default policy 'allow')")
+		t.Error("Expected event to be allowed when policy is disabled (should fall back to default policy 'allow')")
 	}
 
 	// Test with default policy "deny"
@@ -1379,7 +1378,7 @@ func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
 		t.Errorf("Unexpected error: %v", err2)
 	}
 	if allowed2 {
-		t.Error("Expected event to be denied when script is not running and default policy is 'deny'")
+		t.Error("Expected event to be denied when policy is disabled and default policy is 'deny'")
 	}
 }
 

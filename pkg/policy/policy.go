@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -131,11 +132,13 @@ type PolicyManager struct {
 	currentCancel context.CancelFunc
 	mutex         sync.RWMutex
 	isRunning     bool
+	isStarting    bool
 	enabled       bool
 	stdin         io.WriteCloser
 	stdout        io.ReadCloser
 	stderr        io.ReadCloser
 	responseChan  chan PolicyResponse
+	startupChan   chan error
 }
 
 // P represents a complete policy configuration for a Nostr relay.
@@ -203,6 +206,7 @@ func NewWithManager(ctx context.Context, appName string, enabled bool) *P {
 		scriptPath:   scriptPath,
 		enabled:      enabled,
 		responseChan: make(chan PolicyResponse, 100), // Buffered channel for responses
+		startupChan:  make(chan error, 1),            // Channel for startup completion
 	}
 
 	// Load policy configuration from JSON file
@@ -279,8 +283,19 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 	}
 
 	// Check if script is present and enabled
-	if rule.Script != "" && p.Manager != nil && p.Manager.IsEnabled() {
-		return p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
+	if rule.Script != "" && p.Manager != nil {
+		if p.Manager.IsEnabled() {
+			return p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
+		}
+		// Script is configured but policy is disabled - use default policy if rule has no other restrictions
+		hasOtherRestrictions := len(rule.WriteAllow) > 0 || len(rule.WriteDeny) > 0 || len(rule.ReadAllow) > 0 || len(rule.ReadDeny) > 0 ||
+			rule.SizeLimit != nil || rule.ContentLimit != nil || len(rule.MustHaveTags) > 0 ||
+			rule.MaxExpiry != nil || rule.Privileged || rule.RateLimit != nil ||
+			rule.MaxAgeOfEvent != nil || rule.MaxAgeEventInFuture != nil
+		if !hasOtherRestrictions {
+			// No other restrictions, use default policy
+			return p.getDefaultPolicyAction(), nil
+		}
 	}
 
 	// Apply rule-based filtering
@@ -452,10 +467,39 @@ func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubke
 
 // checkScriptPolicy runs the policy script to determine if event should be allowed
 func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, loggedInPubkey []byte, ipAddress string) (allowed bool, err error) {
-	if p.Manager == nil || !p.Manager.IsRunning() {
-		// If script is not running, fall back to default policy
-		log.W.F("policy rule for kind %d is inactive (script not running), falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
+	if p.Manager == nil {
+		return false, fmt.Errorf("policy manager is not initialized")
+	}
+
+	// If policy is disabled, fall back to default policy immediately
+	if !p.Manager.IsEnabled() {
+		log.W.F("policy rule for kind %d is inactive (policy disabled), falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
 		return p.getDefaultPolicyAction(), nil
+	}
+
+	// Policy is enabled, check if it's running
+	if !p.Manager.IsRunning() {
+		// Check if script file exists
+		if _, err := os.Stat(p.Manager.GetScriptPath()); os.IsNotExist(err) {
+			// Script doesn't exist, this is a fatal error
+			buf := make([]byte, 1024*1024)
+			n := runtime.Stack(buf, true)
+			log.E.F("policy script does not exist at %s", p.Manager.GetScriptPath())
+			fmt.Fprintf(os.Stderr, "FATAL: Policy script required but not found at %s\n", p.Manager.GetScriptPath())
+			fmt.Fprintf(os.Stderr, "Stack trace:\n%s\n", buf[:n])
+			os.Exit(1)
+		}
+
+		// Try to start the policy and wait for it
+		if err := p.Manager.ensureRunning(); err != nil {
+			// Startup failed, this is a fatal error
+			buf := make([]byte, 1024*1024)
+			n := runtime.Stack(buf, true)
+			log.E.F("failed to start policy script: %v", err)
+			fmt.Fprintf(os.Stderr, "FATAL: Failed to start policy script: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Stack trace:\n%s\n", buf[:n])
+			os.Exit(1)
+		}
 	}
 
 	// Create policy event with additional context
@@ -532,6 +576,91 @@ func (pm *PolicyManager) startPolicyIfExists() {
 	} else {
 		log.W.F("policy script not found at %s, will retry periodically", pm.scriptPath)
 		// Don't disable policy manager, just log and let periodic check retry
+	}
+}
+
+// ensureRunning ensures the policy is running, starting it if necessary.
+// It waits for startup to complete with a timeout and returns an error if startup fails.
+func (pm *PolicyManager) ensureRunning() error {
+	pm.mutex.Lock()
+	// Check if already running
+	if pm.isRunning {
+		pm.mutex.Unlock()
+		return nil
+	}
+
+	// Check if already starting
+	if pm.isStarting {
+		pm.mutex.Unlock()
+		// Wait for startup to complete
+		select {
+		case err := <-pm.startupChan:
+			if err != nil {
+				return fmt.Errorf("policy startup failed: %v", err)
+			}
+			// Double-check it's actually running after receiving signal
+			pm.mutex.RLock()
+			running := pm.isRunning
+			pm.mutex.RUnlock()
+			if !running {
+				return fmt.Errorf("policy startup completed but process is not running")
+			}
+			return nil
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("policy startup timeout")
+		case <-pm.ctx.Done():
+			return fmt.Errorf("policy context cancelled")
+		}
+	}
+
+	// Mark as starting
+	pm.isStarting = true
+	pm.mutex.Unlock()
+
+	// Start the policy in a goroutine
+	go func() {
+		err := pm.StartPolicy()
+		pm.mutex.Lock()
+		pm.isStarting = false
+		pm.mutex.Unlock()
+		// Signal startup completion (non-blocking)
+		// Drain any stale value first, then send
+		select {
+		case <-pm.startupChan:
+		default:
+		}
+		select {
+		case pm.startupChan <- err:
+		default:
+			// Channel should be empty now, but if it's full, try again
+			pm.startupChan <- err
+		}
+	}()
+
+	// Wait for startup to complete
+	select {
+	case err := <-pm.startupChan:
+		if err != nil {
+			return fmt.Errorf("policy startup failed: %v", err)
+		}
+		// Double-check it's actually running after receiving signal
+		pm.mutex.RLock()
+		running := pm.isRunning
+		pm.mutex.RUnlock()
+		if !running {
+			return fmt.Errorf("policy startup completed but process is not running")
+		}
+		return nil
+	case <-time.After(10 * time.Second):
+		pm.mutex.Lock()
+		pm.isStarting = false
+		pm.mutex.Unlock()
+		return fmt.Errorf("policy startup timeout")
+	case <-pm.ctx.Done():
+		pm.mutex.Lock()
+		pm.isStarting = false
+		pm.mutex.Unlock()
+		return fmt.Errorf("policy context cancelled")
 	}
 }
 
@@ -798,6 +927,11 @@ func (pm *PolicyManager) IsRunning() bool {
 	pm.mutex.RLock()
 	defer pm.mutex.RUnlock()
 	return pm.isRunning
+}
+
+// GetScriptPath returns the path to the policy script.
+func (pm *PolicyManager) GetScriptPath() string {
+	return pm.scriptPath
 }
 
 // Shutdown gracefully shuts down the policy manager.
