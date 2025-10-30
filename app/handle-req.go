@@ -283,13 +283,13 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			if !authorized {
 				continue // not authorized to see this private event
 			}
-
-			tmp = append(tmp, ev)
-			continue
+			// Event has private tag and user is authorized - continue to privileged check
 		}
 
-		if l.Config.ACLMode != "none" &&
-			kind.IsPrivileged(ev.Kind) && accessLevel != "admin" { // admins can see all events
+		// Always filter privileged events based on kind, regardless of ACLMode
+		// Privileged events should only be sent to users who are authenticated and
+		// are either the event author or listed in p tags
+		if kind.IsPrivileged(ev.Kind) && accessLevel != "admin" { // admins can see all events
 			log.T.C(
 				func() string {
 					return fmt.Sprintf(
@@ -384,27 +384,28 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	}
 
 	// Deduplicate events (in case chunk processing returned duplicates)
-	if len(allEvents) > 0 {
+	// Use events (already filtered for privileged/policy) instead of allEvents
+	if len(events) > 0 {
 		seen := make(map[string]struct{})
 		var deduplicatedEvents event.S
-		originalCount := len(allEvents)
-		for _, ev := range allEvents {
+		originalCount := len(events)
+		for _, ev := range events {
 			eventID := hexenc.Enc(ev.ID)
 			if _, exists := seen[eventID]; !exists {
 				seen[eventID] = struct{}{}
 				deduplicatedEvents = append(deduplicatedEvents, ev)
 			}
 		}
-		allEvents = deduplicatedEvents
-		if originalCount != len(allEvents) {
-			log.T.F("REQ %s: deduplicated %d events to %d unique events", env.Subscription, originalCount, len(allEvents))
+		events = deduplicatedEvents
+		if originalCount != len(events) {
+			log.T.F("REQ %s: deduplicated %d events to %d unique events", env.Subscription, originalCount, len(events))
 		}
 	}
 
 	// Apply managed ACL filtering for read access if managed ACL is active
 	if acl.Registry.Active.Load() == "managed" {
 		var aclFilteredEvents event.S
-		for _, ev := range allEvents {
+		for _, ev := range events {
 			// Check if event is banned
 			eventID := hex.EncodeToString(ev.ID)
 			if banned, err := l.getManagedACL().IsEventBanned(eventID); err == nil && banned {
@@ -430,13 +431,13 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 
 			aclFilteredEvents = append(aclFilteredEvents, ev)
 		}
-		allEvents = aclFilteredEvents
+		events = aclFilteredEvents
 	}
 
 	// Apply private tag filtering - only show events with "private" tags to authorized users
 	var privateFilteredEvents event.S
 	authedPubkey := l.authedPubkey.Load()
-	for _, ev := range allEvents {
+	for _, ev := range events {
 		// Check if event has private tags
 		hasPrivateTag := false
 		var privatePubkey []byte
@@ -469,10 +470,10 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			log.D.F("private tag: filtering out event %s from unauthorized user", hexenc.Enc(ev.ID))
 		}
 	}
-	allEvents = privateFilteredEvents
+	events = privateFilteredEvents
 
 	seen := make(map[string]struct{})
-	for _, ev := range allEvents {
+	for _, ev := range events {
 		log.T.C(
 			func() string {
 				return fmt.Sprintf(

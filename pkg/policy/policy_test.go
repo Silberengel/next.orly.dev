@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
@@ -19,23 +21,68 @@ func int64Ptr(i int64) *int64 {
 	return &i
 }
 
-// Helper function to create test event
-func createTestEvent(id, pubkey, content string, kind uint16) *event.E {
-	return &event.E{
-		ID:        []byte(id),
-		Kind:      kind,
-		Pubkey:    []byte(pubkey),
-		Content:   []byte(content),
-		Tags:      &tag.S{},
-		CreatedAt: time.Now().Unix(),
+// Helper function to generate a keypair for testing
+func generateTestKeypair(t *testing.T) (signer *p256k.Signer, pubkey []byte) {
+	signer = &p256k.Signer{}
+	if err := signer.Generate(); chk.E(err) {
+		t.Fatalf("Failed to generate test keypair: %v", err)
 	}
+	pubkey = signer.Pub()
+	return
 }
 
-// Helper function to add tags to event
+// Helper function to generate a keypair for benchmarks
+func generateTestKeypairB(b *testing.B) (signer *p256k.Signer, pubkey []byte) {
+	signer = &p256k.Signer{}
+	if err := signer.Generate(); chk.E(err) {
+		b.Fatalf("Failed to generate test keypair: %v", err)
+	}
+	pubkey = signer.Pub()
+	return
+}
+
+// Helper function to create a real test event with proper signing
+func createTestEvent(t *testing.T, signer *p256k.Signer, content string, kind uint16) *event.E {
+	ev := event.New()
+	ev.CreatedAt = time.Now().Unix()
+	ev.Kind = kind
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Sign the event properly
+	if err := ev.Sign(signer); chk.E(err) {
+		t.Fatalf("Failed to sign test event: %v", err)
+	}
+
+	return ev
+}
+
+// Helper function to create a test event with a specific pubkey (for unauthorized tests)
+func createTestEventWithPubkey(t *testing.T, signer *p256k.Signer, content string, kind uint16) *event.E {
+	ev := event.New()
+	ev.CreatedAt = time.Now().Unix()
+	ev.Kind = kind
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Sign the event properly
+	if err := ev.Sign(signer); chk.E(err) {
+		t.Fatalf("Failed to sign test event: %v", err)
+	}
+
+	return ev
+}
+
+// Helper function to add p tag with hex-encoded pubkey to event
+func addPTag(ev *event.E, pubkey []byte) {
+	pTag := tag.NewFromAny("p", hex.Enc(pubkey))
+	ev.Tags.Append(pTag)
+}
+
+// Helper function to add other tags to event
 func addTag(ev *event.E, key, value string) {
-	tagItem := tag.New()
-	tagItem.T = append(tagItem.T, []byte(key), []byte(value))
-	*ev.Tags = append(*ev.Tags, tagItem)
+	tagItem := tag.NewFromAny(key, value)
+	ev.Tags.Append(tagItem)
 }
 
 func TestNew(t *testing.T) {
@@ -174,10 +221,15 @@ func TestCheckKindsPolicy(t *testing.T) {
 }
 
 func TestCheckRulePolicy(t *testing.T) {
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Generate real keypairs for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+	_, pTagPubkey := generateTestKeypair(t)
+	_, unauthorizedPubkey := generateTestKeypair(t)
+
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 	// Add p tag with hex-encoded pubkey
-	addTag(testEvent, "p", hex.Enc([]byte("test-pubkey-2")))
+	addPTag(testEvent, pTagPubkey)
 	addTag(testEvent, "expiration", "1234567890")
 
 	tests := []struct {
@@ -195,7 +247,7 @@ func TestCheckRulePolicy(t *testing.T) {
 			rule: Rule{
 				Description: "no restrictions",
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       true,
 		},
 		{
@@ -206,7 +258,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description: "pubkey allowed",
 				WriteAllow:  []string{hex.Enc(testEvent.Pubkey)},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       true,
 		},
 		{
@@ -215,9 +267,9 @@ func TestCheckRulePolicy(t *testing.T) {
 			event:  testEvent,
 			rule: Rule{
 				Description: "pubkey not allowed",
-				WriteAllow:  []string{"other-pubkey"},
+				WriteAllow:  []string{hex.Enc(pTagPubkey)}, // Different pubkey
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       false,
 		},
 		{
@@ -228,7 +280,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description: "size limit",
 				SizeLimit:   int64Ptr(10000),
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       true,
 		},
 		{
@@ -239,7 +291,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description: "size limit exceeded",
 				SizeLimit:   int64Ptr(10),
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       false,
 		},
 		{
@@ -250,7 +302,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description:  "content limit",
 				ContentLimit: int64Ptr(1000),
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       true,
 		},
 		{
@@ -261,7 +313,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description:  "content limit exceeded",
 				ContentLimit: int64Ptr(5),
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       false,
 		},
 		{
@@ -272,7 +324,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description:  "required tags",
 				MustHaveTags: []string{"p"},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       true,
 		},
 		{
@@ -283,7 +335,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description:  "required tags missing",
 				MustHaveTags: []string{"e"},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			expected:       false,
 		},
 		{
@@ -305,7 +357,7 @@ func TestCheckRulePolicy(t *testing.T) {
 				Description: "privileged event with p tag",
 				Privileged:  true,
 			},
-			loggedInPubkey: []byte("test-pubkey-2"),
+			loggedInPubkey: pTagPubkey,
 			expected:       true,
 		},
 		{
@@ -317,6 +369,61 @@ func TestCheckRulePolicy(t *testing.T) {
 				Privileged:  true,
 			},
 			loggedInPubkey: nil,
+			expected:       false,
+		},
+		{
+			name:   "privileged - authenticated but not authorized (different pubkey, not in p tags)",
+			access: "write",
+			event:  testEvent,
+			rule: Rule{
+				Description: "privileged event unauthorized user",
+				Privileged:  true,
+			},
+			loggedInPubkey: unauthorizedPubkey,
+			expected:       false,
+		},
+		{
+			name:   "privileged read - event authored by logged in user",
+			access: "read",
+			event:  testEvent,
+			rule: Rule{
+				Description: "privileged event read access",
+				Privileged:  true,
+			},
+			loggedInPubkey: testEvent.Pubkey,
+			expected:       true,
+		},
+		{
+			name:   "privileged read - event contains logged in user in p tag",
+			access: "read",
+			event:  testEvent,
+			rule: Rule{
+				Description: "privileged event read access with p tag",
+				Privileged:  true,
+			},
+			loggedInPubkey: pTagPubkey,
+			expected:       true,
+		},
+		{
+			name:   "privileged read - not authenticated",
+			access: "read",
+			event:  testEvent,
+			rule: Rule{
+				Description: "privileged event read access not authenticated",
+				Privileged:  true,
+			},
+			loggedInPubkey: nil,
+			expected:       false,
+		},
+		{
+			name:   "privileged read - authenticated but not authorized (different pubkey, not in p tags)",
+			access: "read",
+			event:  testEvent,
+			rule: Rule{
+				Description: "privileged event read access unauthorized user",
+				Privileged:  true,
+			},
+			loggedInPubkey: unauthorizedPubkey,
 			expected:       false,
 		},
 	}
@@ -337,8 +444,11 @@ func TestCheckRulePolicy(t *testing.T) {
 }
 
 func TestCheckPolicy(t *testing.T) {
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	tests := []struct {
 		name           string
@@ -358,7 +468,7 @@ func TestCheckPolicy(t *testing.T) {
 				Kind:  Kinds{},
 				Rules: map[int]Rule{},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			ipAddress:      "127.0.0.1",
 			expected:       true,
 			expectError:    false,
@@ -373,7 +483,7 @@ func TestCheckPolicy(t *testing.T) {
 				},
 				Rules: map[int]Rule{},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			ipAddress:      "127.0.0.1",
 			expected:       false,
 			expectError:    false,
@@ -391,7 +501,7 @@ func TestCheckPolicy(t *testing.T) {
 					},
 				},
 			},
-			loggedInPubkey: []byte("test-pubkey"),
+			loggedInPubkey: eventPubkey,
 			ipAddress:      "127.0.0.1",
 			expected:       false,
 			expectError:    false,
@@ -488,13 +598,16 @@ func TestLoadFromFile(t *testing.T) {
 }
 
 func TestPolicyEventSerialization(t *testing.T) {
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Create policy event
 	policyEvent := &PolicyEvent{
 		E:              testEvent,
-		LoggedInPubkey: "test-logged-in-pubkey",
+		LoggedInPubkey: hex.Enc(eventPubkey),
 		IPAddress:      "127.0.0.1",
 	}
 
@@ -508,13 +621,13 @@ func TestPolicyEventSerialization(t *testing.T) {
 	jsonStr := string(jsonData)
 	t.Logf("Generated JSON: %s", jsonStr)
 
-	if !strings.Contains(jsonStr, "test-logged-in-pubkey") {
+	if !strings.Contains(jsonStr, hex.Enc(eventPubkey)) {
 		t.Error("JSON should contain logged_in_pubkey field")
 	}
 	if !strings.Contains(jsonStr, "127.0.0.1") {
 		t.Error("JSON should contain ip_address field")
 	}
-	if !strings.Contains(jsonStr, "746573742d6576656e742d6964") { // hex encoded "test-event-id"
+	if !strings.Contains(jsonStr, hex.Enc(testEvent.ID)) {
 		t.Error("JSON should contain event id field (hex encoded)")
 	}
 
@@ -646,13 +759,16 @@ func TestPolicyManagerProcessEvent(t *testing.T) {
 		responseChan: make(chan PolicyResponse, 100),
 	}
 
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Create policy event
 	policyEvent := &PolicyEvent{
 		E:              testEvent,
-		LoggedInPubkey: "test-logged-in-pubkey",
+		LoggedInPubkey: hex.Enc(eventPubkey),
 		IPAddress:      "127.0.0.1",
 	}
 
@@ -666,11 +782,14 @@ func TestPolicyManagerProcessEvent(t *testing.T) {
 func TestEdgeCasesEmptyPolicy(t *testing.T) {
 	policy := &P{}
 
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow all events when policy is empty
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -712,11 +831,14 @@ func TestEdgeCasesLargeEvent(t *testing.T) {
 		},
 	}
 
-	// Create test event with large content
-	testEvent := createTestEvent("test-event-id", "test-pubkey", largeContent, 1)
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Create real test event with large content
+	testEvent := createTestEvent(t, eventSigner, largeContent, 1)
 
 	// Should block large event
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -805,6 +927,10 @@ func TestEdgeCasesManagerDoubleStart(t *testing.T) {
 }
 
 func TestCheckGlobalRulePolicy(t *testing.T) {
+	// Generate real keypairs for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+	_, loggedInPubkey := generateTestKeypair(t)
+
 	tests := []struct {
 		name           string
 		globalRule     Rule
@@ -815,19 +941,19 @@ func TestCheckGlobalRulePolicy(t *testing.T) {
 		{
 			name: "global rule with write allow - event allowed",
 			globalRule: Rule{
-				WriteAllow: []string{"746573742d7075626b6579"},
+				WriteAllow: []string{hex.Enc(eventPubkey)},
 			},
-			event:          createTestEvent("test-id", "test-pubkey", "test content", 1),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			event:          createTestEvent(t, eventSigner, "test content", 1),
+			loggedInPubkey: loggedInPubkey,
 			expected:       true,
 		},
 		{
 			name: "global rule with write deny - event denied",
 			globalRule: Rule{
-				WriteDeny: []string{"746573742d7075626b6579"},
+				WriteDeny: []string{hex.Enc(eventPubkey)},
 			},
-			event:          createTestEvent("test-id", "test-pubkey", "test content", 1),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			event:          createTestEvent(t, eventSigner, "test content", 1),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 		{
@@ -835,8 +961,8 @@ func TestCheckGlobalRulePolicy(t *testing.T) {
 			globalRule: Rule{
 				SizeLimit: func() *int64 { v := int64(10); return &v }(),
 			},
-			event:          createTestEvent("test-id", "test-pubkey", "this is a very long content that exceeds the size limit", 1),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			event:          createTestEvent(t, eventSigner, "this is a very long content that exceeds the size limit", 1),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 		{
@@ -845,11 +971,11 @@ func TestCheckGlobalRulePolicy(t *testing.T) {
 				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() - 7200 // 2 hours ago
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 		{
@@ -858,11 +984,11 @@ func TestCheckGlobalRulePolicy(t *testing.T) {
 				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() + 7200 // 2 hours in future
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 	}
@@ -882,23 +1008,26 @@ func TestCheckGlobalRulePolicy(t *testing.T) {
 }
 
 func TestCheckPolicyWithGlobalRule(t *testing.T) {
+	// Generate real keypairs for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+	_, loggedInPubkey := generateTestKeypair(t)
+
 	// Test that global rule is applied first
 	policy := &P{
 		Global: Rule{
-			WriteDeny: []string{"746573742d7075626b6579"}, // Deny test-pubkey globally
+			WriteDeny: []string{hex.Enc(eventPubkey)}, // Deny event pubkey globally
 		},
 		Kind: Kinds{
 			Whitelist: []int{1}, // Allow kind 1
 		},
 		Rules: map[int]Rule{
 			1: {
-				WriteAllow: []string{"746573742d7075626b6579"}, // Allow test-pubkey for kind 1
+				WriteAllow: []string{hex.Enc(eventPubkey)}, // Allow event pubkey for kind 1
 			},
 		},
 	}
 
-	event := createTestEvent("test-id", "test-pubkey", "test content", 1)
-	loggedInPubkey := []byte("test-logged-in-pubkey")
+	event := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Global rule should deny this event even though kind-specific rule would allow it
 	allowed, err := policy.CheckPolicy("write", event, loggedInPubkey, "127.0.0.1")
@@ -912,6 +1041,10 @@ func TestCheckPolicyWithGlobalRule(t *testing.T) {
 }
 
 func TestMaxAgeChecks(t *testing.T) {
+	// Generate real keypairs for testing
+	eventSigner, _ := generateTestKeypair(t)
+	_, loggedInPubkey := generateTestKeypair(t)
+
 	tests := []struct {
 		name           string
 		rule           Rule
@@ -925,11 +1058,11 @@ func TestMaxAgeChecks(t *testing.T) {
 				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() - 1800 // 30 minutes ago
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       true,
 		},
 		{
@@ -938,11 +1071,11 @@ func TestMaxAgeChecks(t *testing.T) {
 				MaxAgeOfEvent: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() - 7200 // 2 hours ago
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 		{
@@ -951,11 +1084,11 @@ func TestMaxAgeChecks(t *testing.T) {
 				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() + 1800 // 30 minutes in future
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       true,
 		},
 		{
@@ -964,11 +1097,11 @@ func TestMaxAgeChecks(t *testing.T) {
 				MaxAgeEventInFuture: func() *int64 { v := int64(3600); return &v }(), // 1 hour
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() + 7200 // 2 hours in future
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       false,
 		},
 		{
@@ -978,11 +1111,11 @@ func TestMaxAgeChecks(t *testing.T) {
 				MaxAgeEventInFuture: func() *int64 { v := int64(1800); return &v }(), // 30 minutes
 			},
 			event: func() *event.E {
-				ev := createTestEvent("test-id", "test-pubkey", "test content", 1)
+				ev := createTestEvent(t, eventSigner, "test content", 1)
 				ev.CreatedAt = time.Now().Unix() + 900 // 15 minutes in future
 				return ev
 			}(),
-			loggedInPubkey: []byte("test-logged-in-pubkey"),
+			loggedInPubkey: loggedInPubkey,
 			expected:       true,
 		},
 	}
@@ -1004,6 +1137,9 @@ func TestMaxAgeChecks(t *testing.T) {
 }
 
 func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Create a policy with a script rule but no running manager, default policy is "allow"
 	policy := &P{
 		DefaultPolicy: "allow",
@@ -1019,11 +1155,11 @@ func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
 		},
 	}
 
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event when script is configured but not running (falls back to default "allow")
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1033,7 +1169,7 @@ func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
 
 	// Test with default policy "deny"
 	policy.DefaultPolicy = "deny"
-	allowed2, err2 := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed2, err2 := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err2 != nil {
 		t.Errorf("Unexpected error: %v", err2)
 	}
@@ -1043,6 +1179,9 @@ func TestScriptPolicyNotRunningFallsBackToDefault(t *testing.T) {
 }
 
 func TestDefaultPolicyAllow(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test default policy "allow" behavior
 	policy := &P{
 		DefaultPolicy: "allow",
@@ -1050,11 +1189,11 @@ func TestDefaultPolicyAllow(t *testing.T) {
 		Rules:         map[int]Rule{}, // No specific rules
 	}
 
-	// Create test event for kind 1 (no specific rule exists)
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event with default policy "allow"
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1064,6 +1203,9 @@ func TestDefaultPolicyAllow(t *testing.T) {
 }
 
 func TestDefaultPolicyDeny(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test default policy "deny" behavior
 	policy := &P{
 		DefaultPolicy: "deny",
@@ -1071,11 +1213,11 @@ func TestDefaultPolicyDeny(t *testing.T) {
 		Rules:         map[int]Rule{}, // No specific rules
 	}
 
-	// Create test event for kind 1 (no specific rule exists)
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should deny the event with default policy "deny"
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1085,6 +1227,9 @@ func TestDefaultPolicyDeny(t *testing.T) {
 }
 
 func TestDefaultPolicyEmpty(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test empty default policy (should default to "allow")
 	policy := &P{
 		DefaultPolicy: "",
@@ -1092,11 +1237,11 @@ func TestDefaultPolicyEmpty(t *testing.T) {
 		Rules:         map[int]Rule{}, // No specific rules
 	}
 
-	// Create test event for kind 1 (no specific rule exists)
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event with empty default policy (defaults to "allow")
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1106,6 +1251,9 @@ func TestDefaultPolicyEmpty(t *testing.T) {
 }
 
 func TestDefaultPolicyInvalid(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test invalid default policy (should default to "allow")
 	policy := &P{
 		DefaultPolicy: "invalid",
@@ -1113,11 +1261,11 @@ func TestDefaultPolicyInvalid(t *testing.T) {
 		Rules:         map[int]Rule{}, // No specific rules
 	}
 
-	// Create test event for kind 1 (no specific rule exists)
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event with invalid default policy (defaults to "allow")
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1127,6 +1275,9 @@ func TestDefaultPolicyInvalid(t *testing.T) {
 }
 
 func TestDefaultPolicyWithSpecificRule(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test that specific rules override default policy
 	policy := &P{
 		DefaultPolicy: "deny", // Default is deny
@@ -1139,11 +1290,11 @@ func TestDefaultPolicyWithSpecificRule(t *testing.T) {
 		},
 	}
 
-	// Create test event for kind 1 (has specific rule)
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing for kind 1 (has specific rule)
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event because specific rule allows it, despite default policy being "deny"
-	allowed, err := policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1151,11 +1302,11 @@ func TestDefaultPolicyWithSpecificRule(t *testing.T) {
 		t.Error("Expected event to be allowed by specific rule, despite default_policy 'deny'")
 	}
 
-	// Create test event for kind 2 (no specific rule exists)
-	testEvent2 := createTestEvent("test-event-id-2", "test-pubkey", "test content", 2)
+	// Create real test event with proper signing for kind 2 (no specific rule exists)
+	testEvent2 := createTestEvent(t, eventSigner, "test content", 2)
 
 	// Should deny the event because no specific rule and default policy is "deny"
-	allowed2, err2 := policy.CheckPolicy("write", testEvent2, []byte("test-pubkey"), "127.0.0.1")
+	allowed2, err2 := policy.CheckPolicy("write", testEvent2, eventPubkey, "127.0.0.1")
 	if err2 != nil {
 		t.Errorf("Unexpected error: %v", err2)
 	}
@@ -1190,6 +1341,9 @@ func TestNewPolicyWithDefaultPolicyJSON(t *testing.T) {
 }
 
 func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
+	// Generate real keypair for testing
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
 	// Test that script processing failures fall back to default policy
 	// We'll test this by using a manager that's not running (simulating failure)
 	policy := &P{
@@ -1206,11 +1360,11 @@ func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
 		},
 	}
 
-	// Create test event
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1)
+	// Create real test event with proper signing
+	testEvent := createTestEvent(t, eventSigner, "test content", 1)
 
 	// Should allow the event when script is not running (falls back to default "allow")
-	allowed, err := policy.checkScriptPolicy("write", testEvent, "policy.sh", []byte("test-pubkey"), "127.0.0.1")
+	allowed, err := policy.checkScriptPolicy("write", testEvent, "policy.sh", eventPubkey, "127.0.0.1")
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
@@ -1220,7 +1374,7 @@ func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
 
 	// Test with default policy "deny"
 	policy.DefaultPolicy = "deny"
-	allowed2, err2 := policy.checkScriptPolicy("write", testEvent, "policy.sh", []byte("test-pubkey"), "127.0.0.1")
+	allowed2, err2 := policy.checkScriptPolicy("write", testEvent, "policy.sh", eventPubkey, "127.0.0.1")
 	if err2 != nil {
 		t.Errorf("Unexpected error: %v", err2)
 	}
@@ -1230,6 +1384,11 @@ func TestScriptProcessingFailureFallsBackToDefault(t *testing.T) {
 }
 
 func TestDefaultPolicyLogicWithRules(t *testing.T) {
+	// Generate real keypairs for testing
+	testSigner, _ := generateTestKeypair(t)
+	deniedSigner, deniedPubkey := generateTestKeypair(t)
+	_, loggedInPubkey := generateTestKeypair(t)
+
 	// Test that default policy logic works correctly with rules
 
 	// Test 1: default_policy "deny" - should only allow if rule explicitly allows
@@ -1245,15 +1404,15 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 			},
 			2: {
 				Description: "deny specific pubkey for kind 2",
-				WriteDeny:   []string{"64656e6965642d7075626b6579"}, // hex of "denied-pubkey"
+				WriteDeny:   []string{hex.Enc(deniedPubkey)},
 			},
 			// No rule for kind 3
 		},
 	}
 
 	// Kind 1: has rule that allows all - should be allowed
-	event1 := createTestEvent("test-1", "test-pubkey", "content", 1)
-	allowed1, err1 := policy1.CheckPolicy("write", event1, []byte("test-pubkey"), "127.0.0.1")
+	event1 := createTestEvent(t, testSigner, "content", 1)
+	allowed1, err1 := policy1.CheckPolicy("write", event1, loggedInPubkey, "127.0.0.1")
 	if err1 != nil {
 		t.Errorf("Unexpected error for kind 1: %v", err1)
 	}
@@ -1262,8 +1421,8 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 
 	// Kind 2: has rule that denies specific pubkey - should be allowed for other pubkeys
-	event2 := createTestEvent("test-2", "test-pubkey", "content", 2)
-	allowed2, err2 := policy1.CheckPolicy("write", event2, []byte("test-pubkey"), "127.0.0.1")
+	event2 := createTestEvent(t, testSigner, "content", 2)
+	allowed2, err2 := policy1.CheckPolicy("write", event2, loggedInPubkey, "127.0.0.1")
 	if err2 != nil {
 		t.Errorf("Unexpected error for kind 2: %v", err2)
 	}
@@ -1272,8 +1431,8 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 
 	// Kind 2: denied pubkey should be denied
-	event2Denied := createTestEvent("test-2-denied", "denied-pubkey", "content", 2)
-	allowed2Denied, err2Denied := policy1.CheckPolicy("write", event2Denied, []byte("test-pubkey"), "127.0.0.1")
+	event2Denied := createTestEvent(t, deniedSigner, "content", 2)
+	allowed2Denied, err2Denied := policy1.CheckPolicy("write", event2Denied, loggedInPubkey, "127.0.0.1")
 	if err2Denied != nil {
 		t.Errorf("Unexpected error for kind 2 denied: %v", err2Denied)
 	}
@@ -1282,8 +1441,8 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 
 	// Kind 3: whitelisted but no rule - should follow default policy (deny)
-	event3 := createTestEvent("test-3", "test-pubkey", "content", 3)
-	allowed3, err3 := policy1.CheckPolicy("write", event3, []byte("test-pubkey"), "127.0.0.1")
+	event3 := createTestEvent(t, testSigner, "content", 3)
+	allowed3, err3 := policy1.CheckPolicy("write", event3, loggedInPubkey, "127.0.0.1")
 	if err3 != nil {
 		t.Errorf("Unexpected error for kind 3: %v", err3)
 	}
@@ -1300,15 +1459,15 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 		Rules: map[int]Rule{
 			1: {
 				Description: "deny specific pubkey for kind 1",
-				WriteDeny:   []string{"64656e6965642d7075626b6579"}, // hex of "denied-pubkey"
+				WriteDeny:   []string{hex.Enc(deniedPubkey)},
 			},
 			// No rules for kind 2, 3
 		},
 	}
 
 	// Kind 1: has rule that denies specific pubkey - should be allowed for other pubkeys
-	event1Allow := createTestEvent("test-1-allow", "test-pubkey", "content", 1)
-	allowed1Allow, err1Allow := policy2.CheckPolicy("write", event1Allow, []byte("test-pubkey"), "127.0.0.1")
+	event1Allow := createTestEvent(t, testSigner, "content", 1)
+	allowed1Allow, err1Allow := policy2.CheckPolicy("write", event1Allow, loggedInPubkey, "127.0.0.1")
 	if err1Allow != nil {
 		t.Errorf("Unexpected error for kind 1 allow: %v", err1Allow)
 	}
@@ -1317,8 +1476,8 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 
 	// Kind 1: denied pubkey should be denied
-	event1Deny := createTestEvent("test-1-deny", "denied-pubkey", "content", 1)
-	allowed1Deny, err1Deny := policy2.CheckPolicy("write", event1Deny, []byte("test-pubkey"), "127.0.0.1")
+	event1Deny := createTestEvent(t, deniedSigner, "content", 1)
+	allowed1Deny, err1Deny := policy2.CheckPolicy("write", event1Deny, loggedInPubkey, "127.0.0.1")
 	if err1Deny != nil {
 		t.Errorf("Unexpected error for kind 1 deny: %v", err1Deny)
 	}
@@ -1327,8 +1486,8 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 
 	// Kind 2: whitelisted but no rule - should follow default policy (allow)
-	event2Allow := createTestEvent("test-2-allow", "test-pubkey", "content", 2)
-	allowed2Allow, err2Allow := policy2.CheckPolicy("write", event2Allow, []byte("test-pubkey"), "127.0.0.1")
+	event2Allow := createTestEvent(t, testSigner, "content", 2)
+	allowed2Allow, err2Allow := policy2.CheckPolicy("write", event2Allow, loggedInPubkey, "127.0.0.1")
 	if err2Allow != nil {
 		t.Errorf("Unexpected error for kind 2 allow: %v", err2Allow)
 	}

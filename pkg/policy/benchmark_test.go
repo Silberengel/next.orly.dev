@@ -8,20 +8,27 @@ import (
 	"testing"
 	"time"
 
+	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 )
 
-// Helper function to create test event
-func createTestEventBench(id, pubkey, content string, kind uint16) *event.E {
-	return &event.E{
-		ID:        []byte(id),
-		Kind:      kind,
-		Pubkey:    []byte(pubkey),
-		Content:   []byte(content),
-		Tags:      &tag.S{},
-		CreatedAt: time.Now().Unix(),
+// Helper function to create test event for benchmarks (reuses signer)
+func createTestEventBench(b *testing.B, signer *p256k.Signer, content string, kind uint16) *event.E {
+	ev := event.New()
+	ev.CreatedAt = time.Now().Unix()
+	ev.Kind = kind
+	ev.Content = []byte(content)
+	ev.Tags = tag.NewS()
+
+	// Sign the event properly
+	if err := ev.Sign(signer); chk.E(err) {
+		b.Fatalf("Failed to sign test event: %v", err)
 	}
+
+	return ev
 }
 
 func BenchmarkCheckKindsPolicy(b *testing.B) {
@@ -38,12 +45,13 @@ func BenchmarkCheckKindsPolicy(b *testing.B) {
 }
 
 func BenchmarkCheckRulePolicy(b *testing.B) {
-	// Create test event
-	testEvent := createTestEventBench("test-event-id", "test-pubkey", "test content", 1)
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 1)
 
 	rule := Rule{
 		Description:  "test rule",
-		WriteAllow:   []string{"test-pubkey"},
+		WriteAllow:   []string{hex.Enc(pubkey)},
 		SizeLimit:    int64Ptr(10000),
 		ContentLimit: int64Ptr(1000),
 		MustHaveTags: []string{"p"},
@@ -53,13 +61,14 @@ func BenchmarkCheckRulePolicy(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.checkRulePolicy("write", testEvent, rule, []byte("test-pubkey"))
+		policy.checkRulePolicy("write", testEvent, rule, pubkey)
 	}
 }
 
 func BenchmarkCheckPolicy(b *testing.B) {
-	// Create test event
-	testEvent := createTestEventBench("test-event-id", "test-pubkey", "test content", 1)
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 1)
 
 	policy := &P{
 		Kind: Kinds{
@@ -68,14 +77,14 @@ func BenchmarkCheckPolicy(b *testing.B) {
 		Rules: map[int]Rule{
 			1: {
 				Description: "test rule",
-				WriteAllow:  []string{"test-pubkey"},
+				WriteAllow:  []string{hex.Enc(pubkey)},
 			},
 		},
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", testEvent, pubkey, "127.0.0.1")
 	}
 }
 
@@ -114,8 +123,9 @@ done
 	// Give the script time to start
 	time.Sleep(100 * time.Millisecond)
 
-	// Create test event
-	testEvent := createTestEventBench("test-event-id", "test-pubkey", "test content", 1)
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 1)
 
 	policy := &P{
 		Manager: manager,
@@ -130,7 +140,7 @@ done
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", testEvent, pubkey, "127.0.0.1")
 	}
 }
 
@@ -190,16 +200,19 @@ func BenchmarkCheckPolicyMultipleKinds(b *testing.B) {
 		Rules: rules,
 	}
 
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	
 	// Create test events with different kinds
 	events := make([]*event.E, 100)
 	for i := 0; i < 100; i++ {
-		events[i] = createTestEvent("test-event-id", "test-pubkey", "test content", uint16(i+1))
+		events[i] = createTestEventBench(b, signer, "test content", uint16(i+1))
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		event := events[i%100]
-		policy.CheckPolicy("write", event, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", event, pubkey, "127.0.0.1")
 	}
 }
 
@@ -217,11 +230,13 @@ func BenchmarkCheckPolicyLargeWhitelist(b *testing.B) {
 		Rules: map[int]Rule{},
 	}
 
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 500) // Kind in the middle of the whitelist
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 500) // Kind in the middle of the whitelist
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", testEvent, pubkey, "127.0.0.1")
 	}
 }
 
@@ -239,22 +254,25 @@ func BenchmarkCheckPolicyLargeBlacklist(b *testing.B) {
 		Rules: map[int]Rule{},
 	}
 
-	testEvent := createTestEvent("test-event-id", "test-pubkey", "test content", 1500) // Kind not in blacklist
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 1500) // Kind not in blacklist
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", testEvent, pubkey, "127.0.0.1")
 	}
 }
 
 func BenchmarkCheckPolicyComplexRule(b *testing.B) {
-	// Create test event with many tags
-	testEvent := createTestEventBench("test-event-id", "test-pubkey", "test content", 1)
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, "test content", 1)
 
 	// Add many tags
 	for i := 0; i < 100; i++ {
 		tagItem1 := tag.New()
-		tagItem1.T = append(tagItem1.T, []byte("p"), []byte("test-pubkey"))
+		tagItem1.T = append(tagItem1.T, []byte("p"), []byte(hex.Enc(pubkey)))
 		*testEvent.Tags = append(*testEvent.Tags, tagItem1)
 
 		tagItem2 := tag.New()
@@ -264,7 +282,7 @@ func BenchmarkCheckPolicyComplexRule(b *testing.B) {
 
 	rule := Rule{
 		Description:  "complex rule",
-		WriteAllow:   []string{"test-pubkey"},
+		WriteAllow:   []string{hex.Enc(pubkey)},
 		SizeLimit:    int64Ptr(100000),
 		ContentLimit: int64Ptr(10000),
 		MustHaveTags: []string{"p", "e"},
@@ -275,7 +293,7 @@ func BenchmarkCheckPolicyComplexRule(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.checkRulePolicy("write", testEvent, rule, []byte("test-pubkey"))
+		policy.checkRulePolicy("write", testEvent, rule, pubkey)
 	}
 }
 
@@ -294,11 +312,12 @@ func BenchmarkCheckPolicyLargeEvent(b *testing.B) {
 		},
 	}
 
-	// Create test event with large content
-	testEvent := createTestEvent("test-event-id", "test-pubkey", largeContent, 1)
+	// Generate keypair once for all events
+	signer, pubkey := generateTestKeypairB(b)
+	testEvent := createTestEventBench(b, signer, largeContent, 1)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		policy.CheckPolicy("write", testEvent, []byte("test-pubkey"), "127.0.0.1")
+		policy.CheckPolicy("write", testEvent, pubkey, "127.0.0.1")
 	}
 }
