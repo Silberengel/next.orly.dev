@@ -75,7 +75,7 @@ jobs:
           mkdir -p release-binaries
 
           # Build for different platforms
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o release-binaries/orly-${VERSION}-linux-amd64 .
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
           # GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-linux-arm64 .
           # GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-darwin-amd64 .
           # GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-darwin-arm64 .
