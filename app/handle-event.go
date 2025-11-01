@@ -37,7 +37,6 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}()
 
-	log.I.F("HandleEvent: continuing with event processing...")
 	if len(msg) > 0 {
 		log.I.F("extra '%s'", msg)
 	}

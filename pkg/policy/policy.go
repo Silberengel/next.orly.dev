@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -285,16 +284,18 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 	// Check if script is present and enabled
 	if rule.Script != "" && p.Manager != nil {
 		if p.Manager.IsEnabled() {
-			return p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
-		}
-		// Script is configured but policy is disabled - use default policy if rule has no other restrictions
-		hasOtherRestrictions := len(rule.WriteAllow) > 0 || len(rule.WriteDeny) > 0 || len(rule.ReadAllow) > 0 || len(rule.ReadDeny) > 0 ||
-			rule.SizeLimit != nil || rule.ContentLimit != nil || len(rule.MustHaveTags) > 0 ||
-			rule.MaxExpiry != nil || rule.Privileged || rule.RateLimit != nil ||
-			rule.MaxAgeOfEvent != nil || rule.MaxAgeEventInFuture != nil
-		if !hasOtherRestrictions {
-			// No other restrictions, use default policy
-			return p.getDefaultPolicyAction(), nil
+			// Check if script file exists before trying to use it
+			if _, err := os.Stat(p.Manager.GetScriptPath()); err == nil {
+				// Script exists, try to use it
+				allowed, err := p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
+				if err == nil {
+					// Script ran successfully, return its decision
+					return allowed, nil
+				}
+				// Script failed, fall through to apply other criteria
+				log.W.F("policy script check failed for kind %d: %v, applying other criteria", ev.Kind, err)
+			}
+			// Script doesn't exist or failed, fall through to apply other criteria
 		}
 	}
 
@@ -481,24 +482,14 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	if !p.Manager.IsRunning() {
 		// Check if script file exists
 		if _, err := os.Stat(p.Manager.GetScriptPath()); os.IsNotExist(err) {
-			// Script doesn't exist, this is a fatal error
-			buf := make([]byte, 1024*1024)
-			n := runtime.Stack(buf, true)
-			log.E.F("policy script does not exist at %s", p.Manager.GetScriptPath())
-			fmt.Fprintf(os.Stderr, "FATAL: Policy script required but not found at %s\n", p.Manager.GetScriptPath())
-			fmt.Fprintf(os.Stderr, "Stack trace:\n%s\n", buf[:n])
-			os.Exit(1)
+			// Script doesn't exist, return error so caller can fall back to other criteria
+			return false, fmt.Errorf("policy script does not exist at %s", p.Manager.GetScriptPath())
 		}
 
 		// Try to start the policy and wait for it
 		if err := p.Manager.ensureRunning(); err != nil {
-			// Startup failed, this is a fatal error
-			buf := make([]byte, 1024*1024)
-			n := runtime.Stack(buf, true)
-			log.E.F("failed to start policy script: %v", err)
-			fmt.Fprintf(os.Stderr, "FATAL: Failed to start policy script: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Stack trace:\n%s\n", buf[:n])
-			os.Exit(1)
+			// Startup failed, return error so caller can fall back to other criteria
+			return false, fmt.Errorf("failed to start policy script: %v", err)
 		}
 	}
 
