@@ -1,0 +1,53 @@
+package app
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"lol.mleku.dev/log"
+	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/database"
+	blossom "next.orly.dev/pkg/blossom"
+)
+
+// initializeBlossomServer creates and configures the Blossom blob storage server
+func initializeBlossomServer(
+	ctx context.Context, cfg *config.C, db *database.D,
+) (*blossom.Server, error) {
+	// Create blossom server configuration
+	blossomCfg := &blossom.Config{
+		BaseURL:          "", // Will be set dynamically per request
+		MaxBlobSize:      100 * 1024 * 1024, // 100MB default
+		AllowedMimeTypes: nil,                // Allow all MIME types by default
+		RequireAuth:      cfg.AuthRequired || cfg.AuthToWrite,
+	}
+
+	// Create blossom server with relay's ACL registry
+	bs := blossom.NewServer(db, acl.Registry, blossomCfg)
+
+	// Override baseURL getter to use request-based URL
+	// We'll need to modify the handler to inject the baseURL per request
+	// For now, we'll use a middleware approach
+
+	log.I.F("blossom server initialized with ACL mode: %s", cfg.ACLMode)
+	return bs, nil
+}
+
+// blossomHandler wraps the blossom server handler to inject baseURL per request
+func (s *Server) blossomHandler(w http.ResponseWriter, r *http.Request) {
+	// Strip /blossom prefix and pass to blossom handler
+	r.URL.Path = strings.TrimPrefix(r.URL.Path, "/blossom")
+	if !strings.HasPrefix(r.URL.Path, "/") {
+		r.URL.Path = "/" + r.URL.Path
+	}
+	
+	// Set baseURL in request context for blossom server to use
+	baseURL := s.ServiceURL(r) + "/blossom"
+	type baseURLKey struct{}
+	r = r.WithContext(context.WithValue(r.Context(), baseURLKey{}, baseURL))
+	
+	s.blossomServer.Handler().ServeHTTP(w, r)
+}
+

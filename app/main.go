@@ -119,6 +119,14 @@ func Run(
 	// Initialize the user interface
 	l.UserInterface()
 
+	// Initialize Blossom blob storage server
+	if l.blossomServer, err = initializeBlossomServer(ctx, cfg, db); err != nil {
+		log.E.F("failed to initialize blossom server: %v", err)
+		// Continue without blossom server
+	} else if l.blossomServer != nil {
+		log.I.F("blossom blob storage server initialized")
+	}
+
 	// Ensure a relay identity secret key exists when subscriptions and NWC are enabled
 	if cfg.SubscriptionEnabled && cfg.NWCUri != "" {
 		if skb, e := db.GetOrCreateRelayIdentitySecret(); e != nil {

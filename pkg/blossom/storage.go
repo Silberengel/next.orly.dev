@@ -17,8 +17,8 @@ import (
 
 const (
 	// Database key prefixes (metadata and indexes only, blob data stored as files)
-	prefixBlobMeta  = "blob:meta:"
-	prefixBlobIndex = "blob:index:"
+	prefixBlobMeta   = "blob:meta:"
+	prefixBlobIndex  = "blob:index:"
 	prefixBlobReport = "blob:report:"
 )
 
@@ -29,7 +29,10 @@ type Storage struct {
 }
 
 // NewStorage creates a new storage instance
-func NewStorage(db *database.D, blobDir string) *Storage {
+func NewStorage(db *database.D) *Storage {
+	// Derive blob directory from database path
+	blobDir := filepath.Join(db.Path(), "blossom")
+
 	// Ensure blob directory exists
 	if err := os.MkdirAll(blobDir, 0755); err != nil {
 		log.E.F("failed to create blob directory %s: %v", blobDir, err)
@@ -271,10 +274,10 @@ func (s *Storage) ListBlobs(
 		for it.Rewind(); it.Valid(); it.Next() {
 			item := it.Item()
 			key := item.Key()
-			
+
 			// Extract SHA256 from key: prefixBlobIndex + pubkeyHex + ":" + sha256Hex
 			sha256Hex := string(key[len(prefix):])
-			
+
 			// Get blob metadata
 			metaKey := prefixBlobMeta + sha256Hex
 			metaItem, err := txn.Get([]byte(metaKey))
@@ -323,6 +326,62 @@ func (s *Storage) ListBlobs(
 		return
 	}
 
+	return
+}
+
+// GetTotalStorageUsed calculates total storage used by a pubkey in MB
+func (s *Storage) GetTotalStorageUsed(pubkey []byte) (totalMB int64, err error) {
+	pubkeyHex := hex.Enc(pubkey)
+	prefix := prefixBlobIndex + pubkeyHex + ":"
+
+	totalBytes := int64(0)
+
+	if err = s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = []byte(prefix)
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			key := item.Key()
+
+			// Extract SHA256 from key: prefixBlobIndex + pubkeyHex + ":" + sha256Hex
+			sha256Hex := string(key[len(prefix):])
+
+			// Get blob metadata
+			metaKey := prefixBlobMeta + sha256Hex
+			metaItem, err := txn.Get([]byte(metaKey))
+			if err != nil {
+				continue
+			}
+
+			var metadata *BlobMetadata
+			if err = metaItem.Value(func(val []byte) error {
+				if metadata, err = DeserializeBlobMetadata(val); err != nil {
+					return err
+				}
+				return nil
+			}); err != nil {
+				continue
+			}
+
+			// Verify blob file exists
+			blobPath := s.getBlobPath(sha256Hex, metadata.Extension)
+			if _, errGet := os.Stat(blobPath); errGet != nil {
+				continue
+			}
+
+			totalBytes += metadata.Size
+		}
+
+		return nil
+	}); chk.E(err) {
+		return
+	}
+
+	// Convert bytes to MB (rounding up)
+	totalMB = (totalBytes + 1024*1024 - 1) / (1024 * 1024)
 	return
 }
 
@@ -394,4 +453,3 @@ func (s *Storage) GetBlobMetadata(sha256Hash []byte) (metadata *BlobMetadata, er
 
 	return
 }
-

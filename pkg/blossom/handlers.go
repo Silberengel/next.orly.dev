@@ -57,7 +57,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 
 	// Optional authorization check (BUD-01)
 	if s.requireAuth {
-		authEv, err := ValidateAuthEventForGet(r, s.baseURL, sha256Hash)
+		authEv, err := ValidateAuthEventForGet(r, s.getBaseURL(r), sha256Hash)
 		if err != nil {
 			s.setErrorResponse(w, http.StatusUnauthorized, "authorization required")
 			return
@@ -142,7 +142,7 @@ func (s *Server) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 
 	// Optional authorization check
 	if s.requireAuth {
-		authEv, err := ValidateAuthEventForGet(r, s.baseURL, sha256Hash)
+		authEv, err := ValidateAuthEventForGet(r, s.getBaseURL(r), sha256Hash)
 		if err != nil {
 			s.setErrorResponse(w, http.StatusUnauthorized, "authorization required")
 			return
@@ -233,6 +233,34 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check storage quota if blob doesn't exist (new upload)
+	if !exists {
+		blobSizeMB := int64(len(body)) / (1024 * 1024)
+		if blobSizeMB == 0 && len(body) > 0 {
+			blobSizeMB = 1 // At least 1 MB for any non-zero blob
+		}
+
+		// Get storage quota from database
+		quotaMB, err := s.db.GetBlossomStorageQuota(pubkey)
+		if err != nil {
+			log.W.F("failed to get storage quota: %v", err)
+		} else if quotaMB > 0 {
+			// Get current storage used
+			usedMB, err := s.storage.GetTotalStorageUsed(pubkey)
+			if err != nil {
+				log.W.F("failed to calculate storage used: %v", err)
+			} else {
+				// Check if upload would exceed quota
+				if usedMB+blobSizeMB > quotaMB {
+					s.setErrorResponse(w, http.StatusPaymentRequired,
+						fmt.Sprintf("storage quota exceeded: %d/%d MB used, %d MB needed",
+							usedMB, quotaMB, blobSizeMB))
+					return
+				}
+			}
+		}
+	}
+
 	// Save blob if it doesn't exist
 	if !exists {
 		if err = s.storage.SaveBlob(sha256Hash, body, pubkey, mimeType, ext); err != nil {
@@ -257,7 +285,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build URL with extension
-	blobURL := BuildBlobURL(s.baseURL, sha256Hex, ext)
+	blobURL := BuildBlobURL(s.getBaseURL(r), sha256Hex, ext)
 
 	// Create descriptor
 	descriptor := NewBlobDescriptor(
@@ -434,7 +462,7 @@ func (s *Server) handleListBlobs(w http.ResponseWriter, r *http.Request) {
 
 	// Set URLs for descriptors
 	for _, desc := range descriptors {
-		desc.URL = BuildBlobURL(s.baseURL, desc.SHA256, "")
+		desc.URL = BuildBlobURL(s.getBaseURL(r), desc.SHA256, "")
 	}
 
 	// Return JSON array
@@ -605,7 +633,7 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build URL
-	blobURL := BuildBlobURL(s.baseURL, sha256Hex, ext)
+	blobURL := BuildBlobURL(s.getBaseURL(r), sha256Hex, ext)
 
 	// Create descriptor
 	descriptor := NewBlobDescriptor(
@@ -684,6 +712,42 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	// Calculate optimized blob SHA256
 	optimizedHash := CalculateSHA256(optimizedData)
 	optimizedHex := hex.Enc(optimizedHash)
+
+	// Check if optimized blob already exists
+	exists, err := s.storage.HasBlob(optimizedHash)
+	if err != nil {
+		log.E.F("error checking blob existence: %v", err)
+		s.setErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	// Check storage quota if optimized blob doesn't exist (new upload)
+	if !exists {
+		blobSizeMB := int64(len(optimizedData)) / (1024 * 1024)
+		if blobSizeMB == 0 && len(optimizedData) > 0 {
+			blobSizeMB = 1 // At least 1 MB for any non-zero blob
+		}
+
+		// Get storage quota from database
+		quotaMB, err := s.db.GetBlossomStorageQuota(pubkey)
+		if err != nil {
+			log.W.F("failed to get storage quota: %v", err)
+		} else if quotaMB > 0 {
+			// Get current storage used
+			usedMB, err := s.storage.GetTotalStorageUsed(pubkey)
+			if err != nil {
+				log.W.F("failed to calculate storage used: %v", err)
+			} else {
+				// Check if upload would exceed quota
+				if usedMB+blobSizeMB > quotaMB {
+					s.setErrorResponse(w, http.StatusPaymentRequired,
+						fmt.Sprintf("storage quota exceeded: %d/%d MB used, %d MB needed",
+							usedMB, quotaMB, blobSizeMB))
+					return
+				}
+			}
+		}
+	}
 
 	// Save optimized blob
 	if err = s.storage.SaveBlob(optimizedHash, optimizedData, pubkey, mimeType, ext); err != nil {

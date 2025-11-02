@@ -27,6 +27,7 @@ import (
 	"next.orly.dev/pkg/protocol/httpauth"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/spider"
+	blossom "next.orly.dev/pkg/blossom"
 )
 
 type Server struct {
@@ -49,6 +50,7 @@ type Server struct {
 	sprocketManager  *SprocketManager
 	policyManager    *policy.P
 	spiderManager    *spider.Spider
+	blossomServer    *blossom.Server
 }
 
 // isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system
@@ -241,6 +243,12 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/nip86", s.handleNIP86Management)
 	// ACL mode endpoint
 	s.mux.HandleFunc("/api/acl-mode", s.handleACLMode)
+	
+	// Blossom blob storage API endpoint
+	if s.blossomServer != nil {
+		s.mux.HandleFunc("/blossom/", s.blossomHandler)
+		log.Printf("Blossom blob storage API enabled at /blossom")
+	}
 }
 
 // handleFavicon serves orly-favicon.png as favicon.ico

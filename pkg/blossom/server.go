@@ -27,7 +27,6 @@ type Config struct {
 	MaxBlobSize      int64
 	AllowedMimeTypes []string
 	RequireAuth      bool
-	BlobDir          string // Directory for storing blob files
 }
 
 // NewServer creates a new Blossom server instance
@@ -39,7 +38,7 @@ func NewServer(db *database.D, aclRegistry *acl.S, cfg *Config) *Server {
 		}
 	}
 
-	storage := NewStorage(db, cfg.BlobDir)
+	storage := NewStorage(db)
 
 	// Build allowed MIME types map
 	allowedMap := make(map[string]bool)
@@ -197,4 +196,15 @@ func (s *Server) checkACL(
 	actual := levelMap[level]
 
 	return actual >= required
+}
+
+// getBaseURL returns the base URL, preferring request context if available
+func (s *Server) getBaseURL(r *http.Request) string {
+	type baseURLKey struct{}
+	if baseURL := r.Context().Value(baseURLKey{}); baseURL != nil {
+		if url, ok := baseURL.(string); ok && url != "" {
+			return url
+		}
+	}
+	return s.baseURL
 }

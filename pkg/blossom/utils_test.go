@@ -39,19 +39,12 @@ func testSetup(t *testing.T) (*Server, func()) {
 	// Create ACL registry
 	aclRegistry := acl.Registry
 
-	// Create temporary directory for blob storage
-	blobDir, err := os.MkdirTemp("", "blossom-blobs-*")
-	if err != nil {
-		t.Fatalf("Failed to create blob temp dir: %v", err)
-	}
-
 	// Create server
 	cfg := &Config{
 		BaseURL:         "http://localhost:8080",
 		MaxBlobSize:     100 * 1024 * 1024, // 100MB
 		AllowedMimeTypes: nil,
 		RequireAuth:     false,
-		BlobDir:         blobDir,
 	}
 
 	server := NewServer(db, aclRegistry, cfg)
@@ -60,7 +53,6 @@ func testSetup(t *testing.T) (*Server, func()) {
 		cancel()
 		db.Close()
 		os.RemoveAll(tempDir)
-		os.RemoveAll(blobDir)
 	}
 
 	return server, cleanup

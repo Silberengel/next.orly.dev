@@ -505,7 +505,9 @@ func (pp *PaymentProcessor) handleNotification(
 	// Prefer explicit payer/relay pubkeys if provided in metadata
 	var payerPubkey []byte
 	var userNpub string
-	if metadata, ok := notification["metadata"].(map[string]any); ok {
+	var metadata map[string]any
+	if md, ok := notification["metadata"].(map[string]any); ok {
+		metadata = md
 		if s, ok := metadata["payer_pubkey"].(string); ok && s != "" {
 			if pk, err := decodeAnyPubkey(s); err == nil {
 				payerPubkey = pk
@@ -565,6 +567,11 @@ func (pp *PaymentProcessor) handleNotification(
 	}
 
 	satsReceived := int64(amount / 1000)
+	
+	// Parse zap memo for blossom service level
+	blossomLevel := pp.parseBlossomServiceLevel(description, metadata)
+	
+	// Calculate subscription days (for relay access)
 	monthlyPrice := pp.config.MonthlyPriceSats
 	if monthlyPrice <= 0 {
 		monthlyPrice = 6000
@@ -575,8 +582,17 @@ func (pp *PaymentProcessor) handleNotification(
 		return fmt.Errorf("payment amount too small")
 	}
 
+	// Extend relay subscription
 	if err := pp.db.ExtendSubscription(pubkey, days); err != nil {
 		return fmt.Errorf("failed to extend subscription: %w", err)
+	}
+
+	// If blossom service level specified, extend blossom subscription
+	if blossomLevel != "" {
+		if err := pp.extendBlossomSubscription(pubkey, satsReceived, blossomLevel, days); err != nil {
+			log.W.F("failed to extend blossom subscription: %v", err)
+			// Don't fail the payment if blossom subscription fails
+		}
 	}
 
 	// Record payment history
@@ -886,6 +902,118 @@ func (pp *PaymentProcessor) npubToPubkey(npubStr string) ([]byte, error) {
 	}
 
 	return pubkey, nil
+}
+
+// parseBlossomServiceLevel parses the zap memo for a blossom service level specification
+// Format: "blossom:level" or "blossom:level:storage_mb" in description or metadata memo field
+func (pp *PaymentProcessor) parseBlossomServiceLevel(
+	description string, metadata map[string]any,
+) string {
+	// Check metadata memo field first
+	if metadata != nil {
+		if memo, ok := metadata["memo"].(string); ok && memo != "" {
+			if level := pp.extractBlossomLevelFromMemo(memo); level != "" {
+				return level
+			}
+		}
+	}
+
+	// Check description
+	if description != "" {
+		if level := pp.extractBlossomLevelFromMemo(description); level != "" {
+			return level
+		}
+	}
+
+	return ""
+}
+
+// extractBlossomLevelFromMemo extracts blossom service level from memo text
+// Supports formats: "blossom:basic", "blossom:premium", "blossom:basic:100"
+func (pp *PaymentProcessor) extractBlossomLevelFromMemo(memo string) string {
+	// Look for "blossom:" prefix
+	parts := strings.Fields(memo)
+	for _, part := range parts {
+		if strings.HasPrefix(part, "blossom:") {
+			// Extract level name (e.g., "basic", "premium")
+			levelPart := strings.TrimPrefix(part, "blossom:")
+			// Remove any storage specification (e.g., ":100")
+			if colonIdx := strings.Index(levelPart, ":"); colonIdx > 0 {
+				levelPart = levelPart[:colonIdx]
+			}
+			// Validate level exists in config
+			if pp.isValidBlossomLevel(levelPart) {
+				return levelPart
+			}
+		}
+	}
+	return ""
+}
+
+// isValidBlossomLevel checks if a service level is configured
+func (pp *PaymentProcessor) isValidBlossomLevel(level string) bool {
+	if pp.config == nil || pp.config.BlossomServiceLevels == "" {
+		return false
+	}
+
+	// Parse service levels from config
+	levels := strings.Split(pp.config.BlossomServiceLevels, ",")
+	for _, l := range levels {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, level+":") {
+			return true
+		}
+	}
+	return false
+}
+
+// parseServiceLevelStorage parses storage quota in MB per sat per month for a service level
+func (pp *PaymentProcessor) parseServiceLevelStorage(level string) (int64, error) {
+	if pp.config == nil || pp.config.BlossomServiceLevels == "" {
+		return 0, fmt.Errorf("blossom service levels not configured")
+	}
+
+	levels := strings.Split(pp.config.BlossomServiceLevels, ",")
+	for _, l := range levels {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, level+":") {
+			parts := strings.Split(l, ":")
+			if len(parts) >= 2 {
+				var storageMB float64
+				if _, err := fmt.Sscanf(parts[1], "%f", &storageMB); err != nil {
+					return 0, fmt.Errorf("invalid storage format: %w", err)
+				}
+				return int64(storageMB), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("service level %s not found", level)
+}
+
+// extendBlossomSubscription extends or creates a blossom subscription with service level
+func (pp *PaymentProcessor) extendBlossomSubscription(
+	pubkey []byte, satsReceived int64, level string, days int,
+) error {
+	// Get storage quota per sat per month for this level
+	storageMBPerSatPerMonth, err := pp.parseServiceLevelStorage(level)
+	if err != nil {
+		return fmt.Errorf("failed to parse service level storage: %w", err)
+	}
+
+	// Calculate storage quota: sats * storage_mb_per_sat_per_month * (days / 30)
+	storageMB := int64(float64(satsReceived) * float64(storageMBPerSatPerMonth) * (float64(days) / 30.0))
+
+	// Extend blossom subscription
+	if err := pp.db.ExtendBlossomSubscription(pubkey, level, storageMB, days); err != nil {
+		return fmt.Errorf("failed to extend blossom subscription: %w", err)
+	}
+
+	log.I.F(
+		"extended blossom subscription: level=%s, storage=%d MB, days=%d",
+		level, storageMB, days,
+	)
+
+	return nil
 }
 
 // UpdateRelayProfile creates or updates the relay's kind 0 profile with subscription information
