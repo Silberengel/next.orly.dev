@@ -1,4 +1,4 @@
-//go:build cgo
+//go:build !cgo
 
 package p256k
 
@@ -14,7 +14,7 @@ func NewSecFromHex[V []byte | string](skh V) (sign signer.I, err error) {
 	if _, err = hex.DecBytes(sk, []byte(skh)); chk.E(err) {
 		return
 	}
-	sign = p256k1signer.NewP256K1Signer()
+	sign = p256k1signer.NewBtcecSigner()
 	if err = sign.InitSec(sk); chk.E(err) {
 		return
 	}
@@ -26,7 +26,7 @@ func NewPubFromHex[V []byte | string](pkh V) (sign signer.I, err error) {
 	if _, err = hex.DecBytes(pk, []byte(pkh)); chk.E(err) {
 		return
 	}
-	sign = p256k1signer.NewP256K1Signer()
+	sign = p256k1signer.NewBtcecSigner()
 	if err = sign.InitPub(pk); chk.E(err) {
 		return
 	}

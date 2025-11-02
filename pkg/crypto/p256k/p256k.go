@@ -2,139 +2,19 @@
 
 package p256k
 
-import "C"
 import (
-	"lol.mleku.dev/chk"
-	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/ec"
-	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/interfaces/signer"
+	p256k1signer "p256k1.mleku.dev/signer"
 )
 
 func init() {
-	log.T.Ln("using bitcoin/secp256k1 signature library")
+	log.T.Ln("using p256k1.mleku.dev/signer (CGO)")
 }
 
-// Signer implements the signer.I interface.
-//
-// Either the Sec or Pub must be populated, the former is for generating
-// signatures, the latter is for verifying them.
-//
-// When using this library only for verification, a constructor that converts
-// from bytes to PubKey is needed prior to calling Verify.
-type Signer struct {
-	// SecretKey is the secret key.
-	SecretKey *SecKey
-	// PublicKey is the public key.
-	PublicKey *PubKey
-	// BTCECSec is needed for ECDH as currently the CGO bindings don't include it
-	BTCECSec *btcec.SecretKey
-	skb, pkb []byte
-}
+// Signer is an alias for the P256K1Signer type from p256k1.mleku.dev/signer (cgo version).
+type Signer = p256k1signer.P256K1Signer
 
-var _ signer.I = &Signer{}
+// Keygen is an alias for the P256K1Gen type from p256k1.mleku.dev/signer (cgo version).
+type Keygen = p256k1signer.P256K1Gen
 
-// Generate a new Signer key pair using the CGO bindings to libsecp256k1
-func (s *Signer) Generate() (err error) {
-	var cs *Sec
-	var cx *XPublicKey
-	if s.skb, s.pkb, cs, cx, err = Generate(); chk.E(err) {
-		return
-	}
-	s.SecretKey = &cs.Key
-	s.PublicKey = cx.Key
-	s.BTCECSec, _ = btcec.PrivKeyFromBytes(s.skb)
-	return
-}
-
-func (s *Signer) InitSec(skb []byte) (err error) {
-	var cs *Sec
-	var cx *XPublicKey
-	// var cp *PublicKey
-	if s.pkb, cs, cx, err = FromSecretBytes(skb); chk.E(err) {
-		if err.Error() != "provided secret generates a public key with odd Y coordinate, fixed version returned" {
-			log.E.Ln(err)
-			return
-		}
-	}
-	s.skb = skb
-	s.SecretKey = &cs.Key
-	s.PublicKey = cx.Key
-	// s.ECPublicKey = cp.Key
-	// needed for ecdh
-	s.BTCECSec, _ = btcec.PrivKeyFromBytes(s.skb)
-	return
-}
-
-func (s *Signer) InitPub(pub []byte) (err error) {
-	var up *Pub
-	if up, err = PubFromBytes(pub); chk.E(err) {
-		return
-	}
-	s.PublicKey = &up.Key
-	s.pkb = up.PubB()
-	return
-}
-
-func (s *Signer) Sec() (b []byte) {
-	if s == nil {
-		return nil
-	}
-	return s.skb
-}
-func (s *Signer) Pub() (b []byte) {
-	if s == nil {
-		return nil
-	}
-	return s.pkb
-}
-
-// func (s *Signer) ECPub() (b []byte) { return s.pkb }
-
-func (s *Signer) Sign(msg []byte) (sig []byte, err error) {
-	if s.SecretKey == nil {
-		err = errorf.E("p256k: I secret not initialized")
-		return
-	}
-	u := ToUchar(msg)
-	if sig, err = Sign(u, s.SecretKey); chk.E(err) {
-		return
-	}
-	return
-}
-
-func (s *Signer) Verify(msg, sig []byte) (valid bool, err error) {
-	if s.PublicKey == nil {
-		err = errorf.E("p256k: Pubkey not initialized")
-		return
-	}
-	var uMsg, uSig *Uchar
-	if uMsg, err = Msg(msg); chk.E(err) {
-		return
-	}
-	if uSig, err = Sig(sig); chk.E(err) {
-		return
-	}
-	valid = Verify(uMsg, uSig, s.PublicKey)
-	if !valid {
-		err = errorf.E("p256k: invalid signature")
-	}
-	return
-}
-
-func (s *Signer) ECDH(pubkeyBytes []byte) (secret []byte, err error) {
-	var pub *secp256k1.PublicKey
-	if pub, err = secp256k1.ParsePubKey(
-		append(
-			[]byte{0x02},
-			pubkeyBytes...,
-		),
-	); chk.E(err) {
-		return
-	}
-	secret = btcec.GenerateSharedSecret(s.BTCECSec, pub)
-	return
-}
-
-func (s *Signer) Zero() { Zero(s.SecretKey) }
+var NewKeygen = p256k1signer.NewP256K1Gen

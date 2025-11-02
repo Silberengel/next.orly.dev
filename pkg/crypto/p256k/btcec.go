@@ -4,22 +4,18 @@ package p256k
 
 import (
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k/btcec"
+	p256k1signer "p256k1.mleku.dev/signer"
 )
 
 func init() {
-	log.T.Ln("using btcec signature library")
+	log.T.Ln("using p256k1.mleku.dev/signer (pure Go/Btcec)")
 }
 
-// BTCECSigner is always available but enabling it disables the use of
-// github.com/bitcoin-core/secp256k1 CGO signature implementation and points it at the btec
-// version.
+// Signer is an alias for the BtcecSigner type from p256k1.mleku.dev/signer (btcec version).
+// This is used when CGO is not available.
+type Signer = p256k1signer.BtcecSigner
 
-type Signer = btcec.Signer
-type Keygen = btcec.Keygen
+// Keygen is an alias for the P256K1Gen type from p256k1.mleku.dev/signer (btcec version).
+type Keygen = p256k1signer.P256K1Gen
 
-func NewKeygen() (k *Keygen) { return new(Keygen) }
-
-var NewSecFromHex = btcec.NewSecFromHex[string]
-var NewPubFromHex = btcec.NewPubFromHex[string]
-var HexToBin = btcec.HexToBin
+var NewKeygen = p256k1signer.NewP256K1Gen
