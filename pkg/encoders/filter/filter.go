@@ -145,38 +145,114 @@ func (f *F) Matches(ev *event.E) (match bool) {
 	return true
 }
 
+// EstimateSize returns an estimated size for marshaling the filter to JSON.
+// This accounts for worst-case expansion of escaped content and hex encoding.
+func (f *F) EstimateSize() (size int) {
+	// JSON structure overhead: {, }, commas, quotes, keys
+	size = 50
+	
+	// IDs: "ids":["hex1","hex2",...]
+	if f.Ids != nil && f.Ids.Len() > 0 {
+		size += 7 // "ids":[
+		for _, id := range f.Ids.T {
+			size += 2*len(id) + 4 // hex encoding + quotes + comma
+		}
+		size += 1 // closing ]
+	}
+	
+	// Kinds: "kinds":[1,2,3,...]
+	if f.Kinds.Len() > 0 {
+		size += 9 // "kinds":[
+		size += f.Kinds.Len() * 5 // assume average 5 bytes per kind number
+		size += 1 // closing ]
+	}
+	
+	// Authors: "authors":["hex1","hex2",...]
+	if f.Authors.Len() > 0 {
+		size += 11 // "authors":[
+		for _, auth := range f.Authors.T {
+			size += 2*len(auth) + 4 // hex encoding + quotes + comma
+		}
+		size += 1 // closing ]
+	}
+	
+	// Tags: "#x":["val1","val2",...]
+	if f.Tags != nil && f.Tags.Len() > 0 {
+		for _, tg := range *f.Tags {
+			if tg == nil || tg.Len() < 2 {
+				continue
+			}
+			size += 6 // "#x":[
+			for _, val := range tg.T[1:] {
+				size += len(val)*2 + 4 // escaped value + quotes + comma
+			}
+			size += 1 // closing ]
+		}
+	}
+	
+	// Since: "since":1234567890
+	if f.Since != nil && f.Since.U64() > 0 {
+		size += 10 // "since": + timestamp
+	}
+	
+	// Until: "until":1234567890
+	if f.Until != nil && f.Until.U64() > 0 {
+		size += 10 // "until": + timestamp
+	}
+	
+	// Search: "search":"escaped text"
+	if len(f.Search) > 0 {
+		size += 11 // "search":"
+		size += len(f.Search) * 2 // worst case escaping
+		size += 1 // closing quote
+	}
+	
+	// Limit: "limit":100
+	if pointers.Present(f.Limit) {
+		size += 11 // "limit": + number
+	}
+	
+	return
+}
+
 // Marshal a filter into raw JSON bytes, minified. The field ordering and sort
 // of fields is canonicalized so that a hash can identify the same filter.
 func (f *F) Marshal(dst []byte) (b []byte) {
 	var err error
 	_ = err
 	var first bool
+	// Pre-allocate buffer if nil to reduce reallocations
+	if dst == nil {
+		estimatedSize := f.EstimateSize()
+		dst = make([]byte, 0, estimatedSize)
+	}
 	// sort the fields so they come out the same
 	f.Sort()
 	// open parentheses
-	dst = append(dst, '{')
+	b = dst
+	b = append(b, '{')
 	if f.Ids != nil && f.Ids.Len() > 0 {
 		first = true
-		dst = text.JSONKey(dst, IDs)
-		dst = text.MarshalHexArray(dst, f.Ids.T)
+		b = text.JSONKey(b, IDs)
+		b = text.MarshalHexArray(b, f.Ids.T)
 	}
 	if f.Kinds.Len() > 0 {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Kinds)
-		dst = f.Kinds.Marshal(dst)
+		b = text.JSONKey(b, Kinds)
+		b = f.Kinds.Marshal(b)
 	}
 	if f.Authors.Len() > 0 {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Authors)
-		dst = text.MarshalHexArray(dst, f.Authors.T)
+		b = text.JSONKey(b, Authors)
+		b = text.MarshalHexArray(b, f.Authors.T)
 	}
 	if f.Tags != nil && f.Tags.Len() > 0 {
 		// tags are stored as tags with the initial element the "#a" and the rest the list in
@@ -204,61 +280,60 @@ func (f *F) Marshal(dst []byte) (b []byte) {
 				continue
 			}
 			if first {
-				dst = append(dst, ',')
+				b = append(b, ',')
 			} else {
 				first = true
 			}
 		// append the key with # prefix
-		dst = append(dst, '"', '#', tKey[0], '"', ':')
-		dst = append(dst, '[')
+		b = append(b, '"', '#', tKey[0], '"', ':')
+		b = append(b, '[')
 		for i, value := range values {
-			dst = text.AppendQuote(dst, value, text.NostrEscape)
+			b = text.AppendQuote(b, value, text.NostrEscape)
 			if i < len(values)-1 {
-				dst = append(dst, ',')
+				b = append(b, ',')
 			}
 		}
-		dst = append(dst, ']')
+		b = append(b, ']')
 		}
 	}
 	if f.Since != nil && f.Since.U64() > 0 {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Since)
-		dst = f.Since.Marshal(dst)
+		b = text.JSONKey(b, Since)
+		b = f.Since.Marshal(b)
 	}
 	if f.Until != nil && f.Until.U64() > 0 {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Until)
-		dst = f.Until.Marshal(dst)
+		b = text.JSONKey(b, Until)
+		b = f.Until.Marshal(b)
 	}
 	if len(f.Search) > 0 {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Search)
-		dst = text.AppendQuote(dst, f.Search, text.NostrEscape)
+		b = text.JSONKey(b, Search)
+		b = text.AppendQuote(b, f.Search, text.NostrEscape)
 	}
 	if pointers.Present(f.Limit) {
 		if first {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		} else {
 			first = true
 		}
-		dst = text.JSONKey(dst, Limit)
-		dst = ints.New(*f.Limit).Marshal(dst)
+		b = text.JSONKey(b, Limit)
+		b = ints.New(*f.Limit).Marshal(b)
 	}
 	// close parentheses
-	dst = append(dst, '}')
-	b = dst
+	b = append(b, '}')
 	return
 }
 
@@ -301,6 +376,10 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 				state = inKV
 				// log.I.Ln("inKV")
 			} else {
+				// Pre-allocate key buffer if needed
+				if key == nil {
+					key = make([]byte, 0, 16)
+				}
 				key = append(key, r[0])
 			}
 		case inKV:
@@ -323,17 +402,19 @@ func (f *F) Unmarshal(b []byte) (r []byte, err error) {
 					)
 					return
 				}
-				k := make([]byte, len(key))
+				// Reuse key slice instead of allocating new one
+				k := make([]byte, l)
 				copy(k, key)
 				var ff [][]byte
 				if ff, r, err = text.UnmarshalStringArray(r); chk.E(err) {
 					return
 				}
 				ff = append([][]byte{k}, ff...)
+				if f.Tags == nil {
+					f.Tags = tag.NewSWithCap(1)
+				}
 				s := append(*f.Tags, tag.NewFromBytesSlice(ff...))
 				f.Tags = &s
-				// f.Tags.F = append(f.Tags.F, tag.New(ff...))
-				// }
 				state = betweenKV
 			case IDs[0]:
 				if len(key) < len(IDs) {
