@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/interfaces/publisher"
 	"next.orly.dev/pkg/interfaces/typer"
+	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils"
 )
 
@@ -32,6 +32,9 @@ type Subscription struct {
 // Map is a map of filters associated with a collection of ws.Listener
 // connections.
 type Map map[*websocket.Conn]map[string]Subscription
+
+// WriteChanMap maps websocket connections to their write channels
+type WriteChanMap map[*websocket.Conn]chan<- publish.WriteRequest
 
 type W struct {
 	*websocket.Conn
@@ -69,18 +72,36 @@ type P struct {
 	Mx sync.RWMutex
 	// Map is the map of subscribers and subscriptions from the websocket api.
 	Map
+	// WriteChans maps websocket connections to their write channels
+	WriteChans WriteChanMap
 }
 
 var _ publisher.I = &P{}
 
 func NewPublisher(c context.Context) (publisher *P) {
 	return &P{
-		c:   c,
-		Map: make(Map),
+		c:          c,
+		Map:        make(Map),
+		WriteChans: make(WriteChanMap, 100),
 	}
 }
 
 func (p *P) Type() (typeName string) { return Type }
+
+// SetWriteChan stores the write channel for a websocket connection
+func (p *P) SetWriteChan(conn *websocket.Conn, writeChan chan<- publish.WriteRequest) {
+	p.Mx.Lock()
+	defer p.Mx.Unlock()
+	p.WriteChans[conn] = writeChan
+}
+
+// GetWriteChan returns the write channel for a websocket connection
+func (p *P) GetWriteChan(conn *websocket.Conn) (chan<- publish.WriteRequest, bool) {
+	p.Mx.RLock()
+	defer p.Mx.RUnlock()
+	ch, ok := p.WriteChans[conn]
+	return ch, ok
+}
 
 // Receive handles incoming messages to manage websocket listener subscriptions
 // and associated filters.
@@ -269,61 +290,40 @@ func (p *P) Deliver(ev *event.E) {
 		log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s",
 			hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
 
-		// Use a separate context with timeout for writes to prevent race conditions
-		// where the publisher context gets cancelled while writing events
-		deadline := time.Now().Add(DefaultWriteTimeout)
-		d.w.SetWriteDeadline(deadline)
+		// Get write channel for this connection
+		p.Mx.RLock()
+		writeChan, hasChan := p.GetWriteChan(d.w)
+		stillSubscribed := p.Map[d.w] != nil
+		p.Mx.RUnlock()
 
-		deliveryStart := time.Now()
-		if err = d.w.WriteMessage(websocket.TextMessage, msgData); err != nil {
-			deliveryDuration := time.Since(deliveryStart)
-
-			// Log detailed failure information
-			log.E.F("subscription delivery FAILED: event=%s to=%s sub=%s duration=%v error=%v",
-				hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
-
-			// Check for timeout specifically
-			isTimeout := strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded")
-			if isTimeout {
-				log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)",
-					hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
-			}
-
-			// Only close connection on permanent errors, not transient timeouts
-			// WebSocket write errors typically indicate connection issues, but we should
-			// distinguish between timeouts (client might be slow) and connection errors
-			isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
-				strings.Contains(err.Error(), "broken pipe") ||
-				strings.Contains(err.Error(), "connection reset") ||
-				websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
-					websocket.CloseGoingAway,
-					websocket.CloseNoStatusReceived)
-
-			if isConnectionError {
-				log.D.F("removing failed subscriber connection due to connection error: %s", d.sub.remote)
-				p.removeSubscriber(d.w)
-				_ = d.w.Close()
-			} else if isTimeout {
-				// For timeouts, log but don't immediately close - give it another chance
-				// The read deadline will catch dead connections eventually
-				log.W.F("subscription delivery timeout for %s (client may be slow), skipping event but keeping connection", d.sub.remote)
-			} else {
-				// Unknown error - be conservative and close
-				log.D.F("removing failed subscriber connection due to unknown error: %s", d.sub.remote)
-				p.removeSubscriber(d.w)
-				_ = d.w.Close()
-			}
+		if !stillSubscribed {
+			log.D.F("skipping delivery to %s - connection no longer subscribed", d.sub.remote)
 			continue
 		}
 
-		deliveryDuration := time.Since(deliveryStart)
-		log.D.F("subscription delivery SUCCESS: event=%s to=%s sub=%s duration=%v len=%d",
-			hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, len(msgData))
+		if !hasChan {
+			log.D.F("skipping delivery to %s - no write channel available", d.sub.remote)
+			continue
+		}
 
-		// Log slow deliveries for performance monitoring
-		if deliveryDuration > time.Millisecond*50 {
-			log.D.F("SLOW subscription delivery: event=%s to=%s duration=%v (>50ms)",
-				hex.Enc(ev.ID), d.sub.remote, deliveryDuration)
+		// Send to write channel - non-blocking with timeout
+		select {
+		case <-p.c.Done():
+			continue
+		case writeChan <- publish.WriteRequest{Data: msgData, MsgType: websocket.TextMessage, IsControl: false}:
+			log.D.F("subscription delivery QUEUED: event=%s to=%s sub=%s len=%d",
+				hex.Enc(ev.ID), d.sub.remote, d.id, len(msgData))
+		case <-time.After(DefaultWriteTimeout):
+			log.E.F("subscription delivery TIMEOUT: event=%s to=%s sub=%s (write channel full)",
+				hex.Enc(ev.ID), d.sub.remote, d.id)
+			// Check if connection is still valid
+			p.Mx.RLock()
+			stillSubscribed = p.Map[d.w] != nil
+			p.Mx.RUnlock()
+			if !stillSubscribed {
+				log.D.F("removing failed subscriber connection due to channel timeout: %s", d.sub.remote)
+				p.removeSubscriber(d.w)
+			}
 		}
 	}
 }
@@ -340,6 +340,7 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 		// Check the actual map after deletion, not the original reference
 		if len(p.Map[ws]) == 0 {
 			delete(p.Map, ws)
+			delete(p.WriteChans, ws)
 		}
 	}
 }
@@ -350,6 +351,7 @@ func (p *P) removeSubscriber(ws *websocket.Conn) {
 	defer p.Mx.Unlock()
 	clear(p.Map[ws])
 	delete(p.Map, ws)
+	delete(p.WriteChans, ws)
 }
 
 // canSeePrivateEvent checks if the authenticated user can see an event with a private tag

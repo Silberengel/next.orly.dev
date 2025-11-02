@@ -83,6 +83,16 @@ whitelist:
 		remote:    remote,
 		req:       r,
 		startTime: time.Now(),
+		writeChan: make(chan WriteRequest, 100), // Buffered channel for writes
+		writeDone: make(chan struct{}),
+	}
+
+	// Start write worker goroutine
+	go listener.writeWorker()
+
+	// Register write channel with publisher
+	if socketPub := listener.publishers.GetSocketPublisher(); socketPub != nil {
+		socketPub.SetWriteChan(conn, listener.writeChan)
 	}
 
 	// Check for blacklisted IPs
@@ -110,18 +120,25 @@ whitelist:
 		return nil
 	})
 	// Set ping handler - extends read deadline when pings are received
-	conn.SetPingHandler(func(string) error {
+	// Send pong through write channel
+	conn.SetPingHandler(func(msg string) error {
 		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
-		return conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(DefaultWriteTimeout))
+		deadline := time.Now().Add(DefaultWriteTimeout)
+		return listener.WriteControl(websocket.PongMessage, []byte{}, deadline)
 	})
 	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
-	go s.Pinger(ctx, conn, ticker)
+	go s.Pinger(ctx, listener, ticker)
 	defer func() {
 		log.D.F("closing websocket connection from %s", remote)
 
 		// Cancel context and stop pinger
 		cancel()
 		ticker.Stop()
+
+		// Close write channel to signal worker to exit
+		close(listener.writeChan)
+		// Wait for write worker to finish
+		<-listener.writeDone
 
 		// Cancel all subscriptions for this connection
 		log.D.F("cancelling subscriptions for %s", remote)
@@ -222,11 +239,10 @@ whitelist:
 		}
 		if typ == websocket.PingMessage {
 			log.D.F("received PING from %s, sending PONG", remote)
-			// Create a write context with timeout for pong response
+			// Send pong through write channel
 			deadline := time.Now().Add(DefaultWriteTimeout)
-			conn.SetWriteDeadline(deadline)
 			pongStart := time.Now()
-			if err = conn.WriteControl(websocket.PongMessage, msg, deadline); err != nil {
+			if err = listener.WriteControl(websocket.PongMessage, msg, deadline); err != nil {
 				pongDuration := time.Since(pongStart)
 				
 				// Check if this is a timeout vs a connection error
@@ -279,7 +295,7 @@ whitelist:
 }
 
 func (s *Server) Pinger(
-	ctx context.Context, conn *websocket.Conn, ticker *time.Ticker,
+	ctx context.Context, listener *Listener, ticker *time.Ticker,
 ) {
 	defer func() {
 		log.D.F("pinger shutting down")
@@ -295,12 +311,11 @@ func (s *Server) Pinger(
 			pingCount++
 			log.D.F("sending PING #%d", pingCount)
 
-			// Set write deadline for ping operation
+			// Send ping through write channel
 			deadline := time.Now().Add(DefaultWriteTimeout)
-			conn.SetWriteDeadline(deadline)
 			pingStart := time.Now()
 
-			if err = conn.WriteControl(websocket.PingMessage, []byte{}, deadline); err != nil {
+			if err = listener.WriteControl(websocket.PingMessage, []byte{}, deadline); err != nil {
 				pingDuration := time.Since(pingStart)
 				
 				// Check if this is a timeout vs a connection error

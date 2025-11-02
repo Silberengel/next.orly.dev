@@ -7,15 +7,19 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"lol.mleku.dev/chk"
+	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
+	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/atomic"
 )
+
+// WriteRequest represents a write operation to be performed by the write worker
+type WriteRequest = publish.WriteRequest
 
 type Listener struct {
 	*Server
@@ -28,6 +32,8 @@ type Listener struct {
 	startTime        time.Time
 	isBlacklisted    bool      // Marker to identify blacklisted IPs
 	blacklistTimeout time.Time // When to timeout blacklisted connections
+	writeChan        chan WriteRequest // Channel for write requests
+	writeDone        chan struct{}     // Closed when write worker exits
 	// Diagnostics: per-connection counters
 	msgCount   int
 	reqCount   int
@@ -40,75 +46,80 @@ func (l *Listener) Ctx() context.Context {
 	return l.ctx
 }
 
+// writeWorker is the single goroutine that handles all writes to the websocket connection.
+// This serializes all writes to prevent concurrent write panics.
+func (l *Listener) writeWorker() {
+	defer close(l.writeDone)
+	for {
+		select {
+		case <-l.ctx.Done():
+			return
+		case req, ok := <-l.writeChan:
+			if !ok {
+				return
+			}
+			deadline := req.Deadline
+			if deadline.IsZero() {
+				deadline = time.Now().Add(DefaultWriteTimeout)
+			}
+			l.conn.SetWriteDeadline(deadline)
+			writeStart := time.Now()
+			var err error
+			if req.IsControl {
+				err = l.conn.WriteControl(req.MsgType, req.Data, deadline)
+			} else {
+				err = l.conn.WriteMessage(req.MsgType, req.Data)
+			}
+			if err != nil {
+				writeDuration := time.Since(writeStart)
+				log.E.F("ws->%s write worker FAILED: len=%d duration=%v error=%v",
+					l.remote, len(req.Data), writeDuration, err)
+				// Check for connection errors - if so, stop the worker
+				isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
+					strings.Contains(err.Error(), "broken pipe") ||
+					strings.Contains(err.Error(), "connection reset") ||
+					websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
+						websocket.CloseGoingAway,
+						websocket.CloseNoStatusReceived)
+				if isConnectionError {
+					return
+				}
+				// Continue for other errors (timeouts, etc.)
+			} else {
+				writeDuration := time.Since(writeStart)
+				if writeDuration > time.Millisecond*100 {
+					log.D.F("ws->%s write worker SLOW: len=%d duration=%v",
+						l.remote, len(req.Data), writeDuration)
+				}
+			}
+		}
+	}
+}
+
 func (l *Listener) Write(p []byte) (n int, err error) {
-	start := time.Now()
-	msgLen := len(p)
-
-	// Log message attempt with content preview (first 200 chars for diagnostics)
-	preview := string(p)
-	if len(preview) > 200 {
-		preview = preview[:200] + "..."
+	// Send write request to channel - non-blocking with timeout
+	select {
+	case <-l.ctx.Done():
+		return 0, l.ctx.Err()
+	case l.writeChan <- WriteRequest{Data: p, MsgType: websocket.TextMessage, IsControl: false}:
+		return len(p), nil
+	case <-time.After(DefaultWriteTimeout):
+		log.E.F("ws->%s write channel timeout", l.remote)
+		return 0, errorf.E("write channel timeout")
 	}
-	log.T.F(
-		"ws->%s attempting write: len=%d preview=%q", l.remote, msgLen, preview,
-	)
+}
 
-	// Use a separate context with timeout for writes to prevent race conditions
-	// where the main connection context gets cancelled while writing events
-	deadline := time.Now().Add(DefaultWriteTimeout)
-	l.conn.SetWriteDeadline(deadline)
-
-	// Attempt the write operation
-	writeStart := time.Now()
-	if err = l.conn.WriteMessage(websocket.TextMessage, p); err != nil {
-		writeDuration := time.Since(writeStart)
-		totalDuration := time.Since(start)
-
-		// Log detailed failure information
-		log.E.F(
-			"ws->%s WRITE FAILED: len=%d duration=%v write_duration=%v error=%v preview=%q",
-			l.remote, msgLen, totalDuration, writeDuration, err, preview,
-		)
-
-		// Check if this is a context timeout
-		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
-			log.E.F(
-				"ws->%s write timeout after %v (limit=%v)", l.remote,
-				writeDuration, DefaultWriteTimeout,
-			)
-		}
-
-		// Check connection state
-		if l.conn != nil {
-			log.T.F(
-				"ws->%s connection state during failure: remote_addr=%v",
-				l.remote, l.req.RemoteAddr,
-			)
-		}
-
-		chk.E(err) // Still call the original error handler
-		return
+// WriteControl sends a control message through the write channel
+func (l *Listener) WriteControl(messageType int, data []byte, deadline time.Time) (err error) {
+	select {
+	case <-l.ctx.Done():
+		return l.ctx.Err()
+	case l.writeChan <- WriteRequest{Data: data, MsgType: messageType, IsControl: true, Deadline: deadline}:
+		return nil
+	case <-time.After(DefaultWriteTimeout):
+		log.E.F("ws->%s writeControl channel timeout", l.remote)
+		return errorf.E("writeControl channel timeout")
 	}
-
-	// Log successful write with timing
-	writeDuration := time.Since(writeStart)
-	totalDuration := time.Since(start)
-	n = msgLen
-
-	log.T.F(
-		"ws->%s WRITE SUCCESS: len=%d duration=%v write_duration=%v",
-		l.remote, n, totalDuration, writeDuration,
-	)
-
-	// Log slow writes for performance diagnostics
-	if writeDuration > time.Millisecond*100 {
-		log.T.F(
-			"ws->%s SLOW WRITE detected: %v (>100ms) len=%d", l.remote,
-			writeDuration, n,
-		)
-	}
-
-	return
 }
 
 // getManagedACL returns the managed ACL instance if available
