@@ -19,7 +19,7 @@ import (
 // handleGetBlob handles GET /<sha256> requests (BUD-01)
 func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	
+
 	// Extract SHA256 and extension
 	sha256Hex, ext, err := ExtractSHA256FromPath(path)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *Server) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 // handleHeadBlob handles HEAD /<sha256> requests (BUD-01)
 func (s *Server) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	
+
 	// Extract SHA256 and extension
 	sha256Hex, ext, err := ExtractSHA256FromPath(path)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Check ACL
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-	
+
 	if !s.checkACL(pubkey, remoteAddr, "write") {
 		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
 		return
@@ -180,7 +180,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if int64(len(body)) > s.maxBlobSize {
-		s.setErrorResponse(w, http.StatusRequestEntityTooLarge, 
+		s.setErrorResponse(w, http.StatusRequestEntityTooLarge,
 			fmt.Sprintf("blob too large: max %d bytes", s.maxBlobSize))
 		return
 	}
@@ -220,16 +220,22 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		GetFileExtensionFromPath(r.URL.Path),
 	)
 
+	// Extract extension from path or infer from MIME type
+	ext := GetFileExtensionFromPath(r.URL.Path)
+	if ext == "" {
+		ext = GetExtensionFromMimeType(mimeType)
+	}
+
 	// Check allowed MIME types
 	if len(s.allowedMimeTypes) > 0 && !s.allowedMimeTypes[mimeType] {
-		s.setErrorResponse(w, http.StatusUnsupportedMediaType, 
+		s.setErrorResponse(w, http.StatusUnsupportedMediaType,
 			fmt.Sprintf("MIME type %s not allowed", mimeType))
 		return
 	}
 
 	// Save blob if it doesn't exist
 	if !exists {
-		if err = s.storage.SaveBlob(sha256Hash, body, pubkey, mimeType); err != nil {
+		if err = s.storage.SaveBlob(sha256Hash, body, pubkey, mimeType, ext); err != nil {
 			log.E.F("error saving blob: %v", err)
 			s.setErrorResponse(w, http.StatusInternalServerError, "error saving blob")
 			return
@@ -242,7 +248,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			s.setErrorResponse(w, http.StatusInternalServerError, "internal server error")
 			return
 		}
-		
+
 		// Allow if same pubkey or if ACL allows
 		if !utils.FastEqual(metadata.Pubkey, pubkey) && !s.checkACL(pubkey, remoteAddr, "admin") {
 			s.setErrorResponse(w, http.StatusConflict, "blob already exists")
@@ -251,27 +257,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build URL with extension
-	ext := ""
-	if mimeExt := GetMimeTypeFromExtension(GetFileExtensionFromPath(r.URL.Path)); mimeExt != "application/octet-stream" {
-		// Try to infer extension from MIME type
-		for extName, mime := range map[string]string{
-			".pdf": "application/pdf",
-			".png": "image/png",
-			".jpg": "image/jpeg",
-			".gif": "image/gif",
-			".webp": "image/webp",
-		} {
-			if mime == mimeType {
-				ext = extName
-				break
-			}
-		}
-	}
-
 	blobURL := BuildBlobURL(s.baseURL, sha256Hex, ext)
-	if !strings.HasSuffix(blobURL, "/") && !strings.HasPrefix(ext, "/") {
-		blobURL = s.baseURL + "/" + sha256Hex + ext
-	}
 
 	// Create descriptor
 	descriptor := NewBlobDescriptor(
@@ -382,7 +368,7 @@ func (s *Server) handleUploadRequirements(w http.ResponseWriter, r *http.Request
 // handleListBlobs handles GET /list/<pubkey> requests (BUD-02)
 func (s *Server) handleListBlobs(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	
+
 	// Extract pubkey from path: list/<pubkey>
 	if !strings.HasPrefix(path, "list/") {
 		s.setErrorResponse(w, http.StatusBadRequest, "invalid path")
@@ -462,7 +448,7 @@ func (s *Server) handleListBlobs(w http.ResponseWriter, r *http.Request) {
 // handleDeleteBlob handles DELETE /<sha256> requests (BUD-02)
 func (s *Server) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/")
-	
+
 	// Extract SHA256
 	sha256Hex, _, err := ExtractSHA256FromPath(path)
 	if err != nil {
@@ -522,7 +508,7 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 	// Check ACL
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-	
+
 	if !s.checkACL(pubkey, remoteAddr, "write") {
 		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
 		return
@@ -560,7 +546,7 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		s.setErrorResponse(w, http.StatusBadGateway, 
+		s.setErrorResponse(w, http.StatusBadGateway,
 			fmt.Sprintf("remote server returned status %d", resp.StatusCode))
 		return
 	}
@@ -605,15 +591,21 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 		GetFileExtensionFromPath(mirrorURL.Path),
 	)
 
+	// Extract extension from path or infer from MIME type
+	ext := GetFileExtensionFromPath(mirrorURL.Path)
+	if ext == "" {
+		ext = GetExtensionFromMimeType(mimeType)
+	}
+
 	// Save blob
-	if err = s.storage.SaveBlob(sha256Hash, body, pubkey, mimeType); err != nil {
+	if err = s.storage.SaveBlob(sha256Hash, body, pubkey, mimeType, ext); err != nil {
 		log.E.F("error saving mirrored blob: %v", err)
 		s.setErrorResponse(w, http.StatusInternalServerError, "error saving blob")
 		return
 	}
 
 	// Build URL
-	blobURL := BuildBlobURL(s.baseURL, sha256Hex, "")
+	blobURL := BuildBlobURL(s.baseURL, sha256Hex, ext)
 
 	// Create descriptor
 	descriptor := NewBlobDescriptor(
@@ -637,7 +629,7 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	// Check ACL
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-	
+
 	if !s.checkACL(pubkey, remoteAddr, "write") {
 		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
 		return
@@ -677,24 +669,31 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Optimize media (placeholder - actual optimization would be implemented here)
-	optimizedData, mimeType := OptimizeMedia(body, DetectMimeType(
+	originalMimeType := DetectMimeType(
 		r.Header.Get("Content-Type"),
 		GetFileExtensionFromPath(r.URL.Path),
-	))
+	)
+	optimizedData, mimeType := OptimizeMedia(body, originalMimeType)
+
+	// Extract extension from path or infer from MIME type
+	ext := GetFileExtensionFromPath(r.URL.Path)
+	if ext == "" {
+		ext = GetExtensionFromMimeType(mimeType)
+	}
 
 	// Calculate optimized blob SHA256
 	optimizedHash := CalculateSHA256(optimizedData)
 	optimizedHex := hex.Enc(optimizedHash)
 
 	// Save optimized blob
-	if err = s.storage.SaveBlob(optimizedHash, optimizedData, pubkey, mimeType); err != nil {
+	if err = s.storage.SaveBlob(optimizedHash, optimizedData, pubkey, mimeType, ext); err != nil {
 		log.E.F("error saving optimized blob: %v", err)
 		s.setErrorResponse(w, http.StatusInternalServerError, "error saving blob")
 		return
 	}
 
 	// Build URL
-	blobURL := BuildBlobURL(s.baseURL, optimizedHex, "")
+	blobURL := BuildBlobURL(s.baseURL, optimizedHex, ext)
 
 	// Create descriptor
 	descriptor := NewBlobDescriptor(
@@ -725,7 +724,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	// Check ACL
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-	
+
 	if !s.checkACL(pubkey, remoteAddr, "read") {
 		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
 		return
@@ -780,4 +779,3 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 }
-

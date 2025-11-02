@@ -248,3 +248,35 @@ func GetFileExtensionFromPath(path string) string {
 	return ext
 }
 
+// GetExtensionFromMimeType returns file extension based on MIME type
+func GetExtensionFromMimeType(mimeType string) string {
+	// Reverse lookup of GetMimeTypeFromExtension
+	mimeToExt := map[string]string{
+		"application/pdf":        ".pdf",
+		"image/png":              ".png",
+		"image/jpeg":             ".jpg",
+		"image/gif":              ".gif",
+		"image/webp":             ".webp",
+		"image/svg+xml":          ".svg",
+		"video/mp4":              ".mp4",
+		"video/webm":             ".webm",
+		"audio/mpeg":             ".mp3",
+		"audio/wav":              ".wav",
+		"audio/ogg":              ".ogg",
+		"text/plain":             ".txt",
+		"text/html":              ".html",
+		"text/css":               ".css",
+		"application/javascript": ".js",
+		"application/json":       ".json",
+		"application/xml":         ".xml",
+		"application/zip":        ".zip",
+		"application/x-tar":       ".tar",
+		"application/gzip":       ".gz",
+	}
+
+	if ext, ok := mimeToExt[mimeType]; ok {
+		return ext
+	}
+	return "" // No extension for unknown MIME types
+}
+

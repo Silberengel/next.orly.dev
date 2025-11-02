@@ -14,19 +14,20 @@ type Server struct {
 	storage *Storage
 	acl     *acl.S
 	baseURL string
-	
+
 	// Configuration
-	maxBlobSize    int64
+	maxBlobSize      int64
 	allowedMimeTypes map[string]bool
-	requireAuth    bool
+	requireAuth      bool
 }
 
 // Config holds configuration for the Blossom server
 type Config struct {
-	BaseURL         string
-	MaxBlobSize     int64
+	BaseURL          string
+	MaxBlobSize      int64
 	AllowedMimeTypes []string
-	RequireAuth     bool
+	RequireAuth      bool
+	BlobDir          string // Directory for storing blob files
 }
 
 // NewServer creates a new Blossom server instance
@@ -38,8 +39,8 @@ func NewServer(db *database.D, aclRegistry *acl.S, cfg *Config) *Server {
 		}
 	}
 
-	storage := NewStorage(db)
-	
+	storage := NewStorage(db, cfg.BlobDir)
+
 	// Build allowed MIME types map
 	allowedMap := make(map[string]bool)
 	if len(cfg.AllowedMimeTypes) > 0 {
@@ -49,13 +50,13 @@ func NewServer(db *database.D, aclRegistry *acl.S, cfg *Config) *Server {
 	}
 
 	return &Server{
-		db:              db,
-		storage:         storage,
-		acl:             aclRegistry,
-		baseURL:         cfg.BaseURL,
-		maxBlobSize:     cfg.MaxBlobSize,
+		db:               db,
+		storage:          storage,
+		acl:              aclRegistry,
+		baseURL:          cfg.BaseURL,
+		maxBlobSize:      cfg.MaxBlobSize,
 		allowedMimeTypes: allowedMap,
-		requireAuth:     cfg.RequireAuth,
+		requireAuth:      cfg.RequireAuth,
 	}
 }
 
@@ -73,41 +74,41 @@ func (s *Server) Handler() http.Handler {
 
 		// Route based on path and method
 		path := r.URL.Path
-		
+
 		// Remove leading slash
 		path = strings.TrimPrefix(path, "/")
-		
+
 		// Handle specific endpoints
 		switch {
 		case r.Method == http.MethodGet && path == "upload":
 			// This shouldn't happen, but handle gracefully
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
-			
+
 		case r.Method == http.MethodHead && path == "upload":
 			s.handleUploadRequirements(w, r)
 			return
-			
+
 		case r.Method == http.MethodPut && path == "upload":
 			s.handleUpload(w, r)
 			return
-			
+
 		case r.Method == http.MethodHead && path == "media":
 			s.handleMediaHead(w, r)
 			return
-			
+
 		case r.Method == http.MethodPut && path == "media":
 			s.handleMediaUpload(w, r)
 			return
-			
+
 		case r.Method == http.MethodPut && path == "mirror":
 			s.handleMirror(w, r)
 			return
-			
+
 		case r.Method == http.MethodPut && path == "report":
 			s.handleReport(w, r)
 			return
-			
+
 		case strings.HasPrefix(path, "list/"):
 			if r.Method == http.MethodGet {
 				s.handleListBlobs(w, r)
@@ -115,22 +116,22 @@ func (s *Server) Handler() http.Handler {
 			}
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
-			
+
 		case r.Method == http.MethodGet:
 			// Handle GET /<sha256>
 			s.handleGetBlob(w, r)
 			return
-			
+
 		case r.Method == http.MethodHead:
 			// Handle HEAD /<sha256>
 			s.handleHeadBlob(w, r)
 			return
-			
+
 		case r.Method == http.MethodDelete:
 			// Handle DELETE /<sha256>
 			s.handleDeleteBlob(w, r)
 			return
-			
+
 		default:
 			http.Error(w, "Not found", http.StatusNotFound)
 			return
@@ -163,12 +164,12 @@ func (s *Server) getRemoteAddr(r *http.Request) string {
 			return strings.TrimSpace(parts[0])
 		}
 	}
-	
+
 	// Check X-Real-IP header
 	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
 		return realIP
 	}
-	
+
 	// Fall back to RemoteAddr
 	return r.RemoteAddr
 }
@@ -182,7 +183,7 @@ func (s *Server) checkACL(
 	}
 
 	level := s.acl.GetAccessLevel(pubkey, remoteAddr)
-	
+
 	// Map ACL levels to permissions
 	levelMap := map[string]int{
 		"none":  0,
@@ -191,10 +192,9 @@ func (s *Server) checkACL(
 		"admin": 3,
 		"owner": 4,
 	}
-	
+
 	required := levelMap[requiredLevel]
 	actual := levelMap[level]
-	
+
 	return actual >= required
 }
-

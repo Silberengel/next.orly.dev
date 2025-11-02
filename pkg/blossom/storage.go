@@ -2,6 +2,8 @@ package blossom
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 
 	"github.com/dgraph-io/badger/v4"
 	"lol.mleku.dev/chk"
@@ -14,8 +16,7 @@ import (
 )
 
 const (
-	// Database key prefixes
-	prefixBlobData  = "blob:data:"
+	// Database key prefixes (metadata and indexes only, blob data stored as files)
 	prefixBlobMeta  = "blob:meta:"
 	prefixBlobIndex = "blob:index:"
 	prefixBlobReport = "blob:report:"
@@ -23,17 +24,32 @@ const (
 
 // Storage provides blob storage operations
 type Storage struct {
-	db *database.D
+	db      *database.D
+	blobDir string // Directory for storing blob files
 }
 
 // NewStorage creates a new storage instance
-func NewStorage(db *database.D) *Storage {
-	return &Storage{db: db}
+func NewStorage(db *database.D, blobDir string) *Storage {
+	// Ensure blob directory exists
+	if err := os.MkdirAll(blobDir, 0755); err != nil {
+		log.E.F("failed to create blob directory %s: %v", blobDir, err)
+	}
+
+	return &Storage{
+		db:      db,
+		blobDir: blobDir,
+	}
+}
+
+// getBlobPath returns the filesystem path for a blob given its hash and extension
+func (s *Storage) getBlobPath(sha256Hex string, ext string) string {
+	filename := sha256Hex + ext
+	return filepath.Join(s.blobDir, filename)
 }
 
 // SaveBlob stores a blob with its metadata
 func (s *Storage) SaveBlob(
-	sha256Hash []byte, data []byte, pubkey []byte, mimeType string,
+	sha256Hash []byte, data []byte, pubkey []byte, mimeType string, extension string,
 ) (err error) {
 	sha256Hex := hex.Enc(sha256Hash)
 
@@ -47,20 +63,38 @@ func (s *Storage) SaveBlob(
 		return
 	}
 
-	// Create metadata
+	// If extension not provided, infer from MIME type
+	if extension == "" {
+		extension = GetExtensionFromMimeType(mimeType)
+	}
+
+	// Create metadata with extension
 	metadata := NewBlobMetadata(pubkey, mimeType, int64(len(data)))
+	metadata.Extension = extension
 	var metaData []byte
 	if metaData, err = metadata.Serialize(); chk.E(err) {
 		return
 	}
 
-	// Store blob data
-	dataKey := prefixBlobData + sha256Hex
-	if err = s.db.Update(func(txn *badger.Txn) error {
-		if err := txn.Set([]byte(dataKey), data); err != nil {
-			return err
-		}
+	// Get blob file path
+	blobPath := s.getBlobPath(sha256Hex, extension)
 
+	// Check if blob file already exists (deduplication)
+	if _, err = os.Stat(blobPath); err == nil {
+		// File exists, just update metadata and index
+		log.D.F("blob file already exists: %s", blobPath)
+	} else if !os.IsNotExist(err) {
+		return errorf.E("error checking blob file: %w", err)
+	} else {
+		// Write blob data to file
+		if err = os.WriteFile(blobPath, data, 0644); chk.E(err) {
+			return errorf.E("failed to write blob file: %w", err)
+		}
+		log.D.F("wrote blob file: %s (%d bytes)", blobPath, len(data))
+	}
+
+	// Store metadata and index in database
+	if err = s.db.Update(func(txn *badger.Txn) error {
 		// Store metadata
 		metaKey := prefixBlobMeta + sha256Hex
 		if err := txn.Set([]byte(metaKey), metaData); err != nil {
@@ -85,25 +119,8 @@ func (s *Storage) SaveBlob(
 // GetBlob retrieves blob data by SHA256 hash
 func (s *Storage) GetBlob(sha256Hash []byte) (data []byte, metadata *BlobMetadata, err error) {
 	sha256Hex := hex.Enc(sha256Hash)
-	dataKey := prefixBlobData + sha256Hex
 
-	var blobData []byte
-	if err = s.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(dataKey))
-		if err != nil {
-			return err
-		}
-
-		return item.Value(func(val []byte) error {
-			blobData = make([]byte, len(val))
-			copy(blobData, val)
-			return nil
-		})
-	}); chk.E(err) {
-		return
-	}
-
-	// Get metadata
+	// Get metadata first to get extension
 	metaKey := prefixBlobMeta + sha256Hex
 	if err = s.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(metaKey))
@@ -121,55 +138,96 @@ func (s *Storage) GetBlob(sha256Hash []byte) (data []byte, metadata *BlobMetadat
 		return
 	}
 
-	data = blobData
-	return
-}
-
-// HasBlob checks if a blob exists
-func (s *Storage) HasBlob(sha256Hash []byte) (exists bool, err error) {
-	sha256Hex := hex.Enc(sha256Hash)
-	dataKey := prefixBlobData + sha256Hex
-
-	if err = s.db.View(func(txn *badger.Txn) error {
-		_, err := txn.Get([]byte(dataKey))
-		if err == badger.ErrKeyNotFound {
-			exists = false
-			return nil
+	// Read blob data from file
+	blobPath := s.getBlobPath(sha256Hex, metadata.Extension)
+	data, err = os.ReadFile(blobPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = badger.ErrKeyNotFound
 		}
-		if err != nil {
-			return err
-		}
-		exists = true
-		return nil
-	}); chk.E(err) {
 		return
 	}
 
 	return
 }
 
-// DeleteBlob deletes a blob and its metadata
-func (s *Storage) DeleteBlob(sha256Hash []byte, pubkey []byte) (err error) {
+// HasBlob checks if a blob exists
+func (s *Storage) HasBlob(sha256Hash []byte) (exists bool, err error) {
 	sha256Hex := hex.Enc(sha256Hash)
-	dataKey := prefixBlobData + sha256Hex
-	metaKey := prefixBlobMeta + sha256Hex
-	indexKey := prefixBlobIndex + hex.Enc(pubkey) + ":" + sha256Hex
 
-	if err = s.db.Update(func(txn *badger.Txn) error {
-		// Verify blob exists
-		_, err := txn.Get([]byte(dataKey))
+	// Get metadata to find extension
+	metaKey := prefixBlobMeta + sha256Hex
+	var metadata *BlobMetadata
+	if err = s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(metaKey))
 		if err == badger.ErrKeyNotFound {
-			return errorf.E("blob %s not found", sha256Hex)
+			return badger.ErrKeyNotFound
 		}
 		if err != nil {
 			return err
 		}
 
-		// Delete blob data
-		if err := txn.Delete([]byte(dataKey)); err != nil {
+		return item.Value(func(val []byte) error {
+			if metadata, err = DeserializeBlobMetadata(val); err != nil {
+				return err
+			}
+			return nil
+		})
+	}); err == badger.ErrKeyNotFound {
+		exists = false
+		return false, nil
+	}
+	if err != nil {
+		return
+	}
+
+	// Check if file exists
+	blobPath := s.getBlobPath(sha256Hex, metadata.Extension)
+	if _, err = os.Stat(blobPath); err == nil {
+		exists = true
+		return
+	}
+	if os.IsNotExist(err) {
+		exists = false
+		err = nil
+		return
+	}
+	return
+}
+
+// DeleteBlob deletes a blob and its metadata
+func (s *Storage) DeleteBlob(sha256Hash []byte, pubkey []byte) (err error) {
+	sha256Hex := hex.Enc(sha256Hash)
+
+	// Get metadata to find extension
+	metaKey := prefixBlobMeta + sha256Hex
+	var metadata *BlobMetadata
+	if err = s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(metaKey))
+		if err == badger.ErrKeyNotFound {
+			return badger.ErrKeyNotFound
+		}
+		if err != nil {
 			return err
 		}
 
+		return item.Value(func(val []byte) error {
+			if metadata, err = DeserializeBlobMetadata(val); err != nil {
+				return err
+			}
+			return nil
+		})
+	}); err == badger.ErrKeyNotFound {
+		return errorf.E("blob %s not found", sha256Hex)
+	}
+	if err != nil {
+		return
+	}
+
+	blobPath := s.getBlobPath(sha256Hex, metadata.Extension)
+	indexKey := prefixBlobIndex + hex.Enc(pubkey) + ":" + sha256Hex
+
+	if err = s.db.Update(func(txn *badger.Txn) error {
 		// Delete metadata
 		if err := txn.Delete([]byte(metaKey)); err != nil {
 			return err
@@ -183,6 +241,12 @@ func (s *Storage) DeleteBlob(sha256Hash []byte, pubkey []byte) (err error) {
 		return nil
 	}); chk.E(err) {
 		return
+	}
+
+	// Delete blob file
+	if err = os.Remove(blobPath); err != nil && !os.IsNotExist(err) {
+		log.E.F("failed to delete blob file %s: %v", blobPath, err)
+		// Don't fail if file doesn't exist
 	}
 
 	log.D.F("deleted blob %s for pubkey %s", sha256Hex, hex.Enc(pubkey))
@@ -236,10 +300,9 @@ func (s *Storage) ListBlobs(
 				continue
 			}
 
-			// Verify blob exists
-			dataKey := prefixBlobData + sha256Hex
-			_, errGet := txn.Get([]byte(dataKey))
-			if errGet != nil {
+			// Verify blob file exists
+			blobPath := s.getBlobPath(sha256Hex, metadata.Extension)
+			if _, errGet := os.Stat(blobPath); errGet != nil {
 				continue
 			}
 

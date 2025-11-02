@@ -17,10 +17,11 @@ type BlobDescriptor struct {
 
 // BlobMetadata stores metadata about a blob in the database
 type BlobMetadata struct {
-	Pubkey   []byte `json:"pubkey"`
-	MimeType string `json:"mime_type"`
-	Uploaded int64  `json:"uploaded"`
-	Size     int64  `json:"size"`
+	Pubkey    []byte `json:"pubkey"`
+	MimeType  string `json:"mime_type"`
+	Uploaded  int64  `json:"uploaded"`
+	Size      int64  `json:"size"`
+	Extension string `json:"extension"` // File extension (e.g., ".png", ".pdf")
 }
 
 // NewBlobDescriptor creates a new blob descriptor
@@ -45,10 +46,11 @@ func NewBlobMetadata(pubkey []byte, mimeType string, size int64) *BlobMetadata {
 		mimeType = "application/octet-stream"
 	}
 	return &BlobMetadata{
-		Pubkey:   pubkey,
-		MimeType: mimeType,
-		Uploaded: time.Now().Unix(),
-		Size:     size,
+		Pubkey:    pubkey,
+		MimeType:  mimeType,
+		Uploaded:  time.Now().Unix(),
+		Size:      size,
+		Extension: "", // Will be set by SaveBlob
 	}
 }
 
