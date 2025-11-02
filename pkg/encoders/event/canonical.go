@@ -11,6 +11,20 @@ import (
 // event ID.
 func (ev *E) ToCanonical(dst []byte) (b []byte) {
 	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	if b == nil {
+		// Estimate size: [0," + hex(pubkey) + "," + timestamp + "," + kind + "," + tags + "," + content + ]
+		estimatedSize := 5 + 2*len(ev.Pubkey) + 20 + 10 + 100
+		if ev.Tags != nil {
+			for _, tag := range *ev.Tags {
+				for _, elem := range tag.T {
+					estimatedSize += len(elem)*2 + 10 // escaped element + overhead
+				}
+			}
+		}
+		estimatedSize += len(ev.Content)*2 + 10 // escaped content + overhead
+		b = make([]byte, 0, estimatedSize)
+	}
 	b = append(b, "[0,\""...)
 	b = hex.EncAppend(b, ev.Pubkey)
 	b = append(b, "\","...)
@@ -18,11 +32,15 @@ func (ev *E) ToCanonical(dst []byte) (b []byte) {
 	b = append(b, ',')
 	b = ints.New(ev.Kind).Marshal(b)
 	b = append(b, ',')
-	b = ev.Tags.Marshal(b)
+	if ev.Tags != nil {
+		b = ev.Tags.Marshal(b)
+	} else {
+		b = append(b, '[')
+		b = append(b, ']')
+	}
 	b = append(b, ',')
 	b = text.AppendQuote(b, ev.Content, text.NostrEscape)
 	b = append(b, ']')
-	// log.D.F("canonical: %s", b)
 	return
 }
 

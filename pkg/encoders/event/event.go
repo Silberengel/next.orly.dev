@@ -142,17 +142,27 @@ func (ev *E) EstimateSize() (size int) {
 
 func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	if b == nil {
+		estimatedSize := ev.EstimateSize()
+		// Add overhead for JSON structure (keys, quotes, commas, etc.)
+		estimatedSize += 100
+		b = make([]byte, 0, estimatedSize)
+	}
 	b = append(b, '{')
 	b = append(b, '"')
 	b = append(b, jId...)
 	b = append(b, `":"`...)
+	// Pre-allocate hex encoding space
+	hexStart := len(b)
 	b = append(b, make([]byte, 2*sha256.Size)...)
-	xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
+	xhex.Encode(b[hexStart:], ev.ID)
 	b = append(b, `","`...)
 	b = append(b, jPubkey...)
 	b = append(b, `":"`...)
-	b = b[:len(b)+2*schnorr.PubKeyBytesLen]
-	xhex.Encode(b[len(b)-2*schnorr.PubKeyBytesLen:], ev.Pubkey)
+	hexStart = len(b)
+	b = append(b, make([]byte, 2*schnorr.PubKeyBytesLen)...)
+	xhex.Encode(b[hexStart:], ev.Pubkey)
 	b = append(b, `","`...)
 	b = append(b, jCreatedAt...)
 	b = append(b, `":`...)
@@ -177,8 +187,9 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = append(b, `","`...)
 	b = append(b, jSig...)
 	b = append(b, `":"`...)
+	hexStart = len(b)
 	b = append(b, make([]byte, 2*schnorr.SignatureSize)...)
-	xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
+	xhex.Encode(b[hexStart:], ev.Sig)
 	b = append(b, `"}`...)
 	return
 }
@@ -375,7 +386,7 @@ AfterClose:
 	return
 invalid:
 	err = fmt.Errorf(
-		"invalid key,\n'%s'\n'%s'\n'%s'", string(b), string(b[:len(b)]),
+		"invalid key,\n'%s'\n'%s'\n'%s'", string(b), string(b[:]),
 		string(b),
 	)
 	return
