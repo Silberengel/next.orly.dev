@@ -17,6 +17,8 @@ import (
 func (d *D) GetFullIdPubkeyBySerials(sers []*types.Uint40) (
 	fidpks []*store.IdPkTs, err error,
 ) {
+	// Pre-allocate slice with exact capacity to reduce reallocations
+	fidpks = make([]*store.IdPkTs, 0, len(sers))
 	if len(sers) == 0 {
 		return
 	}

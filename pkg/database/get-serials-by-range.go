@@ -13,6 +13,8 @@ import (
 func (d *D) GetSerialsByRange(idx Range) (
 	sers types.Uint40s, err error,
 ) {
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	sers = make(types.Uint40s, 0, 100) // Estimate based on typical range sizes
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
 			it := txn.NewIterator(

@@ -13,7 +13,8 @@ import (
 // FetchEventsBySerials fetches multiple events by their serials in a single database transaction.
 // Returns a map of serial uint64 value to event, only including successfully fetched events.
 func (d *D) FetchEventsBySerials(serials []*types.Uint40) (events map[uint64]*event.E, err error) {
-	events = make(map[uint64]*event.E)
+	// Pre-allocate map with estimated capacity to reduce reallocations
+	events = make(map[uint64]*event.E, len(serials))
 	
 	if len(serials) == 0 {
 		return events, nil

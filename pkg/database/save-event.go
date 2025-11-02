@@ -33,6 +33,8 @@ func (d *D) GetSerialsFromFilter(f *filter.F) (
 	if idxs, err = GetIndexesFromFilter(f); chk.E(err) {
 		return
 	}
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	sers = make(types.Uint40s, 0, len(idxs)*100) // Estimate 100 serials per index
 	for _, idx := range idxs {
 		var s types.Uint40s
 		if s, err = d.GetSerialsByRange(idx); chk.E(err) {
@@ -171,30 +173,29 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 	// Start a transaction to save the event and all its indexes
 	err = d.Update(
 		func(txn *badger.Txn) (err error) {
-			// Save each index
-			for _, key := range idxs {
-				if err = func() (err error) {
-					// Save the index to the database
-					if err = txn.Set(key, nil); chk.E(err) {
-						return err
-					}
-					return
-				}(); chk.E(err) {
-					return
-				}
-			}
-			// write the event
-			k := new(bytes.Buffer)
+			// Pre-allocate key buffer to avoid allocations in loop
 			ser := new(types.Uint40)
 			if err = ser.Set(serial); chk.E(err) {
 				return
 			}
-			if err = indexes.EventEnc(ser).MarshalWrite(k); chk.E(err) {
+			keyBuf := new(bytes.Buffer)
+			if err = indexes.EventEnc(ser).MarshalWrite(keyBuf); chk.E(err) {
 				return
 			}
-			v := new(bytes.Buffer)
-			ev.MarshalBinary(v)
-			kb, vb := k.Bytes(), v.Bytes()
+			kb := keyBuf.Bytes()
+			
+			// Pre-allocate value buffer
+			valueBuf := new(bytes.Buffer)
+			ev.MarshalBinary(valueBuf)
+			vb := valueBuf.Bytes()
+			
+			// Save each index
+			for _, key := range idxs {
+				if err = txn.Set(key, nil); chk.E(err) {
+					return
+				}
+			}
+			// write the event
 			if err = txn.Set(kb, vb); chk.E(err) {
 				return
 			}

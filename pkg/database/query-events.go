@@ -71,7 +71,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 
 		// Convert serials map to slice for batch fetch
 		var serialsSlice []*types.Uint40
-		idHexToSerial := make(map[uint64]string) // Map serial value back to original ID hex
+		serialsSlice = make([]*types.Uint40, 0, len(serials))
+		idHexToSerial := make(map[uint64]string, len(serials)) // Map serial value back to original ID hex
 		for idHex, ser := range serials {
 			serialsSlice = append(serialsSlice, ser)
 			idHexToSerial[ser.Get()] = idHex
@@ -180,7 +181,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 		}
 		// Prepare serials for batch fetch
 		var allSerials []*types.Uint40
-		serialToIdPk := make(map[uint64]*store.IdPkTs)
+		allSerials = make([]*types.Uint40, 0, len(idPkTs))
+		serialToIdPk := make(map[uint64]*store.IdPkTs, len(idPkTs))
 		for _, idpk := range idPkTs {
 			ser := new(types.Uint40)
 			if err = ser.Set(idpk.Ser); err != nil {
