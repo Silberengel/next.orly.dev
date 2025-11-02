@@ -26,6 +26,16 @@ package text
 // JSON parsing errors when events with binary data in content are sent to relays.
 func NostrEscape(dst, src []byte) []byte {
 	l := len(src)
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: worst case is all control chars which expand to 6 bytes each (\u00XX)
+	// but most strings have few escapes, so estimate len(src) * 1.5 as a safe middle ground
+	if dst == nil && l > 0 {
+		estimatedSize := l * 3 / 2
+		if estimatedSize < l {
+			estimatedSize = l
+		}
+		dst = make([]byte, 0, estimatedSize)
+	}
 	for i := 0; i < l; i++ {
 		c := src[i]
 		if c == '"' {

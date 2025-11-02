@@ -20,8 +20,8 @@ import (
 
 const (
 	version          byte = 2
-	MinPlaintextSize      = 0x0001 // 1b msg => padded to 32b
-	MaxPlaintextSize      = 0xffff // 65535 (64kb-1) => padded to 64kb
+	MinPlaintextSize int  = 0x0001 // 1b msg => padded to 32b
+	MaxPlaintextSize int  = 0xffff // 65535 (64kb-1) => padded to 64kb
 )
 
 type Opts struct {
@@ -89,12 +89,14 @@ func Encrypt(
 	if mac, err = sha256Hmac(auth, cipher, o.nonce); chk.E(err) {
 		return
 	}
-	ct := make([]byte, 0, 1+32+len(cipher)+32)
-	ct = append(ct, version)
-	ct = append(ct, o.nonce...)
-	ct = append(ct, cipher...)
-	ct = append(ct, mac...)
-	cipherString = make([]byte, base64.StdEncoding.EncodedLen(len(ct)))
+	// Pre-allocate with exact size to avoid reallocation
+	ctLen := 1 + 32 + len(cipher) + 32
+	ct := make([]byte, ctLen)
+	ct[0] = version
+	copy(ct[1:], o.nonce)
+	copy(ct[33:], cipher)
+	copy(ct[33+len(cipher):], mac)
+	cipherString = make([]byte, base64.StdEncoding.EncodedLen(ctLen))
 	base64.StdEncoding.Encode(cipherString, ct)
 	return
 }
@@ -114,10 +116,14 @@ func Decrypt(b64ciphertextWrapped, conversationKey []byte) (
 		err = errorf.E("unknown version")
 		return
 	}
-	var decoded []byte
-	if decoded, err = base64.StdEncoding.DecodeString(string(b64ciphertextWrapped)); chk.E(err) {
+	// Pre-allocate decoded buffer to avoid string conversion overhead
+	decodedLen := base64.StdEncoding.DecodedLen(len(b64ciphertextWrapped))
+	decoded := make([]byte, decodedLen)
+	var n int
+	if n, err = base64.StdEncoding.Decode(decoded, b64ciphertextWrapped); chk.E(err) {
 		return
 	}
+	decoded = decoded[:n]
 	if decoded[0] != version {
 		err = errorf.E("unknown version %d", decoded[0])
 		return

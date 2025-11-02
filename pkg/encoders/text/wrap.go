@@ -77,9 +77,18 @@ func AppendList(
 	dst []byte, src [][]byte, separator byte,
 	ac AppendBytesClosure,
 ) []byte {
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: sum of all source sizes + separators
+	if dst == nil && len(src) > 0 {
+		estimatedSize := len(src) - 1 // separators
+		for i := range src {
+			estimatedSize += len(src[i]) * 2 // worst case with escaping
+		}
+		dst = make([]byte, 0, estimatedSize)
+	}
 	last := len(src) - 1
 	for i := range src {
-		dst = append(dst, ac(dst, src[i])...)
+		dst = ac(dst, src[i])
 		if i < last {
 			dst = append(dst, separator)
 		}
