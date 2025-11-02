@@ -20,7 +20,14 @@ type T struct {
 
 // Marshal an atag.T into raw bytes.
 func (t *T) Marshal(dst []byte) (b []byte) {
-	b = t.Kind.Marshal(dst)
+	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: kind (max 10 chars) + ':' + hex pubkey (64 chars) + ':' + dtag
+	if b == nil {
+		estimatedSize := 10 + 1 + 64 + 1 + len(t.DTag)
+		b = make([]byte, 0, estimatedSize)
+	}
+	b = t.Kind.Marshal(b)
 	b = append(b, ':')
 	b = hex.EncAppend(b, t.Pubkey)
 	b = append(b, ':')

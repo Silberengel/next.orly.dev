@@ -89,6 +89,17 @@ func (s *S) Marshal(dst []byte) (b []byte) {
 		return
 	}
 	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: [ + (tag.Marshal result + comma) * n + ]
+	if b == nil && len(*s) > 0 {
+		estimatedSize := 2 // brackets
+		// Estimate based on first tag size
+		if len(*s) > 0 && (*s)[0] != nil {
+			firstTagSize := (*s)[0].Marshal(nil)
+			estimatedSize += len(*s) * (len(firstTagSize) + 1) // tag + comma
+		}
+		b = make([]byte, 0, estimatedSize)
+	}
 	b = append(b, '[')
 	for i, ss := range *s {
 		b = ss.Marshal(b)
@@ -111,6 +122,9 @@ func (s *S) UnmarshalJSON(b []byte) (err error) {
 // the end of the array.
 func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 	r = b[:]
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	// Estimate based on typical tag counts (can grow if needed)
+	*s = make([]*T, 0, 16)
 	for len(r) > 0 {
 		switch r[0] {
 		case '[':
@@ -170,6 +184,9 @@ func (s *S) GetAll(t []byte) (all []*T) {
 	if s == nil || len(*s) < 1 {
 		return
 	}
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	// Estimate: typically 1-2 tags match, but can be more
+	all = make([]*T, 0, 4)
 	for _, tt := range *s {
 		if len(tt.T) < 1 {
 			continue
@@ -204,6 +221,11 @@ func (s *S) GetTagElement(i int) (t *T) {
 // Iterates through each tag in the collection and converts its byte elements
 // to strings, preserving the tag structure in the resulting nested slice.
 func (s *S) ToSliceOfSliceOfStrings() (ss [][]string) {
+	if s == nil || len(*s) == 0 {
+		return
+	}
+	// Pre-allocate slice with exact capacity to reduce reallocations
+	ss = make([][]string, 0, len(*s))
 	for _, v := range *s {
 		ss = append(ss, v.ToSliceOfStrings())
 	}

@@ -78,6 +78,16 @@ func (t *T) Contains(s []byte) (b bool) {
 // Marshal encodes a tag.T as standard minified JSON array of strings.
 func (t *T) Marshal(dst []byte) (b []byte) {
 	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: [ + (quoted field + comma) * n + ]
+	// Each field might be escaped, so estimate len(field) * 1.5 + 2 quotes + comma
+	if b == nil && len(t.T) > 0 {
+		estimatedSize := 2 // brackets
+		for _, s := range t.T {
+			estimatedSize += len(s)*3/2 + 4 // escaped field + quotes + comma
+		}
+		b = make([]byte, 0, estimatedSize)
+	}
 	b = append(b, '[')
 	for i, s := range t.T {
 		b = text.AppendQuote(b, s, text.NostrEscape)
@@ -105,6 +115,9 @@ func (t *T) MarshalJSON() (b []byte, err error) {
 func (t *T) Unmarshal(b []byte) (r []byte, err error) {
 	var inQuotes, openedBracket bool
 	var quoteStart int
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	// Estimate based on typical tag sizes (can grow if needed)
+	t.T = make([][]byte, 0, 4)
 	for i := 0; i < len(b); i++ {
 		if !openedBracket && b[i] == '[' {
 			openedBracket = true
@@ -170,6 +183,11 @@ func (t *T) Relay() (key []byte) {
 // Returns an empty slice if the tag is empty, otherwise returns a new slice with
 // each byte slice element converted to a string.
 func (t *T) ToSliceOfStrings() (s []string) {
+	if len(t.T) == 0 {
+		return
+	}
+	// Pre-allocate slice with exact capacity to reduce reallocations
+	s = make([]string, 0, len(t.T))
 	for _, v := range t.T {
 		s = append(s, string(v))
 	}
