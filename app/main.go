@@ -152,6 +152,23 @@ func Run(
 		}
 	}
 
+	// Initialize cluster manager for cluster replication
+	var clusterAdminNpubs []string
+	if len(cfg.ClusterAdmins) > 0 {
+		clusterAdminNpubs = cfg.ClusterAdmins
+	} else {
+		// Default to regular admins if no cluster admins specified
+		for _, admin := range cfg.Admins {
+			clusterAdminNpubs = append(clusterAdminNpubs, admin)
+		}
+	}
+
+	if len(clusterAdminNpubs) > 0 {
+		l.clusterManager = dsync.NewClusterManager(ctx, db, clusterAdminNpubs)
+		l.clusterManager.Start()
+		log.I.F("cluster replication manager initialized with %d admin npubs", len(clusterAdminNpubs))
+	}
+
 	// Initialize the user interface
 	l.UserInterface()
 

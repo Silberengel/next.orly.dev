@@ -53,6 +53,7 @@ type Server struct {
 	spiderManager    *spider.Spider
 	syncManager      *dsync.Manager
 	relayGroupMgr    *dsync.RelayGroupManager
+	clusterManager   *dsync.ClusterManager
 	blossomServer    *blossom.Server
 }
 
@@ -258,6 +259,13 @@ func (s *Server) UserInterface() {
 	if s.blossomServer != nil {
 		s.mux.HandleFunc("/blossom/", s.blossomHandler)
 		log.Printf("Blossom blob storage API enabled at /blossom")
+	}
+
+	// Cluster replication API endpoints
+	if s.clusterManager != nil {
+		s.mux.HandleFunc("/cluster/latest", s.clusterManager.HandleLatestSerial)
+		s.mux.HandleFunc("/cluster/events", s.clusterManager.HandleEventsRange)
+		log.Printf("Cluster replication API enabled at /cluster")
 	}
 }
 

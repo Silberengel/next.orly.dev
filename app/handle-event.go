@@ -467,6 +467,13 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 
+	// Handle cluster membership events (Kind 39108)
+	if env.E.Kind == 39108 && l.clusterManager != nil {
+		if err := l.clusterManager.HandleMembershipEvent(env.E); err != nil {
+			log.W.F("invalid cluster membership event %s: %v", hex.Enc(env.E.ID), err)
+		}
+	}
+
 	// Update serial for distributed synchronization
 	if l.syncManager != nil {
 		l.syncManager.UpdateSerial()
