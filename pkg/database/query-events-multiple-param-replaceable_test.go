@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -25,7 +25,7 @@ func TestMultipleParameterizedReplaceableEvents(t *testing.T) {
 	defer cancel()
 	defer db.Close()
 
-	sign := new(p256k.Signer)
+	sign := p256k1signer.NewP256K1Signer()
 	if err := sign.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}

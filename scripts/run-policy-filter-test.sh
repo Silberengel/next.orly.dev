@@ -38,13 +38,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/hex"
 )
 
 func main() {
 	// Generate allowed signer
-	allowedSigner := &p256k.Signer{}
+	allowedSigner := p256k1signer.NewP256K1Signer()
 	if err := allowedSigner.Generate(); err != nil {
 		panic(err)
 	}
@@ -52,7 +52,7 @@ func main() {
 	allowedSecHex := hex.Enc(allowedSigner.Sec())
 
 	// Generate unauthorized signer
-	unauthorizedSigner := &p256k.Signer{}
+	unauthorizedSigner := p256k1signer.NewP256K1Signer()
 	if err := unauthorizedSigner.Generate(); err != nil {
 		panic(err)
 	}

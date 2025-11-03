@@ -10,7 +10,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -44,7 +44,7 @@ func main() {
 		log.E.F("failed to decode allowed secret key: %v", err)
 		os.Exit(1)
 	}
-	allowedSigner := &p256k.Signer{}
+	allowedSigner := p256k1signer.NewP256K1Signer()
 	if err = allowedSigner.InitSec(allowedSecBytes); chk.E(err) {
 		log.E.F("failed to initialize allowed signer: %v", err)
 		os.Exit(1)
@@ -55,7 +55,7 @@ func main() {
 		log.E.F("failed to decode unauthorized secret key: %v", err)
 		os.Exit(1)
 	}
-	unauthorizedSigner := &p256k.Signer{}
+	unauthorizedSigner := p256k1signer.NewP256K1Signer()
 	if err = unauthorizedSigner.InitSec(unauthorizedSecBytes); chk.E(err) {
 		log.E.F("failed to initialize unauthorized signer: %v", err)
 		os.Exit(1)
@@ -136,7 +136,7 @@ func main() {
 	fmt.Println("\n✅ All tests passed!")
 }
 
-func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner, authSigner *p256k.Signer) error {
+func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner, authSigner *p256k1signer.P256K1Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)
@@ -192,7 +192,7 @@ func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner
 	return nil
 }
 
-func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint16, eventSigner *p256k.Signer) error {
+func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint16, eventSigner *p256k1signer.P256K1Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)
@@ -227,7 +227,7 @@ func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint
 	return nil
 }
 
-func testReadEvent(ctx context.Context, url string, kindNum uint16, authSigner *p256k.Signer) error {
+func testReadEvent(ctx context.Context, url string, kindNum uint16, authSigner *p256k1signer.P256K1Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)

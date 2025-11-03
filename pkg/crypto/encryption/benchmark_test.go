@@ -3,7 +3,7 @@ package encryption
 import (
 	"testing"
 
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"lukechampine.com/frand"
 )
 
@@ -13,8 +13,8 @@ func createTestConversationKey() []byte {
 }
 
 // createTestKeyPair creates a key pair for ECDH testing
-func createTestKeyPair() (*p256k.Signer, []byte) {
-	signer := &p256k.Signer{}
+func createTestKeyPair() (*p256k1signer.P256K1Signer, []byte) {
+	signer := p256k1signer.NewP256K1Signer()
 	if err := signer.Generate(); err != nil {
 		panic(err)
 	}

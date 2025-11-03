@@ -4,7 +4,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/interfaces/signer"
 	"next.orly.dev/pkg/utils"
 )
@@ -26,7 +26,7 @@ func (ev *E) Sign(keys signer.I) (err error) {
 // Verify an event is signed by the pubkey it contains. Uses
 // github.com/bitcoin-core/secp256k1 if available for faster verification.
 func (ev *E) Verify() (valid bool, err error) {
-	keys := p256k.Signer{}
+	keys := p256k1signer.NewP256K1Signer()
 	if err = keys.InitPub(ev.Pubkey); chk.E(err) {
 		return
 	}

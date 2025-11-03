@@ -6,7 +6,8 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/encryption"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
 )
 
@@ -41,7 +42,7 @@ func ParseConnectionURI(nwcUri string) (parts *ConnectionParams, err error) {
 		err = errors.New("incorrect scheme")
 		return
 	}
-	if parts.walletPublicKey, err = p256k.HexToBin(p.Host); chk.E(err) {
+	if parts.walletPublicKey, err = hex.Dec(p.Host); chk.E(err) {
 		err = errors.New("invalid public key")
 		return
 	}
@@ -62,11 +63,11 @@ func ParseConnectionURI(nwcUri string) (parts *ConnectionParams, err error) {
 		return
 	}
 	var secretBytes []byte
-	if secretBytes, err = p256k.HexToBin(secret); chk.E(err) {
+	if secretBytes, err = hex.Dec(secret); chk.E(err) {
 		err = errors.New("invalid secret")
 		return
 	}
-	clientKey := &p256k.Signer{}
+	clientKey := p256k1signer.NewP256K1Signer()
 	if err = clientKey.InitSec(secretBytes); chk.E(err) {
 		return
 	}

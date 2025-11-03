@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/websocket"
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -36,7 +36,7 @@ func TestPublish(t *testing.T) {
 		Tags:      tag.NewS(tag.NewFromAny("foo", "bar")),
 		Pubkey:    pub,
 	}
-	sign := &p256k.Signer{}
+	sign := p256k1signer.NewP256K1Signer()
 	var err error
 	if err = sign.InitSec(priv); chk.E(err) {
 	}
@@ -208,7 +208,7 @@ var anyOriginHandshake = func(conf *websocket.Config, r *http.Request) error {
 
 func makeKeyPair(t *testing.T) (sec, pub []byte) {
 	t.Helper()
-	sign := &p256k.Signer{}
+	sign := p256k1signer.NewP256K1Signer()
 	var err error
 	if err = sign.Generate(); chk.E(err) {
 		return

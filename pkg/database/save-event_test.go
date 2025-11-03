@@ -11,7 +11,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/event/examples"
 	"next.orly.dev/pkg/encoders/hex"
@@ -120,7 +120,7 @@ func TestDeletionEventWithETagRejection(t *testing.T) {
 	defer db.Close()
 
 	// Create a signer
-	sign := new(p256k.Signer)
+	sign := p256k1signer.NewP256K1Signer()
 	if err := sign.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestSaveExistingEvent(t *testing.T) {
 	defer db.Close()
 
 	// Create a signer
-	sign := new(p256k.Signer)
+	sign := p256k1signer.NewP256K1Signer()
 	if err := sign.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}

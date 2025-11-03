@@ -7,7 +7,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/utils"
 )
@@ -17,7 +17,7 @@ var GeneratePrivateKey = func() string { return GenerateSecretKeyHex() }
 
 // GenerateSecretKey creates a new secret key and returns the bytes of the secret.
 func GenerateSecretKey() (skb []byte, err error) {
-	signer := &p256k.Signer{}
+	signer := p256k1signer.NewP256K1Signer()
 	if err = signer.Generate(); chk.E(err) {
 		return
 	}
@@ -40,7 +40,7 @@ func GetPublicKeyHex(sk string) (pk string, err error) {
 	if b, err = hex.Dec(sk); chk.E(err) {
 		return
 	}
-	signer := &p256k.Signer{}
+	signer := p256k1signer.NewP256K1Signer()
 	if err = signer.InitSec(b); chk.E(err) {
 		return
 	}
@@ -50,7 +50,7 @@ func GetPublicKeyHex(sk string) (pk string, err error) {
 
 // SecretBytesToPubKeyHex generates a public key from secret key bytes.
 func SecretBytesToPubKeyHex(skb []byte) (pk string, err error) {
-	signer := &p256k.Signer{}
+	signer := p256k1signer.NewP256K1Signer()
 	if err = signer.InitSec(skb); chk.E(err) {
 		return
 	}

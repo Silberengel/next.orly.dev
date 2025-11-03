@@ -17,7 +17,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/crypto/sha256"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
@@ -335,7 +335,7 @@ func NewAggregator(keyInput string, since, until *timestamp.T, bloomFilterFile s
 		}
 
 		// Create signer from private key
-		signer = &p256k.Signer{}
+		signer = p256k1signer.NewP256K1Signer()
 		if err = signer.InitSec(secretBytes); chk.E(err) {
 			return nil, fmt.Errorf("failed to initialize signer: %w", err)
 		}

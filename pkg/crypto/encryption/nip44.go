@@ -12,8 +12,9 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/crypto/sha256"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
 	"next.orly.dev/pkg/utils"
 )
@@ -176,11 +177,16 @@ func GenerateConversationKeyFromHex(pkh, skh string) (ck []byte, err error) {
 		return
 	}
 	var sign signer.I
-	if sign, err = p256k.NewSecFromHex(skh); chk.E(err) {
+	sign = p256k1signer.NewP256K1Signer()
+	var sk []byte
+	if sk, err = hex.Dec(skh); chk.E(err) {
+		return
+	}
+	if err = sign.InitSec(sk); chk.E(err) {
 		return
 	}
 	var pk []byte
-	if pk, err = p256k.HexToBin(pkh); chk.E(err) {
+	if pk, err = hex.Dec(pkh); chk.E(err) {
 		return
 	}
 	var shared []byte

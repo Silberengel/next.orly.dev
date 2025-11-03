@@ -36,6 +36,19 @@ func NewClient(url string) (c *Client, err error) {
 		cancel()
 		return
 	}
+	
+	// Set up ping/pong handling to keep connection alive
+	pongWait := 60 * time.Second
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	// Set pong handler to extend deadline when pongs are received
+	// Note: Relay sends pings, gorilla/websocket auto-responds with pongs
+	// The relay typically doesn't send pongs back, so we also handle timeouts in readLoop
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+	// Don't set ping handler - let gorilla/websocket auto-respond to pings
+	
 	c = &Client{
 		conn:     conn,
 		url:      url,
@@ -78,16 +91,41 @@ func (c *Client) Send(msg interface{}) (err error) {
 // readLoop reads messages from the relay and routes them to subscriptions.
 func (c *Client) readLoop() {
 	defer c.conn.Close()
+	pongWait := 60 * time.Second
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
 		}
+		// Don't set deadline here - let pong handler manage it
+		// SetReadDeadline is called initially in NewClient and extended by pong handler
 		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
+			// Check if context is done
+			select {
+			case <-c.ctx.Done():
+				return
+			default:
+			}
+			// Check if it's a timeout - connection might still be alive
+			if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+				// Pong handler should have extended deadline, but if we timeout,
+				// reset it and continue - connection might still be alive
+				// This can happen during idle periods when no messages are received
+				c.conn.SetReadDeadline(time.Now().Add(pongWait))
+				// Continue reading - connection should still be alive if pings/pongs are working
+				continue
+			}
+			// For other errors, check if it's a close error
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				return
+			}
+			// For other errors, return (connection is likely dead)
 			return
 		}
+		// Extend read deadline on successful read
+		c.conn.SetReadDeadline(time.Now().Add(pongWait))
 		var raw []interface{}
 		if err = json.Unmarshal(msg, &raw); err != nil {
 			continue

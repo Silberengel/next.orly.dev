@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/event/examples"
@@ -73,7 +73,7 @@ func BenchmarkSaveEvent(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		// Create a simple test event
-		signer := &p256k.Signer{}
+		signer := p256k1signer.NewP256K1Signer()
 		if err := signer.Generate(); err != nil {
 			b.Fatal(err)
 		}

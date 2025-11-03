@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 )
 
 // Helper function to create test event for benchmarks (reuses signer)
-func createTestEventBench(b *testing.B, signer *p256k.Signer, content string, kind uint16) *event.E {
+func createTestEventBench(b *testing.B, signer *p256k1signer.P256K1Signer, content string, kind uint16) *event.E {
 	ev := event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = kind

@@ -161,7 +161,7 @@ func Run(
 	}
 
 	if l.paymentProcessor, err = NewPaymentProcessor(ctx, cfg, db); err != nil {
-		log.E.F("failed to create payment processor: %v", err)
+		// log.E.F("failed to create payment processor: %v", err)
 		// Continue without payment processor
 	} else {
 		if err = l.paymentProcessor.Start(); err != nil {

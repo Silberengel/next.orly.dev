@@ -49,13 +49,37 @@ func (l *Listener) Ctx() context.Context {
 // writeWorker is the single goroutine that handles all writes to the websocket connection.
 // This serializes all writes to prevent concurrent write panics.
 func (l *Listener) writeWorker() {
-	defer close(l.writeDone)
+	var channelClosed bool
+	defer func() {
+		// Only unregister write channel if connection is actually dead/closing
+		// Unregister if:
+		// 1. Context is cancelled (connection closing)
+		// 2. Channel was closed (connection closing)
+		// 3. Connection error occurred (already handled inline)
+		if l.ctx.Err() != nil || channelClosed {
+			// Connection is closing - safe to unregister
+			if socketPub := l.publishers.GetSocketPublisher(); socketPub != nil {
+				log.D.F("ws->%s write worker: unregistering write channel (connection closing)", l.remote)
+				socketPub.SetWriteChan(l.conn, nil)
+			}
+		} else {
+			// Exiting for other reasons (timeout, etc.) but connection may still be alive
+			// Don't unregister - let the connection cleanup handle it
+			log.D.F("ws->%s write worker: exiting but connection may still be alive, keeping write channel registered", l.remote)
+		}
+		close(l.writeDone)
+	}()
 	for {
 		select {
 		case <-l.ctx.Done():
+			// Context cancelled - connection is closing
+			log.D.F("ws->%s write worker: context cancelled, exiting", l.remote)
 			return
 		case req, ok := <-l.writeChan:
 			if !ok {
+				// Channel closed - connection is closing
+				channelClosed = true
+				log.D.F("ws->%s write worker: write channel closed, exiting", l.remote)
 				return
 			}
 			deadline := req.Deadline
@@ -82,9 +106,15 @@ func (l *Listener) writeWorker() {
 						websocket.CloseGoingAway,
 						websocket.CloseNoStatusReceived)
 				if isConnectionError {
+					// Connection is dead - unregister channel immediately
+					log.D.F("ws->%s write worker: connection error detected, unregistering write channel", l.remote)
+					if socketPub := l.publishers.GetSocketPublisher(); socketPub != nil {
+						socketPub.SetWriteChan(l.conn, nil)
+					}
 					return
 				}
-				// Continue for other errors (timeouts, etc.)
+				// Continue for other errors (timeouts, etc.) - connection may still be alive
+				log.D.F("ws->%s write worker: non-fatal error (timeout?), continuing", l.remote)
 			} else {
 				writeDuration := time.Since(writeStart)
 				if writeDuration > time.Millisecond*100 {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
@@ -23,13 +23,13 @@ func TestPolicyIntegration(t *testing.T) {
 	}
 
 	// Generate test keys
-	allowedSigner := &p256k.Signer{}
+	allowedSigner := p256k1signer.NewP256K1Signer()
 	if err := allowedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate allowed signer: %v", err)
 	}
 	allowedPubkeyHex := hex.Enc(allowedSigner.Pub())
 
-	unauthorizedSigner := &p256k.Signer{}
+	unauthorizedSigner := p256k1signer.NewP256K1Signer()
 	if err := unauthorizedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate unauthorized signer: %v", err)
 	}
@@ -367,13 +367,13 @@ func TestPolicyWithRelay(t *testing.T) {
 	}
 
 	// Generate keys
-	allowedSigner := &p256k.Signer{}
+	allowedSigner := p256k1signer.NewP256K1Signer()
 	if err := allowedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate allowed signer: %v", err)
 	}
 	allowedPubkeyHex := hex.Enc(allowedSigner.Pub())
 
-	unauthorizedSigner := &p256k.Signer{}
+	unauthorizedSigner := p256k1signer.NewP256K1Signer()
 	if err := unauthorizedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate unauthorized signer: %v", err)
 	}

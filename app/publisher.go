@@ -89,10 +89,15 @@ func NewPublisher(c context.Context) (publisher *P) {
 func (p *P) Type() (typeName string) { return Type }
 
 // SetWriteChan stores the write channel for a websocket connection
+// If writeChan is nil, the entry is removed from the map
 func (p *P) SetWriteChan(conn *websocket.Conn, writeChan chan<- publish.WriteRequest) {
 	p.Mx.Lock()
 	defer p.Mx.Unlock()
-	p.WriteChans[conn] = writeChan
+	if writeChan == nil {
+		delete(p.WriteChans, conn)
+	} else {
+		p.WriteChans[conn] = writeChan
+	}
 }
 
 // GetWriteChan returns the write channel for a websocket connection
@@ -340,7 +345,9 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 		// Check the actual map after deletion, not the original reference
 		if len(p.Map[ws]) == 0 {
 			delete(p.Map, ws)
-			delete(p.WriteChans, ws)
+			// Don't remove write channel here - it's tied to the connection, not subscriptions
+			// The write channel will be removed when the connection closes (in handle-websocket.go defer)
+			// This allows new subscriptions to be created on the same connection
 		}
 	}
 }

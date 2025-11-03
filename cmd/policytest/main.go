@@ -8,7 +8,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
@@ -29,7 +29,7 @@ func main() {
 	}
 	defer rl.Close()
 
-	signer := &p256k.Signer{}
+	signer := p256k1signer.NewP256K1Signer()
 	if err = signer.Generate(); chk.E(err) {
 		log.E.F("signer generate error: %v", err)
 		return

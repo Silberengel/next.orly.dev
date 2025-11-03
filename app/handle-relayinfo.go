@@ -9,7 +9,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/protocol/relayinfo"
 	"next.orly.dev/pkg/version"
@@ -74,7 +74,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	// Get relay identity pubkey as hex
 	var relayPubkey string
 	if skb, err := s.D.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
-		sign := new(p256k.Signer)
+		sign := p256k1signer.NewP256K1Signer()
 		if err := sign.InitSec(skb); err == nil {
 			relayPubkey = hex.Enc(sign.Pub())
 		}

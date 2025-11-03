@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
@@ -16,7 +16,7 @@ import (
 
 // KeyPair represents a test keypair.
 type KeyPair struct {
-	Secret *p256k.Signer
+	Secret *p256k1signer.P256K1Signer
 	Pubkey []byte
 	Nsec   string
 	Npub   string
@@ -25,7 +25,7 @@ type KeyPair struct {
 // GenerateKeyPair generates a new keypair for testing.
 func GenerateKeyPair() (kp *KeyPair, err error) {
 	kp = &KeyPair{}
-	kp.Secret = &p256k.Signer{}
+	kp.Secret = p256k1signer.NewP256K1Signer()
 	if err = kp.Secret.Generate(); chk.E(err) {
 		return
 	}
@@ -44,7 +44,7 @@ func GenerateKeyPair() (kp *KeyPair, err error) {
 }
 
 // CreateEvent creates a signed event with the given parameters.
-func CreateEvent(signer *p256k.Signer, kindNum uint16, content string, tags *tag.S) (ev *event.E, err error) {
+func CreateEvent(signer *p256k1signer.P256K1Signer, kindNum uint16, content string, tags *tag.S) (ev *event.E, err error) {
 	ev = event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = kindNum
@@ -61,7 +61,7 @@ func CreateEvent(signer *p256k.Signer, kindNum uint16, content string, tags *tag
 }
 
 // CreateEventWithTags creates an event with specific tags.
-func CreateEventWithTags(signer *p256k.Signer, kindNum uint16, content string, tagPairs [][]string) (ev *event.E, err error) {
+func CreateEventWithTags(signer *p256k1signer.P256K1Signer, kindNum uint16, content string, tagPairs [][]string) (ev *event.E, err error) {
 	tags := tag.NewS()
 	for _, pair := range tagPairs {
 		if len(pair) >= 2 {
@@ -78,17 +78,17 @@ func CreateEventWithTags(signer *p256k.Signer, kindNum uint16, content string, t
 }
 
 // CreateReplaceableEvent creates a replaceable event (kind 0-3, 10000-19999).
-func CreateReplaceableEvent(signer *p256k.Signer, kindNum uint16, content string) (ev *event.E, err error) {
+func CreateReplaceableEvent(signer *p256k1signer.P256K1Signer, kindNum uint16, content string) (ev *event.E, err error) {
 	return CreateEvent(signer, kindNum, content, nil)
 }
 
 // CreateEphemeralEvent creates an ephemeral event (kind 20000-29999).
-func CreateEphemeralEvent(signer *p256k.Signer, kindNum uint16, content string) (ev *event.E, err error) {
+func CreateEphemeralEvent(signer *p256k1signer.P256K1Signer, kindNum uint16, content string) (ev *event.E, err error) {
 	return CreateEvent(signer, kindNum, content, nil)
 }
 
 // CreateDeleteEvent creates a deletion event (kind 5).
-func CreateDeleteEvent(signer *p256k.Signer, eventIDs [][]byte, reason string) (ev *event.E, err error) {
+func CreateDeleteEvent(signer *p256k1signer.P256K1Signer, eventIDs [][]byte, reason string) (ev *event.E, err error) {
 	tags := tag.NewS()
 	for _, id := range eventIDs {
 		// e tags must contain hex-encoded event IDs
@@ -101,7 +101,7 @@ func CreateDeleteEvent(signer *p256k.Signer, eventIDs [][]byte, reason string) (
 }
 
 // CreateParameterizedReplaceableEvent creates a parameterized replaceable event (kind 30000-39999).
-func CreateParameterizedReplaceableEvent(signer *p256k.Signer, kindNum uint16, content string, dTag string) (ev *event.E, err error) {
+func CreateParameterizedReplaceableEvent(signer *p256k1signer.P256K1Signer, kindNum uint16, content string, dTag string) (ev *event.E, err error) {
 	tags := tag.NewS()
 	tags.Append(tag.NewFromBytesSlice([]byte("d"), []byte(dTag)))
 	return CreateEvent(signer, kindNum, content, tags)
