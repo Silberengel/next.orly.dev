@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -15,7 +16,7 @@ import (
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils"
-	"next.orly.dev/pkg/utils/atomic"
+	atomicutils "next.orly.dev/pkg/utils/atomic"
 )
 
 type Listener struct {
@@ -24,23 +25,57 @@ type Listener struct {
 	ctx              context.Context
 	remote           string
 	req              *http.Request
-	challenge        atomic.Bytes
-	authedPubkey     atomic.Bytes
+	challenge        atomicutils.Bytes
+	authedPubkey     atomicutils.Bytes
 	startTime        time.Time
 	isBlacklisted    bool      // Marker to identify blacklisted IPs
 	blacklistTimeout time.Time // When to timeout blacklisted connections
 	writeChan        chan publish.WriteRequest // Channel for write requests (back to queued approach)
 	writeDone        chan struct{}     // Closed when write worker exits
+	// Message processing queue for async handling
+	messageQueue     chan messageRequest // Buffered channel for message processing
+	processingDone   chan struct{}       // Closed when message processor exits
+	// Flow control counters (atomic for concurrent access)
+	droppedMessages  atomic.Int64 // Messages dropped due to full queue
 	// Diagnostics: per-connection counters
 	msgCount   int
 	reqCount   int
 	eventCount int
 }
 
+type messageRequest struct {
+	data   []byte
+	remote string
+}
+
 // Ctx returns the listener's context, but creates a new context for each operation
 // to prevent cancellation from affecting subsequent operations
 func (l *Listener) Ctx() context.Context {
 	return l.ctx
+}
+
+// DroppedMessages returns the total number of messages that were dropped
+// because the message processing queue was full.
+func (l *Listener) DroppedMessages() int {
+	return int(l.droppedMessages.Load())
+}
+
+// RemainingCapacity returns the number of slots available in the message processing queue.
+func (l *Listener) RemainingCapacity() int {
+	return cap(l.messageQueue) - len(l.messageQueue)
+}
+
+// QueueMessage queues a message for asynchronous processing.
+// Returns true if the message was queued, false if the queue was full.
+func (l *Listener) QueueMessage(data []byte, remote string) bool {
+	req := messageRequest{data: data, remote: remote}
+	select {
+	case l.messageQueue <- req:
+		return true
+	default:
+		l.droppedMessages.Add(1)
+		return false
+	}
 }
 
 
@@ -132,6 +167,30 @@ func (l *Listener) writeWorker() {
 					return
 				}
 			}
+		}
+	}
+}
+
+// messageProcessor is the goroutine that processes messages asynchronously.
+// This prevents the websocket read loop from blocking on message processing.
+func (l *Listener) messageProcessor() {
+	defer func() {
+		close(l.processingDone)
+	}()
+
+	for {
+		select {
+		case <-l.ctx.Done():
+			log.D.F("ws->%s message processor context cancelled", l.remote)
+			return
+		case req, ok := <-l.messageQueue:
+			if !ok {
+				log.D.F("ws->%s message queue closed", l.remote)
+				return
+			}
+
+			// Process the message synchronously in this goroutine
+			l.HandleMessage(req.data, req.remote)
 		}
 	}
 }

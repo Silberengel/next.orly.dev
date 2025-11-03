@@ -12,7 +12,7 @@ import (
 	"fmt"
 
 	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 )
 

@@ -238,6 +238,98 @@ This package works with:
 - **event package**: For event structures
 - **EventStore**: Can be integrated with any event storage system
 
+## Testing
+
+The directory-client package includes comprehensive tests to ensure reliability and correctness:
+
+### Running Tests
+
+```bash
+# Run directory-client tests
+go test ./pkg/protocol/directory-client
+
+# Run all tests including directory-client
+go test ./...
+
+# Run with verbose output
+go test -v ./pkg/protocol/directory-client
+
+# Run with race detection
+go test -race ./pkg/protocol/directory-client
+
+# Run with coverage
+go test -cover ./pkg/protocol/directory-client
+```
+
+### Integration Testing
+
+The directory-client is tested as part of the project's integration test suite:
+
+```bash
+# Run the full test suite
+./scripts/test.sh
+
+# Run specific package tests
+go test ./pkg/protocol/...
+```
+
+### Test Coverage
+
+The test suite covers:
+
+- **Identity Resolution**: Delegate key mapping, identity resolution, caching
+- **Trust Calculation**: Trust score computation, act aggregation, expiration handling
+- **Replication Filtering**: Trust threshold filtering, relay selection
+- **Event Collection**: Event parsing, filtering by type, collection utilities
+- **Trust Graph**: Graph construction, relationship analysis
+- **Thread Safety**: Concurrent access patterns, race condition prevention
+- **Error Handling**: Invalid events, malformed data, edge cases
+
+### Example Test Usage
+
+```bash
+# Test identity resolution functionality
+go test -v ./pkg/protocol/directory-client -run TestIdentityResolver
+
+# Test trust calculation
+go test -v ./pkg/protocol/directory-client -run TestTrustCalculator
+
+# Test thread safety
+go test -race -v ./pkg/protocol/directory-client
+```
+
+## Development
+
+### Building and Usage
+
+```bash
+# Build the directory-client package
+go build ./pkg/protocol/directory-client
+
+# Run example usage
+go run -tags=example ./pkg/protocol/directory-client
+```
+
+### Code Quality
+
+The directory-client follows Go best practices:
+
+- Comprehensive error handling with custom error types
+- Thread-safe concurrent access
+- Memory-efficient data structures
+- Extensive documentation and examples
+- Full test coverage with race detection
+
+### Adding New Features
+
+When adding new functionality:
+
+1. Add unit tests for new components
+2. Update existing tests if behavior changes
+3. Ensure thread safety for concurrent access
+4. Add documentation and examples
+5. Update the API reference section
+
 ## Related Documentation
 
 - [NIP-XX Specification](../../docs/NIP-XX-distributed-directory-consensus.md)

@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"hash"
 
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 )
 
 // References:

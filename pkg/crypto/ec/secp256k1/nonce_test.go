@@ -8,7 +8,7 @@ package secp256k1
 import (
 	"testing"
 
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/utils"
 )

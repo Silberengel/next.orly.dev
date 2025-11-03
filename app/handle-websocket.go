@@ -78,18 +78,23 @@ whitelist:
 	
 	defer conn.Close()
 	listener := &Listener{
-		ctx:       ctx,
-		Server:    s,
-		conn:      conn,
-		remote:    remote,
-		req:       r,
-		startTime: time.Now(),
-		writeChan: make(chan publish.WriteRequest, 100), // Buffered channel for writes
-		writeDone: make(chan struct{}),
+		ctx:            ctx,
+		Server:         s,
+		conn:           conn,
+		remote:         remote,
+		req:            r,
+		startTime:      time.Now(),
+		writeChan:      make(chan publish.WriteRequest, 100), // Buffered channel for writes
+		writeDone:      make(chan struct{}),
+		messageQueue:   make(chan messageRequest, 100), // Buffered channel for message processing
+		processingDone: make(chan struct{}),
 	}
 
 	// Start write worker goroutine
 	go listener.writeWorker()
+
+	// Start message processor goroutine
+	go listener.messageProcessor()
 
 	// Register write channel with publisher
 	if socketPub := listener.publishers.GetSocketPublisher(); socketPub != nil {
@@ -140,9 +145,9 @@ whitelist:
 		// Log detailed connection statistics
 		dur := time.Since(listener.startTime)
 		log.D.F(
-			"ws connection closed %s: msgs=%d, REQs=%d, EVENTs=%d, duration=%v",
+			"ws connection closed %s: msgs=%d, REQs=%d, EVENTs=%d, dropped=%d, duration=%v",
 			remote, listener.msgCount, listener.reqCount, listener.eventCount,
-			dur,
+			listener.DroppedMessages(), dur,
 		)
 
 		// Log any remaining connection state
@@ -151,6 +156,11 @@ whitelist:
 		} else {
 			log.D.F("ws connection %s was not authenticated", remote)
 		}
+
+		// Close message queue to signal processor to exit
+		close(listener.messageQueue)
+		// Wait for message processor to finish
+		<-listener.processingDone
 
 		// Close write channel to signal worker to exit
 		close(listener.writeChan)
@@ -212,7 +222,11 @@ whitelist:
 			log.D.F("received large message from %s: %d bytes", remote, len(msg))
 		}
 		// log.T.F("received message from %s: %s", remote, string(msg))
-		listener.HandleMessage(msg, remote)
+
+		// Queue message for asynchronous processing
+		if !listener.QueueMessage(msg, remote) {
+			log.W.F("ws->%s message queue full, dropping message (capacity=%d)", remote, cap(listener.messageQueue))
+		}
 	}
 }
 

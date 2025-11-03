@@ -4,7 +4,7 @@ import (
 	"io"
 
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 )
 
 const IdLen = sha256.Size

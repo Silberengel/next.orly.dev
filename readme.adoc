@@ -1,9 +1,10 @@
-= next.orly.dev
+go= next.orly.dev
 :toc:
 :note-caption: note 👉
 
 image:./docs/orly.png[orly.dev]
 
+image:https://img.shields.io/badge/version-v0.24.1-blue.svg[Version v0.24.1]
 image:https://img.shields.io/badge/godoc-documentation-blue.svg[Documentation,link=https://pkg.go.dev/next.orly.dev]
 image:https://img.shields.io/badge/donate-geyser_crowdfunding_project_page-orange.svg[Support this project,link=https://geyser.fund/project/orly]
 zap me: ⚡️mlekudev@getalby.com
@@ -18,9 +19,17 @@ ORLY is a nostr relay written from the ground up to be performant, low latency, 
 - business deployments and RaaS (Relay as a Service) with a nostr-native NWC client to allow accepting payments through NWC capable lightning nodes
 - high availability clusters for reliability and/or providing a unified data set across multiple regions
 
-ORLY uses a fast embedded link:https://github.com/hypermodeinc/badger[badger] database with a database designed for high performance querying and event storage.
+== performance & cryptography
 
-On linux platforms, it uses https://github.com/bitcoin/secp256k1[libsecp256k1]-enabled signature and signature verification (see link:pkg/crypto/p256k/README.md[here]).
+ORLY leverages high-performance libraries and custom optimizations for exceptional speed:
+
+* **SIMD Libraries**: Uses link:https://github.com/minio/sha256-simd[minio/sha256-simd] for accelerated SHA256 hashing
+* **p256k1 Cryptography**: Implements link:https://github.com/p256k1/p256k1[p256k1.mleku.dev] for fast elliptic curve operations optimized for nostr
+* **Fast Message Encoders**: High-performance encoding/decoding with link:https://github.com/templexxx/xhex[templexxx/xhex] for SIMD-accelerated hex operations
+
+The encoders achieve **24% faster JSON marshaling**, **16% faster canonical encoding**, and **54-91% reduction in memory allocations** through custom buffer pre-allocation and zero-allocation optimization techniques.
+
+ORLY uses a fast embedded link:https://github.com/hypermodeinc/badger[badger] database with a database designed for high performance querying and event storage.
 
 == building
 
@@ -91,365 +100,64 @@ echo "Build complete!"
 
 Make it executable with `chmod +x build.sh` and run with `./build.sh`.
 
-== web UI
+== core features
 
-ORLY includes a modern web-based user interface built with link:https://svelte.dev/[Svelte] that provides comprehensive relay management capabilities.
+=== web UI
 
-=== features
+ORLY includes a modern web-based user interface built with link:https://svelte.dev/[Svelte] for relay management and monitoring.
 
-The web UI offers:
-
-* **Authentication**: Secure login using Nostr key pairs with challenge-response authentication
-* **Event Management**: View, export, and import Nostr events with advanced filtering and search
-* **User Administration**: Manage user permissions and roles (admin/owner)
-* **Sprocket Management**: Configure and manage external event processing scripts
-* **Real-time Updates**: Live event streaming and status updates
-* **Dark/Light Theme**: Toggle between themes with persistent preferences
+* **Secure Authentication**: Nostr key pair authentication with challenge-response
+* **Event Management**: Browse, export, import, and search events
+* **User Administration**: Role-based permissions (guest, user, admin, owner)
+* **Sprocket Management**: Upload and monitor event processing scripts
+* **Real-time Updates**: Live event streaming and system monitoring
 * **Responsive Design**: Works on desktop and mobile devices
+* **Dark/Light Themes**: Persistent theme preferences
 
-=== authentication
-
-The web UI uses Nostr-native authentication:
-
-1. **Challenge Generation**: Server generates a cryptographic challenge
-2. **Signature Verification**: Client signs the challenge with their private key
-3. **Session Management**: Authenticated sessions with role-based permissions
-
-Supported authentication methods:
-- Direct private key input
-- Nostr extension integration
-- Hardware wallet support
-
-=== user roles
-
-* **Guest**: Read-only access to public events
-* **User**: Can publish events and manage their own content
-* **Admin**: Full relay management except sprocket configuration
-* **Owner**: Complete control including sprocket management and system configuration
-
-=== event management
-
-The interface provides comprehensive event management:
-
-* **Event Browser**: Paginated view of all events with filtering by kind, author, and content
-* **Export Functionality**: Export events in JSON format with configurable date ranges
-* **Import Capability**: Bulk import events (admin/owner only)
-* **Search**: Full-text search across event content and metadata
-* **Event Details**: Expandable view showing full event JSON and metadata
-
-=== sprocket integration
-
-The web UI includes a dedicated sprocket management interface:
-
-* **Status Monitoring**: Real-time status of sprocket scripts
-* **Script Upload**: Upload and manage sprocket scripts
-* **Version Control**: Track and manage multiple script versions
-* **Configuration**: Configure sprocket parameters and settings
-* **Logs**: View sprocket execution logs and errors
-
-=== development mode
-
-For development, the web UI supports hot-reloading:
+The web UI is embedded in the relay binary and accessible at the relay's root path. For development with hot-reloading:
 
 [source,bash]
 ----
-# Enable development proxy
 export ORLY_WEB_DISABLE_EMBEDDED=true
 export ORLY_WEB_DEV_PROXY_URL=localhost:5000
-
-# Start relay
-./orly
-
-# In another terminal, start Svelte dev server
-cd app/web
-bun run dev
+./orly &
+cd app/web && bun run dev
 ----
 
-This allows for rapid development with automatic reloading of changes.
+=== sprocket event processing
 
-== sprocket event sifter interface
+ORLY includes a powerful sprocket system for external event processing scripts. Sprocket scripts enable custom filtering, validation, and processing logic for Nostr events before storage.
 
-The sprocket system provides a powerful interface for external event processing scripts, allowing you to implement custom filtering, validation, and processing logic for Nostr events before they are stored in the relay.
-
-=== overview
-
-Sprocket scripts receive events via stdin and respond with JSONL (JSON Lines) format, enabling real-time event processing with three possible actions:
-
-* **accept**: Continue with normal event processing
-* **reject**: Return OK false to client with rejection message
-* **shadowReject**: Return OK true to client but abort processing (useful for spam filtering)
-
-=== how it works
-
-1. **Event Reception**: Events are sent to the sprocket script as JSON objects via stdin
-2. **Processing**: Script analyzes the event and applies custom logic
-3. **Response**: Script responds with JSONL containing the decision and optional message
-4. **Action**: Relay processes the response and either accepts, rejects, or shadow rejects the event
-
-=== script protocol
-
-==== input format
-
-Events are sent as JSON objects, one per line:
-
-```json
-{
-  "id": "event_id_here",
-  "kind": 1,
-  "content": "Hello, world!",
-  "pubkey": "author_pubkey",
-  "tags": [["t", "hashtag"], ["p", "reply_pubkey"]],
-  "created_at": 1640995200,
-  "sig": "signature_here"
-}
-```
-
-==== output format
-
-Scripts must respond with JSONL format:
-
-```json
-{"id": "event_id", "action": "accept", "msg": ""}
-{"id": "event_id", "action": "reject", "msg": "reason for rejection"}
-{"id": "event_id", "action": "shadowReject", "msg": ""}
-```
-
-=== configuration
-
-Enable sprocket processing:
+* **Real-time Processing**: Scripts receive events via stdin and respond with JSONL decisions
+* **Three Actions**: `accept`, `reject`, or `shadowReject` events based on custom logic
+* **Automatic Recovery**: Failed scripts are automatically disabled with periodic recovery attempts
+* **Web UI Management**: Upload, configure, and monitor scripts through the admin interface
 
 [source,bash]
 ----
 export ORLY_SPROCKET_ENABLED=true
 export ORLY_APP_NAME="ORLY"
+# Place script at ~/.config/ORLY/sprocket.sh
 ----
 
-The sprocket script should be placed at:
-`~/.config/{ORLY_APP_NAME}/sprocket.sh`
+For detailed configuration and examples, see the link:docs/sprocket/[sprocket documentation].
 
-For example, with default `ORLY_APP_NAME="ORLY"`:
-`~/.config/ORLY/sprocket.sh`
+=== policy system
 
-Backup files are automatically created when updating sprocket scripts via the web UI, with timestamps like:
-`~/.config/ORLY/sprocket.sh.20240101120000`
+ORLY includes a comprehensive policy system for fine-grained control over event storage and retrieval. Configure custom validation rules, access controls, size limits, and age restrictions.
 
-=== manual sprocket updates
-
-For manual sprocket script updates, you can use the stop/write/restart method:
-
-1. **Stop the relay**:
-   ```bash
-   # Send SIGINT to gracefully stop
-   kill -INT <relay_pid>
-   ```
-
-2. **Write new sprocket script**:
-   ```bash
-   # Create/update the sprocket script
-   cat > ~/.config/ORLY/sprocket.sh << 'EOF'
-   #!/bin/bash
-   while read -r line; do
-       if [[ -n "$line" ]]; then
-           event_id=$(echo "$line" | jq -r '.id')
-           echo "{\"id\":\"$event_id\",\"action\":\"accept\",\"msg\":\"\"}"
-       fi
-   done
-   EOF
-   
-   # Make it executable
-   chmod +x ~/.config/ORLY/sprocket.sh
-   ```
-
-3. **Restart the relay**:
-   ```bash
-   ./orly
-   ```
-
-The relay will automatically detect the new sprocket script and start it. If the script fails, sprocket will be disabled and all events rejected until the script is fixed.
-
-=== failure handling
-
-When sprocket is enabled but fails to start or crashes:
-
-1. **Automatic Disable**: Sprocket is automatically disabled
-2. **Event Rejection**: All incoming events are rejected with error message
-3. **Periodic Recovery**: Every 30 seconds, the system checks if the sprocket script becomes available
-4. **Auto-Restart**: If the script is found, sprocket is automatically re-enabled and restarted
-
-This ensures that:
-- Relay continues running even when sprocket fails
-- No events are processed without proper sprocket filtering
-- Sprocket automatically recovers when the script is fixed
-- Clear error messages inform users about the sprocket status
-- Error messages include the exact file location for easy fixes
-
-When sprocket fails, the error message will show:
-`sprocket disabled due to failure - all events will be rejected (script location: ~/.config/ORLY/sprocket.sh)`
-
-This makes it easy to locate and fix the sprocket script file.
-
-=== example script
-
-Here's a Python example that implements various filtering criteria:
-
-[source,python]
-----
-#!/usr/bin/env python3
-import json
-import sys
-
-def process_event(event_json):
-    event_id = event_json.get('id', '')
-    event_content = event_json.get('content', '')
-    event_kind = event_json.get('kind', 0)
-    
-    # Reject spam content
-    if 'spam' in event_content.lower():
-        return {
-            'id': event_id,
-            'action': 'reject',
-            'msg': 'Content contains spam'
-        }
-    
-    # Shadow reject test events
-    if event_kind == 9999:
-        return {
-            'id': event_id,
-            'action': 'shadowReject',
-            'msg': ''
-        }
-    
-    # Accept all other events
-    return {
-        'id': event_id,
-        'action': 'accept',
-        'msg': ''
-    }
-
-# Main processing loop
-for line in sys.stdin:
-    if line.strip():
-        try:
-            event = json.loads(line)
-            response = process_event(event)
-            print(json.dumps(response))
-            sys.stdout.flush()
-        except json.JSONDecodeError:
-            continue
-----
-
-=== bash example
-
-A simple bash script example:
+* **Access Control**: Allow/deny based on pubkeys, roles, or social relationships
+* **Content Filtering**: Size limits, age validation, and custom rules
+* **Script Integration**: Execute custom scripts for complex policy logic
+* **Real-time Enforcement**: Policies applied to both read and write operations
 
 [source,bash]
 ----
-#!/bin/bash
-while read -r line; do
-    if [[ -n "$line" ]]; then
-        # Extract event ID
-        event_id=$(echo "$line" | jq -r '.id')
-        
-        # Check for spam content
-        if echo "$line" | jq -r '.content' | grep -qi "spam"; then
-            echo "{\"id\":\"$event_id\",\"action\":\"reject\",\"msg\":\"Spam detected\"}"
-        else
-            echo "{\"id\":\"$event_id\",\"action\":\"accept\",\"msg\":\"\"}"
-        fi
-    fi
-done
+export ORLY_POLICY_ENABLED=true
+# Create policy file at ~/.config/ORLY/policy.json
 ----
 
-=== testing
-
-Test your sprocket script directly:
-
-[source,bash]
-----
-# Test with sample event
-echo '{"id":"test","kind":1,"content":"spam test"}' | python3 sprocket.py
-
-# Expected output:
-# {"id": "test", "action": "reject", "msg": "Content contains spam"}
-----
-
-Run the comprehensive test suite:
-
-[source,bash]
-----
-./test-sprocket-complete.sh
-----
-
-=== web UI management
-
-The web UI provides a complete sprocket management interface:
-
-* **Status Monitoring**: View real-time sprocket status and health
-* **Script Upload**: Upload new sprocket scripts via the web interface
-* **Version Management**: Track and manage multiple script versions
-* **Configuration**: Configure sprocket parameters and settings
-* **Logs**: View execution logs and error messages
-* **Restart**: Restart sprocket scripts without relay restart
-
-=== use cases
-
-Common sprocket use cases include:
-
-* **Spam Filtering**: Detect and reject spam content
-* **Content Moderation**: Implement custom content policies
-* **Rate Limiting**: Control event publishing rates
-* **Event Validation**: Additional validation beyond Nostr protocol
-* **Analytics**: Log and analyze event patterns
-* **Integration**: Connect with external services and APIs
-
-=== performance considerations
-
-* Sprocket scripts run synchronously and can impact relay performance
-* Keep processing logic efficient and fast
-* Use appropriate timeouts to prevent blocking
-* Consider using shadow reject for non-critical filtering to maintain user experience
-
-== secp256k1 dependency
-
-ORLY uses the optimized `libsecp256k1` C library from Bitcoin Core for schnorr signatures, providing 4x faster signing and ECDH operations compared to pure Go implementations.
-
-=== installation
-
-For Ubuntu/Debian, you can use the provided installation script:
-
-[source,bash]
-----
-./scripts/ubuntu_install_libsecp256k1.sh
-----
-
-Or install manually:
-
-[source,bash]
-----
-# Install build dependencies
-sudo apt -y install build-essential autoconf libtool
-
-# Initialize and build secp256k1
-cd pkg/crypto/p256k/secp256k1
-git submodule init
-git submodule update
-./autogen.sh
-./configure --enable-module-schnorrsig --enable-module-ecdh --prefix=/usr
-make
-sudo make install
-----
-
-=== fallback mode
-
-If you need to build without the C library dependency, disable CGO:
-
-[source,bash]
-----
-export CGO_ENABLED=0
-go build -o orly
-----
-
-This uses the pure Go `btcec` fallback library, which is slower but doesn't require system dependencies.
+For detailed configuration and examples, see the link:docs/POLICY_USAGE_GUIDE.md[Policy Usage Guide].
 
 == deployment
 
@@ -471,13 +179,12 @@ cd next.orly.dev
 
 The script will:
 
-1. **Install Go 1.23.1** if not present (in `~/.local/go`)
+1. **Install Go 1.25.0** if not present (in `~/.local/go`)
 2. **Configure environment** by creating `~/.goenv` and updating `~/.bashrc`
-3. **Install build dependencies** using the secp256k1 installation script (requires sudo)
-4. **Build the relay** with embedded web UI using `update-embedded-web.sh`
-5. **Set capabilities** for port 443 binding (requires sudo)
-6. **Install binary** to `~/.local/bin/orly`
-7. **Create systemd service** and enable it
+3. **Build the relay** with embedded web UI using `update-embedded-web.sh`
+4. **Set capabilities** for port 443 binding (requires sudo)
+5. **Install binary** to `~/.local/bin/orly`
+6. **Create systemd service** and enable it
 
 After deployment, reload your shell environment:
 
@@ -623,164 +330,30 @@ du -sh ~/.local/share/ORLY/
 ls -la ~/.local/share/ORLY/autocert/
 ----
 
-== stress testing
+== testing
 
-The stress tester is a tool for performance testing relay implementations under various load conditions.
+ORLY includes comprehensive testing tools for protocol validation and performance testing.
 
-=== usage
+* **Protocol Testing**: Use `relay-tester` for Nostr protocol compliance validation
+* **Stress Testing**: Performance testing under various load conditions
+* **Benchmark Suite**: Comparative performance testing across relay implementations
 
-[source,bash]
-----
-cd cmd/stresstest
-go run . [options]
-----
+For detailed testing instructions, multi-relay testing scenarios, and advanced usage, see the link:docs/RELAY_TESTING_GUIDE.md[Relay Testing Guide].
 
-Or use the compiled binary:
+The benchmark suite provides comprehensive performance testing and comparison across multiple relay implementations, including throughput, latency, and memory usage metrics.
 
-[source,bash]
-----
-./cmd/stresstest/stresstest [options]
-----
+== access control
 
-=== options
+=== follows ACL
 
-* `--address` - Relay address (default: localhost)
-* `--port` - Relay port (default: 3334)  
-* `--workers` - Number of concurrent publisher workers (default: 8)
-* `--duration` - How long to run the stress test (default: 60s)
-* `--publish-timeout` - Timeout waiting for OK per publish (default: 15s)
-* `--query-workers` - Number of concurrent query workers (default: 4)
-* `--query-timeout` - Subscription timeout for queries (default: 3s)
-* `--query-min-interval` - Minimum interval between queries per worker (default: 50ms)
-* `--query-max-interval` - Maximum interval between queries per worker (default: 300ms)
-* `--skip-cache` - Skip uploading example events before running
-
-=== example
+The follows ACL (Access Control List) system provides flexible relay access control based on social relationships in the Nostr network.
 
 [source,bash]
 ----
-# Run stress test against local relay for 2 minutes with 16 workers
-go run cmd/stresstest/main.go --address localhost --port 3334 --workers 16 --duration 120s
-
-# Test a remote relay with higher query load
-go run cmd/stresstest/main.go --address relay.example.com --port 443 --query-workers 8 --duration 300s
-----
-
-The stress tester will show real-time statistics including events sent/received per second, query counts, and results.
-
-== benchmarks
-
-The benchmark suite provides comprehensive performance testing and comparison across multiple relay implementations.
-
-=== quick start
-
-1. **Setup external relays:**
-+
-[source,bash]
-----
-cd cmd/benchmark
-./setup-external-relays.sh
-----
-
-2. **Run all benchmarks:**
-+
-[source,bash]
-----
-docker compose up --build
-----
-
-3. **View results:**
-+
-[source,bash]
-----
-# View aggregate report
-cat reports/run_YYYYMMDD_HHMMSS/aggregate_report.txt
-
-# List individual relay results
-ls reports/run_YYYYMMDD_HHMMSS/
-----
-
-=== benchmark types
-
-The suite includes three main benchmark patterns:
-
-==== peak throughput test
-Tests maximum event ingestion rate with concurrent workers pushing events as fast as possible. Measures events/second, latency distribution, and success rate.
-
-==== burst pattern test  
-Simulates real-world traffic with alternating high-activity bursts and quiet periods to test relay behavior under varying loads.
-
-==== mixed read/write test
-Concurrent read and write operations to test query performance while events are being ingested. Measures combined throughput and latency.
-
-=== tested relays
-
-The benchmark suite compares:
-
-* **next.orly.dev** (this repository) - BadgerDB-based relay
-* **Khatru** - SQLite and Badger variants  
-* **Relayer** - Basic example implementation
-* **Strfry** - C++ LMDB-based relay
-* **nostr-rs-relay** - Rust-based relay with SQLite
-
-=== metrics reported
-
-* **Throughput**: Events processed per second
-* **Latency**: Average, P95, and P99 response times  
-* **Success Rate**: Percentage of successful operations
-* **Memory Usage**: Peak memory consumption during tests
-* **Error Analysis**: Detailed error reporting and categorization
-
-Results are timestamped and stored in the `reports/` directory for tracking performance improvements over time.
-
-== follows ACL
-
-The follows ACL (Access Control List) system provides a flexible way to control relay access based on social relationships in the Nostr network. It grants different access levels to users based on whether they are followed by designated admin users.
-
-=== how it works
-
-The follows ACL system operates by:
-
-1. **Admin Configuration**: Designated admin users are specified in the relay configuration
-2. **Follow List Discovery**: The system fetches follow lists (kind 3 events) from admin users
-3. **Access Level Assignment**:
-   - **Admin access**: Users listed as admins get full administrative privileges
-   - **Write access**: Users followed by any admin can publish events to the relay
-   - **Read access**: All other users can only read events from the relay
-
-=== configuration
-
-Enable the follows ACL system by setting the ACL mode:
-
-[source,bash]
-----
-export ORLY_ACL_MODE=follows
-export ORLY_ADMINS=npub1abc...,npub1xyz...
-----
-
-Or in your environment configuration:
-
-[source,env]
-----
-ORLY_ACL_MODE=follows
-ORLY_ADMINS=npub1abc123...,npub1xyz456...
-----
-
-=== usage example
-
-[source,bash]
-----
-# Set up a relay with follows ACL
 export ORLY_ACL_MODE=follows
 export ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
-
-# Start the relay
 ./orly
 ----
 
-The relay will automatically:
-- Load the follow lists of the specified admin users
-- Grant write access to anyone followed by these admins
-- Provide read-only access to everyone else
-- Update follow lists dynamically as admins modify their follows
+The system grants write access to users followed by designated admins, with read-only access for others. Follow lists update dynamically as admins modify their relationships.
 

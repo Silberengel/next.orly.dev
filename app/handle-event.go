@@ -136,8 +136,8 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 
 		log.D.F("policy allowed event %0x", env.E.ID)
 
-		// Check ACL policy for managed ACL mode
-		if acl.Registry.Active.Load() == "managed" {
+		// Check ACL policy for managed ACL mode, but skip for peer relay sync events
+		if acl.Registry.Active.Load() == "managed" && !l.isPeerRelayPubkey(l.authedPubkey.Load()) {
 			allowed, aclErr := acl.Registry.CheckPolicy(env.E)
 			if chk.E(aclErr) {
 				log.E.F("ACL policy check failed: %v", aclErr)
@@ -456,6 +456,17 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 
+	// Handle relay group configuration events
+	if l.relayGroupMgr != nil {
+		if err := l.relayGroupMgr.ValidateRelayGroupEvent(env.E); err != nil {
+			log.W.F("invalid relay group config event %s: %v", hex.Enc(env.E.ID), err)
+		}
+		// Process the event and potentially update peer lists
+		if l.syncManager != nil {
+			l.relayGroupMgr.HandleRelayGroupEvent(env.E, l.syncManager)
+		}
+	}
+
 	// Update serial for distributed synchronization
 	if l.syncManager != nil {
 		l.syncManager.UpdateSerial()
@@ -500,4 +511,22 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 	}
 	return
+}
+
+// isPeerRelayPubkey checks if the given pubkey belongs to a peer relay
+func (l *Listener) isPeerRelayPubkey(pubkey []byte) bool {
+	if l.syncManager == nil {
+		return false
+	}
+
+	peerPubkeyHex := hex.Enc(pubkey)
+
+	// Check if this pubkey matches any of our configured peer relays' NIP-11 pubkeys
+	for _, peerURL := range l.syncManager.GetPeers() {
+		if l.syncManager.IsAuthorizedPeer(peerURL, peerPubkeyHex) {
+			return true
+		}
+	}
+
+	return false
 }

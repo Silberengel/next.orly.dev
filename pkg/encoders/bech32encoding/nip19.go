@@ -9,7 +9,7 @@ import (
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/crypto/ec/bech32"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/bech32encoding/pointers"
 	"next.orly.dev/pkg/encoders/bech32encoding/tlv"
 	"next.orly.dev/pkg/encoders/hex"

@@ -3,7 +3,7 @@ package types
 import (
 	"io"
 
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 )
 
 const IdentLen = 8

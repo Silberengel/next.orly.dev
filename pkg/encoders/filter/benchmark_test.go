@@ -5,7 +5,7 @@ import (
 	"time"
 
 	p256k1signer "p256k1.mleku.dev/signer"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"

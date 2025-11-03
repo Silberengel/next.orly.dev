@@ -287,3 +287,71 @@ This separation allows flexible output handling:
 # Events piped to another program, bloom filter saved
 ./aggregator -npub npub1... 2>bloom_filter.txt | jq '.content'
 ```
+
+## Testing
+
+The aggregator includes comprehensive tests to ensure reliable data collection:
+
+### Running Tests
+
+```bash
+# Run aggregator tests
+go test ./cmd/aggregator
+
+# Run all tests including aggregator
+go test ./...
+
+# Run with verbose output
+go test -v ./cmd/aggregator
+```
+
+### Integration Testing
+
+The aggregator is tested as part of the project's integration test suite:
+
+```bash
+# Run the full test suite
+./scripts/test.sh
+
+# Run benchmarks (which include aggregator performance)
+./scripts/runtests.sh
+```
+
+### Example Test Usage
+
+```bash
+# Test with mock data (if available)
+go test -v ./cmd/aggregator -run TestAggregator
+
+# Test bloom filter functionality
+go test -v ./cmd/aggregator -run TestBloomFilter
+```
+
+## Development
+
+### Building from Source
+
+```bash
+# Build the aggregator binary
+go build -o aggregator ./cmd/aggregator
+
+# Build with optimizations
+go build -ldflags="-s -w" -o aggregator ./cmd/aggregator
+
+# Cross-compile for different platforms
+GOOS=linux GOARCH=amd64 go build -o aggregator-linux-amd64 ./cmd/aggregator
+GOOS=darwin GOARCH=arm64 go build -o aggregator-darwin-arm64 ./cmd/aggregator
+```
+
+### Code Quality
+
+The aggregator follows Go best practices and includes:
+
+- Comprehensive error handling
+- Memory-efficient data structures
+- Concurrent processing with proper synchronization
+- Extensive logging for debugging
+
+## License
+
+This tool is part of the next.orly.dev project and follows the same licensing terms.

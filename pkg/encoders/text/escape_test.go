@@ -5,7 +5,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lukechampine.com/frand"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 )
 
 func TestUnescapeByteString(t *testing.T) {

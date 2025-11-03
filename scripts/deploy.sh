@@ -147,22 +147,6 @@ EOF
     fi
 }
 
-# Install build dependencies
-install_dependencies() {
-    log_info "Installing build dependencies..."
-    
-    if check_root; then
-        # Install as root
-        ./scripts/ubuntu_install_libsecp256k1.sh
-    else
-        # Request sudo for dependency installation
-        log_info "Root privileges required for installing build dependencies..."
-        sudo ./scripts/ubuntu_install_libsecp256k1.sh
-    fi
-    
-    log_success "Build dependencies installed"
-}
-
 # Build the application
 build_application() {
     log_info "Building ORLY relay..."
@@ -288,9 +272,6 @@ main() {
         install_go
         setup_go_environment
     fi
-    
-    # Install dependencies
-    install_dependencies
     
     # Build application
     build_application

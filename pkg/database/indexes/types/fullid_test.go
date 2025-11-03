@@ -7,7 +7,7 @@ import (
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/utils"
 
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 )
 
 func TestFromId(t *testing.T) {

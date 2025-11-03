@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	sha "next.orly.dev/pkg/crypto/sha256"
+	sha "github.com/minio/sha256-simd"
 )
 
 // TokenHashes extracts unique word hashes (8-byte truncated sha256) from content.

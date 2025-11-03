@@ -8,7 +8,7 @@ require (
 	github.com/dgraph-io/badger/v4 v4.8.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
-	github.com/klauspost/cpuid/v2 v2.3.0
+	github.com/minio/sha256-simd v1.0.1
 	github.com/pkg/profile v1.7.0
 	github.com/puzpuzpuz/xsync/v3 v3.5.1
 	github.com/stretchr/testify v1.11.1
@@ -40,7 +40,7 @@ require (
 	github.com/google/flatbuffers v25.9.23+incompatible // indirect
 	github.com/google/pprof v0.0.0-20251007162407-5df77e3f7d1d // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
-	github.com/minio/sha256-simd v1.0.1 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

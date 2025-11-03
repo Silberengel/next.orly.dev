@@ -251,6 +251,107 @@ rm -rf external/ data/ reports/
 docker-compose up --build
 ```
 
+## Testing
+
+The benchmark suite includes comprehensive testing to ensure reliable performance measurements:
+
+### Running Tests
+
+```bash
+# Run benchmark tests
+go test ./cmd/benchmark
+
+# Run all tests including benchmark
+go test ./...
+
+# Run with verbose output
+go test -v ./cmd/benchmark
+```
+
+### Integration Testing
+
+The benchmark suite is tested as part of the project's integration test suite:
+
+```bash
+# Run the full test suite
+./scripts/test.sh
+
+# Run performance benchmarks
+./scripts/runtests.sh
+```
+
+### Docker-based Testing
+
+Test the complete benchmark environment:
+
+```bash
+# Test individual relay startup
+docker-compose up next-orly
+
+# Test full benchmark suite (requires external relays)
+./scripts/setup-external-relays.sh
+docker-compose up --build
+
+# Clean up test environment
+docker-compose down -v
+```
+
+### Example Test Usage
+
+```bash
+# Test benchmark configuration parsing
+go test -v ./cmd/benchmark -run TestConfig
+
+# Test individual benchmark patterns
+go test -v ./cmd/benchmark -run TestPeakThroughput
+
+# Test result aggregation
+go test -v ./cmd/benchmark -run TestResults
+```
+
+## Development
+
+### Building from Source
+
+```bash
+# Build the benchmark binary
+go build -o benchmark ./cmd/benchmark
+
+# Build with optimizations
+go build -ldflags="-s -w" -o benchmark ./cmd/benchmark
+
+# Cross-compile for different platforms
+GOOS=linux GOARCH=amd64 go build -o benchmark-linux-amd64 ./cmd/benchmark
+```
+
+### Adding New Benchmark Tests
+
+1. **Extend the Benchmark struct** in `main.go`
+2. **Add new test method** following existing patterns
+3. **Update main() function** to call new test
+4. **Update result aggregation** in `benchmark-runner.sh`
+
+### Modifying Relay Configurations
+
+Each relay's configuration can be customized:
+
+- **Resource limits**: Adjust memory/CPU limits in `docker-compose.yml`
+- **Database settings**: Modify configuration files in `configs/`
+- **Network settings**: Update port mappings and health checks
+
+### Debugging
+
+```bash
+# View logs for specific relay
+docker-compose logs next-orly
+
+# Run benchmark with debug output
+docker-compose up --build benchmark-runner
+
+# Check individual container health
+docker-compose ps
+```
+
 ## Contributing
 
 To add support for new relay implementations:

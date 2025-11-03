@@ -32,7 +32,6 @@ fi
 echo -e "${YELLOW}2. Testing script validation...${NC}"
 required_files=(
     "go.mod"
-    "scripts/ubuntu_install_libsecp256k1.sh"
     "scripts/update-embedded-web.sh"
     "app/web/package.json"
 )
@@ -49,7 +48,6 @@ done
 echo -e "${YELLOW}3. Testing script permissions...${NC}"
 required_scripts=(
     "scripts/deploy.sh"
-    "scripts/ubuntu_install_libsecp256k1.sh"
     "scripts/update-embedded-web.sh"
 )
 

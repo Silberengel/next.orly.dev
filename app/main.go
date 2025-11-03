@@ -117,8 +117,22 @@ func Run(
 		}
 	}
 
+	// Initialize relay group manager
+	l.relayGroupMgr = dsync.NewRelayGroupManager(db, cfg.RelayGroupAdmins)
+
 	// Initialize sync manager if relay peers are configured
+	var peers []string
 	if len(cfg.RelayPeers) > 0 {
+		peers = cfg.RelayPeers
+	} else {
+		// Try to get peers from relay group configuration
+		if config, err := l.relayGroupMgr.FindAuthoritativeConfig(ctx); err == nil && config != nil {
+			peers = config.Relays
+			log.I.F("using relay group configuration with %d peers", len(peers))
+		}
+	}
+
+	if len(peers) > 0 {
 		// Get relay identity for node ID
 		sk, err := db.GetOrCreateRelayIdentitySecret()
 		if err != nil {
@@ -132,8 +146,8 @@ func Run(
 				if relayURL == "" {
 					relayURL = fmt.Sprintf("http://localhost:%d", cfg.Port)
 				}
-				l.syncManager = dsync.NewManager(ctx, db, nodeID, relayURL, cfg.RelayPeers)
-				log.I.F("distributed sync manager initialized with %d peers", len(cfg.RelayPeers))
+				l.syncManager = dsync.NewManager(ctx, db, nodeID, relayURL, peers, l.relayGroupMgr, l.policyManager)
+				log.I.F("distributed sync manager initialized with %d peers", len(peers))
 			}
 		}
 	}

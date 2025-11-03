@@ -23,6 +23,7 @@ type Managed struct {
 	managedACL *database.ManagedACL
 	owners     [][]byte
 	admins     [][]byte
+	peerAdmins [][]byte // peer relay identity pubkeys with admin access
 	mx         sync.RWMutex
 }
 
@@ -73,6 +74,15 @@ func (m *Managed) Configure(cfg ...any) (err error) {
 	return
 }
 
+// UpdatePeerAdmins updates the list of peer relay identity pubkeys that have admin access
+func (m *Managed) UpdatePeerAdmins(peerPubkeys [][]byte) {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	m.peerAdmins = make([][]byte, len(peerPubkeys))
+	copy(m.peerAdmins, peerPubkeys)
+	log.I.F("updated peer admin list with %d pubkeys", len(peerPubkeys))
+}
+
 func (m *Managed) GetAccessLevel(pub []byte, address string) (level string) {
 	m.mx.RLock()
 	defer m.mx.RUnlock()
@@ -91,6 +101,13 @@ func (m *Managed) GetAccessLevel(pub []byte, address string) (level string) {
 
 	// Check admins
 	for _, v := range m.admins {
+		if utils.FastEqual(v, pub) {
+			return "admin"
+		}
+	}
+
+	// Check peer relay identity pubkeys (they get admin access)
+	for _, v := range m.peerAdmins {
 		if utils.FastEqual(v, pub) {
 			return "admin"
 		}

@@ -13,7 +13,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	p256k1signer "p256k1.mleku.dev/signer"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
 	"next.orly.dev/pkg/utils"

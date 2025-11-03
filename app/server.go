@@ -52,6 +52,7 @@ type Server struct {
 	policyManager    *policy.P
 	spiderManager    *spider.Spider
 	syncManager      *dsync.Manager
+	relayGroupMgr    *dsync.RelayGroupManager
 	blossomServer    *blossom.Server
 }
 
@@ -249,7 +250,7 @@ func (s *Server) UserInterface() {
 	// Sync endpoints for distributed synchronization
 	if s.syncManager != nil {
 		s.mux.HandleFunc("/api/sync/current", s.handleSyncCurrent)
-		s.mux.HandleFunc("/api/sync/fetch", s.handleSyncFetch)
+		s.mux.HandleFunc("/api/sync/event-ids", s.handleSyncEventIDs)
 		log.Printf("Distributed sync API enabled at /api/sync")
 	}
 
@@ -1015,8 +1016,8 @@ func (s *Server) handleSyncCurrent(w http.ResponseWriter, r *http.Request) {
 	s.syncManager.HandleCurrentRequest(w, r)
 }
 
-// handleSyncFetch handles requests for events in a serial range
-func (s *Server) handleSyncFetch(w http.ResponseWriter, r *http.Request) {
+// handleSyncEventIDs handles requests for event IDs with their serial numbers
+func (s *Server) handleSyncEventIDs(w http.ResponseWriter, r *http.Request) {
 	if s.syncManager == nil {
 		http.Error(w, "Sync manager not initialized", http.StatusServiceUnavailable)
 		return
@@ -1027,7 +1028,7 @@ func (s *Server) handleSyncFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.syncManager.HandleFetchRequest(w, r)
+	s.syncManager.HandleEventIDsRequest(w, r)
 }
 
 // validatePeerRequest validates NIP-98 authentication and checks if the requesting peer is authorized
@@ -1044,25 +1045,46 @@ func (s *Server) validatePeerRequest(w http.ResponseWriter, r *http.Request) boo
 		return false
 	}
 
-	// Check if this pubkey corresponds to a configured peer relay
+	if s.syncManager == nil {
+		log.Printf("Sync manager not available for peer validation")
+		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+		return false
+	}
+
+	// Extract the relay URL from the request (this should be in the request body)
+	// For now, we'll check against all configured peers
 	peerPubkeyHex := hex.Enc(pubkey)
-	for range s.Config.RelayPeers {
-		// Extract pubkey from peer URL (assuming format: https://relay.example.com@pubkey)
-		// For now, check if the pubkey matches any configured admin/owner
-		// TODO: Implement proper peer identity mapping
-		for _, admin := range s.Admins {
-			if hex.Enc(admin) == peerPubkeyHex {
-				return true
-			}
-		}
-		for _, owner := range s.Owners {
-			if hex.Enc(owner) == peerPubkeyHex {
-				return true
-			}
+
+	// Check if this pubkey matches any of our configured peer relays' NIP-11 pubkeys
+	for _, peerURL := range s.syncManager.GetPeers() {
+		if s.syncManager.IsAuthorizedPeer(peerURL, peerPubkeyHex) {
+			// Also update ACL to grant admin access to this peer pubkey
+			s.updatePeerAdminACL(pubkey)
+			return true
 		}
 	}
 
 	log.Printf("Unauthorized sync request from pubkey: %s", peerPubkeyHex)
 	http.Error(w, "Unauthorized peer", http.StatusForbidden)
 	return false
+}
+
+// updatePeerAdminACL grants admin access to peer relay identity pubkeys
+func (s *Server) updatePeerAdminACL(peerPubkey []byte) {
+	// Find the managed ACL instance and update peer admins
+	for _, aclInstance := range acl.Registry.ACL {
+		if aclInstance.Type() == "managed" {
+			if managed, ok := aclInstance.(*acl.Managed); ok {
+				// Collect all current peer pubkeys
+				var peerPubkeys [][]byte
+				for _, peerURL := range s.syncManager.GetPeers() {
+					if pubkey, err := s.syncManager.GetPeerPubkey(peerURL); err == nil {
+						peerPubkeys = append(peerPubkeys, []byte(pubkey))
+					}
+				}
+				managed.UpdatePeerAdmins(peerPubkeys)
+				break
+			}
+		}
+	}
 }

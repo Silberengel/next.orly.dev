@@ -1,7 +1,7 @@
 package directory
 
 import (
-	"crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"encoding/hex"
 	"net/url"
 	"regexp"

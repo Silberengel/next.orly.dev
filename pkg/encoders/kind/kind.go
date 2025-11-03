@@ -271,6 +271,7 @@ var (
 	PublicChatsList       = &K{10005}
 	BlockedRelaysList     = &K{10006}
 	SearchRelaysList      = &K{10007}
+	RelayGroupConfig      = &K{10008}
 	InterestsList         = &K{10015}
 	UserEmojiList         = &K{10030}
 	DMRelaysList          = &K{10050}
@@ -402,6 +403,7 @@ var Map = map[uint16]string{
 	PublicChatsList.K:         "Public Chats list",
 	BlockedRelaysList.K:       "Blocked Relays list",
 	SearchRelaysList.K:        "Search Relays list",
+	RelayGroupConfig.K:        "Relay Group Configuration",
 	InterestsList.K:           "Interests",
 	UserEmojiList.K:           "User Emoji list",
 	DMRelaysList.K:            "DM relays",

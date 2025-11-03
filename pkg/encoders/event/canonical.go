@@ -1,7 +1,7 @@
 package event
 
 import (
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/ints"
 	"next.orly.dev/pkg/encoders/text"
