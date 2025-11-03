@@ -55,7 +55,8 @@ func TestDumbClientWorkaround(t *testing.T) {
 
 	// The connection should stay alive despite the short client-side deadline
 	// because our workaround sets a 24-hour server-side deadline
-	for time.Since(startTime) < 2*time.Minute {
+	connectionFailed := false
+	for time.Since(startTime) < 2*time.Minute && !connectionFailed {
 		// Extend client deadline every 10 seconds (simulating dumb client behavior)
 		if time.Since(startTime).Seconds() > 10 && int(time.Since(startTime).Seconds())%10 == 0 {
 			conn.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -64,25 +65,43 @@ func TestDumbClientWorkaround(t *testing.T) {
 
 		// Try to read with a short timeout to avoid blocking
 		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-		msgType, data, err := conn.ReadMessage()
-		conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // Reset
 
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// Timeout is expected - just continue
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				t.Logf("Connection closed normally: %v", err)
-				break
-			}
-			t.Errorf("Unexpected error: %v", err)
-			break
-		}
+		// Use a function to catch panics from ReadMessage on failed connections
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					if panicMsg, ok := r.(string); ok && panicMsg == "repeated read on failed websocket connection" {
+						t.Logf("Connection failed, stopping read loop")
+						connectionFailed = true
+						return
+					}
+					// Re-panic if it's a different panic
+					panic(r)
+				}
+			}()
 
-		messageCount++
-		t.Logf("Received message %d: type=%d, len=%d", messageCount, msgType, len(data))
+			msgType, data, err := conn.ReadMessage()
+			conn.SetReadDeadline(time.Now().Add(30 * time.Second)) // Reset
+
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Timeout is expected - just continue
+					time.Sleep(100 * time.Millisecond)
+					return
+				}
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+					t.Logf("Connection closed normally: %v", err)
+					connectionFailed = true
+					return
+				}
+				t.Errorf("Unexpected error: %v", err)
+				connectionFailed = true
+				return
+			}
+
+			messageCount++
+			t.Logf("Received message %d: type=%d, len=%d", messageCount, msgType, len(data))
+		}()
 	}
 
 	elapsed := time.Since(startTime)

@@ -357,3 +357,24 @@ export ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmle
 
 The system grants write access to users followed by designated admins, with read-only access for others. Follow lists update dynamically as admins modify their relationships.
 
+=== cluster replication
+
+ORLY supports distributed relay clusters using active replication. When configured with peer relays, ORLY will automatically synchronize events between cluster members using efficient HTTP polling.
+
+[source,bash]
+----
+export ORLY_RELAY_PEERS=https://peer1.example.com,https://peer2.example.com
+export ORLY_CLUSTER_ADMINS=npub1cluster_admin_key
+----
+
+**Privacy Considerations:** By default, ORLY propagates all events including privileged events (DMs, gift wraps, etc.) to cluster peers for complete synchronization. This ensures no data loss but may expose private communications to other relay operators in your cluster.
+
+To enhance privacy, you can disable propagation of privileged events:
+
+[source,bash]
+----
+export ORLY_CLUSTER_PROPAGATE_PRIVILEGED_EVENTS=false
+----
+
+**Important:** When disabled, privileged events will not be replicated to peer relays. This provides better privacy but means these events will only be available on the originating relay. Users should be aware that accessing their privileged events may require connecting directly to the relay where they were originally published.
+

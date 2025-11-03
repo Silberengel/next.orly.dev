@@ -39,14 +39,12 @@ Cluster administrators publish this replaceable event to define the current set 
 ```json
 {
   "kind": 39108,
-  "content": "{\"name\":\"My Cluster\",\"description\":\"Community relay cluster\",\"admins\":[\"npub1...\",\"npub2...\"]}",
+  "content": "{\"name\":\"My Cluster\",\"description\":\"Community relay cluster\"}",
   "tags": [
     ["d", "membership"],
     ["relay", "https://relay1.example.com/", "wss://relay1.example.com/"],
     ["relay", "https://relay2.example.com/", "wss://relay2.example.com/"],
     ["relay", "https://relay3.example.com/", "wss://relay3.example.com/"],
-    ["admin", "npub1admin..."],
-    ["admin", "npub1admin2..."],
     ["version", "1"]
   ],
   "pubkey": "<admin-pubkey-hex>",
@@ -59,12 +57,11 @@ Cluster administrators publish this replaceable event to define the current set 
 **Tags:**
 - `d`: Identifier for the membership list (always "membership")
 - `relay`: HTTP and WebSocket URLs of cluster member relays (comma-separated)
-- `admin`: npub of cluster administrator (can have multiple)
 - `version`: Protocol version number
 
-**Content:** JSON object containing cluster metadata (name, description, admin list)
+**Content:** JSON object containing cluster metadata (name, description)
 
-**Authorization:** Only events signed by cluster administrators (listed in `admin` tags) are valid for membership updates.
+**Authorization:** Only events signed by cluster administrators are valid for membership updates. Cluster administrators are designated through static relay configuration and cannot be modified by membership events.
 
 ### HTTP API Endpoints
 
@@ -262,13 +259,11 @@ A reference implementation SHOULD include:
 ```json
 {
   "kind": 39108,
-  "content": "{\"name\":\"Test Cluster\",\"description\":\"Development cluster\",\"admins\":[\"npub1testadmin1\",\"npub1testadmin2\"]}",
+  "content": "{\"name\":\"Test Cluster\",\"description\":\"Development cluster\"}",
   "tags": [
     ["d", "membership"],
     ["relay", "https://relay1.test.com/", "wss://relay1.test.com/"],
     ["relay", "https://relay2.test.com/", "wss://relay2.test.com/"],
-    ["admin", "npub1testadmin1"],
-    ["admin", "npub1testadmin2"],
     ["version", "1"]
   ],
   "pubkey": "testadminpubkeyhex",

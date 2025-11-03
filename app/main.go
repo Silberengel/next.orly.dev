@@ -164,7 +164,7 @@ func Run(
 	}
 
 	if len(clusterAdminNpubs) > 0 {
-		l.clusterManager = dsync.NewClusterManager(ctx, db, clusterAdminNpubs)
+		l.clusterManager = dsync.NewClusterManager(ctx, db, clusterAdminNpubs, cfg.ClusterPropagatePrivilegedEvents, l.publishers)
 		l.clusterManager.Start()
 		log.I.F("cluster replication manager initialized with %d admin npubs", len(clusterAdminNpubs))
 	}
