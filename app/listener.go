@@ -18,9 +18,6 @@ import (
 	"next.orly.dev/pkg/utils/atomic"
 )
 
-// WriteRequest represents a write operation to be performed by the write worker
-type WriteRequest = publish.WriteRequest
-
 type Listener struct {
 	*Server
 	conn             *websocket.Conn
@@ -32,7 +29,7 @@ type Listener struct {
 	startTime        time.Time
 	isBlacklisted    bool      // Marker to identify blacklisted IPs
 	blacklistTimeout time.Time // When to timeout blacklisted connections
-	writeChan        chan WriteRequest // Channel for write requests
+	writeChan        chan publish.WriteRequest // Channel for write requests (back to queued approach)
 	writeDone        chan struct{}     // Closed when write worker exits
 	// Diagnostics: per-connection counters
 	msgCount   int
@@ -46,92 +43,13 @@ func (l *Listener) Ctx() context.Context {
 	return l.ctx
 }
 
-// writeWorker is the single goroutine that handles all writes to the websocket connection.
-// This serializes all writes to prevent concurrent write panics.
-func (l *Listener) writeWorker() {
-	var channelClosed bool
-	defer func() {
-		// Only unregister write channel if connection is actually dead/closing
-		// Unregister if:
-		// 1. Context is cancelled (connection closing)
-		// 2. Channel was closed (connection closing)
-		// 3. Connection error occurred (already handled inline)
-		if l.ctx.Err() != nil || channelClosed {
-			// Connection is closing - safe to unregister
-			if socketPub := l.publishers.GetSocketPublisher(); socketPub != nil {
-				log.D.F("ws->%s write worker: unregistering write channel (connection closing)", l.remote)
-				socketPub.SetWriteChan(l.conn, nil)
-			}
-		} else {
-			// Exiting for other reasons (timeout, etc.) but connection may still be alive
-			// Don't unregister - let the connection cleanup handle it
-			log.D.F("ws->%s write worker: exiting but connection may still be alive, keeping write channel registered", l.remote)
-		}
-		close(l.writeDone)
-	}()
-	for {
-		select {
-		case <-l.ctx.Done():
-			// Context cancelled - connection is closing
-			log.D.F("ws->%s write worker: context cancelled, exiting", l.remote)
-			return
-		case req, ok := <-l.writeChan:
-			if !ok {
-				// Channel closed - connection is closing
-				channelClosed = true
-				log.D.F("ws->%s write worker: write channel closed, exiting", l.remote)
-				return
-			}
-			deadline := req.Deadline
-			if deadline.IsZero() {
-				deadline = time.Now().Add(DefaultWriteTimeout)
-			}
-			l.conn.SetWriteDeadline(deadline)
-			writeStart := time.Now()
-			var err error
-			if req.IsControl {
-				err = l.conn.WriteControl(req.MsgType, req.Data, deadline)
-			} else {
-				err = l.conn.WriteMessage(req.MsgType, req.Data)
-			}
-			if err != nil {
-				writeDuration := time.Since(writeStart)
-				log.E.F("ws->%s write worker FAILED: len=%d duration=%v error=%v",
-					l.remote, len(req.Data), writeDuration, err)
-				// Check for connection errors - if so, stop the worker
-				isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
-					strings.Contains(err.Error(), "broken pipe") ||
-					strings.Contains(err.Error(), "connection reset") ||
-					websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
-						websocket.CloseGoingAway,
-						websocket.CloseNoStatusReceived)
-				if isConnectionError {
-					// Connection is dead - unregister channel immediately
-					log.D.F("ws->%s write worker: connection error detected, unregistering write channel", l.remote)
-					if socketPub := l.publishers.GetSocketPublisher(); socketPub != nil {
-						socketPub.SetWriteChan(l.conn, nil)
-					}
-					return
-				}
-				// Continue for other errors (timeouts, etc.) - connection may still be alive
-				log.D.F("ws->%s write worker: non-fatal error (timeout?), continuing", l.remote)
-			} else {
-				writeDuration := time.Since(writeStart)
-				if writeDuration > time.Millisecond*100 {
-					log.D.F("ws->%s write worker SLOW: len=%d duration=%v",
-						l.remote, len(req.Data), writeDuration)
-				}
-			}
-		}
-	}
-}
 
 func (l *Listener) Write(p []byte) (n int, err error) {
 	// Send write request to channel - non-blocking with timeout
 	select {
 	case <-l.ctx.Done():
 		return 0, l.ctx.Err()
-	case l.writeChan <- WriteRequest{Data: p, MsgType: websocket.TextMessage, IsControl: false}:
+	case l.writeChan <- publish.WriteRequest{Data: p, MsgType: websocket.TextMessage, IsControl: false}:
 		return len(p), nil
 	case <-time.After(DefaultWriteTimeout):
 		log.E.F("ws->%s write channel timeout", l.remote)
@@ -144,11 +62,77 @@ func (l *Listener) WriteControl(messageType int, data []byte, deadline time.Time
 	select {
 	case <-l.ctx.Done():
 		return l.ctx.Err()
-	case l.writeChan <- WriteRequest{Data: data, MsgType: messageType, IsControl: true, Deadline: deadline}:
+	case l.writeChan <- publish.WriteRequest{Data: data, MsgType: messageType, IsControl: true, Deadline: deadline}:
 		return nil
 	case <-time.After(DefaultWriteTimeout):
 		log.E.F("ws->%s writeControl channel timeout", l.remote)
 		return errorf.E("writeControl channel timeout")
+	}
+}
+
+// writeWorker is the single goroutine that handles all writes to the websocket connection.
+// This serializes all writes to prevent concurrent write panics and allows pings to interrupt writes.
+func (l *Listener) writeWorker() {
+	defer func() {
+		// Only unregister write channel if connection is actually dead/closing
+		// Unregister if:
+		// 1. Context is cancelled (connection closing)
+		// 2. Channel was closed (connection closing)
+		// 3. Connection error occurred (already handled inline)
+		if l.ctx.Err() != nil {
+			// Connection is closing - safe to unregister
+			if socketPub := l.publishers.GetSocketPublisher(); socketPub != nil {
+				log.D.F("ws->%s write worker: unregistering write channel (connection closing)", l.remote)
+				socketPub.SetWriteChan(l.conn, nil)
+			}
+		} else {
+			// Exiting for other reasons (timeout, etc.) but connection may still be valid
+			log.D.F("ws->%s write worker exiting unexpectedly", l.remote)
+		}
+		close(l.writeDone)
+	}()
+
+	for {
+		select {
+		case <-l.ctx.Done():
+			log.D.F("ws->%s write worker context cancelled", l.remote)
+			return
+		case req, ok := <-l.writeChan:
+			if !ok {
+				log.D.F("ws->%s write channel closed", l.remote)
+				return
+			}
+
+			// Handle the write request
+			var err error
+			if req.IsPing {
+				// Special handling for ping messages
+				log.D.F("sending PING #%d", req.MsgType)
+				deadline := time.Now().Add(DefaultWriteTimeout)
+				err = l.conn.WriteControl(websocket.PingMessage, nil, deadline)
+				if err != nil {
+					if !strings.HasSuffix(err.Error(), "use of closed network connection") {
+						log.E.F("error writing ping: %v; closing websocket", err)
+					}
+					return
+				}
+			} else if req.IsControl {
+				// Control message
+				err = l.conn.WriteControl(req.MsgType, req.Data, req.Deadline)
+				if err != nil {
+					log.E.F("ws->%s control write failed: %v", l.remote, err)
+					return
+				}
+			} else {
+				// Regular message
+				l.conn.SetWriteDeadline(time.Now().Add(DefaultWriteTimeout))
+				err = l.conn.WriteMessage(req.MsgType, req.Data)
+				if err != nil {
+					log.E.F("ws->%s write failed: %v", l.remote, err)
+					return
+				}
+			}
+		}
 	}
 }
 

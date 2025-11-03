@@ -15,6 +15,7 @@ type WriteRequest struct {
 	MsgType   int
 	IsControl bool
 	Deadline  time.Time
+	IsPing    bool // Special marker for ping messages
 }
 
 // WriteChanSetter defines the interface for setting write channels

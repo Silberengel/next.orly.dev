@@ -12,6 +12,7 @@ import (
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils/units"
 )
 
@@ -20,7 +21,7 @@ const (
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
 	DefaultWriteTimeout   = 3 * time.Second
-	DefaultMaxMessageSize = 100 * units.Mb
+	DefaultMaxMessageSize = 512000 // Match khatru's MaxMessageSize
 	// ClientMessageSizeLimit is the maximum message size that clients can handle
 	// This is set to 100MB to allow large messages
 	ClientMessageSizeLimit = 100 * 1024 * 1024 // 100MB
@@ -83,7 +84,7 @@ whitelist:
 		remote:    remote,
 		req:       r,
 		startTime: time.Now(),
-		writeChan: make(chan WriteRequest, 100), // Buffered channel for writes
+		writeChan: make(chan publish.WriteRequest, 100), // Buffered channel for writes
 		writeDone: make(chan struct{}),
 	}
 
@@ -119,13 +120,6 @@ whitelist:
 		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
 		return nil
 	})
-	// Set ping handler - extends read deadline when pings are received
-	// Send pong through write channel
-	conn.SetPingHandler(func(msg string) error {
-		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
-		deadline := time.Now().Add(DefaultWriteTimeout)
-		return listener.WriteControl(websocket.PongMessage, []byte{}, deadline)
-	})
 	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
 	go s.Pinger(ctx, listener, ticker)
 	defer func() {
@@ -134,11 +128,6 @@ whitelist:
 		// Cancel context and stop pinger
 		cancel()
 		ticker.Stop()
-
-		// Close write channel to signal worker to exit
-		close(listener.writeChan)
-		// Wait for write worker to finish
-		<-listener.writeDone
 
 		// Cancel all subscriptions for this connection
 		log.D.F("cancelling subscriptions for %s", remote)
@@ -162,6 +151,11 @@ whitelist:
 		} else {
 			log.D.F("ws connection %s was not authenticated", remote)
 		}
+
+		// Close write channel to signal worker to exit
+		close(listener.writeChan)
+		// Wait for write worker to finish
+		<-listener.writeDone
 	}()
 	for {
 		select {
@@ -191,97 +185,25 @@ whitelist:
 		typ, msg, err = conn.ReadMessage()
 
 		if err != nil {
-			// Check if the error is due to context cancellation
-			if err == context.Canceled || strings.Contains(err.Error(), "context canceled") {
-				log.T.F("connection from %s cancelled (context done): %v", remote, err)
-				return
-			}
-			if strings.Contains(
-				err.Error(), "use of closed network connection",
+			if websocket.IsUnexpectedCloseError(
+				err,
+				websocket.CloseNormalClosure,    // 1000
+				websocket.CloseGoingAway,        // 1001
+				websocket.CloseNoStatusReceived, // 1005
+				websocket.CloseAbnormalClosure,  // 1006
+				4537,                            // some client seems to send many of these
 			) {
-				return
+				log.I.F("websocket connection closed from %s: %v", remote, err)
 			}
-			// Handle EOF errors gracefully - these occur when client closes connection
-			// or sends incomplete/malformed WebSocket frames
-			if strings.Contains(err.Error(), "EOF") ||
-				strings.Contains(err.Error(), "failed to read frame header") {
-				log.T.F("connection from %s closed: %v", remote, err)
-				return
-			}
-			// Handle timeout errors specifically - these can occur on idle connections
-			// but pongs should extend the deadline, so a timeout usually means dead connection
-			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
-				log.T.F("connection from %s read timeout (likely dead connection): %v", remote, err)
-				return
-			}
-			// Handle message too big errors specifically
-			if strings.Contains(err.Error(), "message too large") ||
-				strings.Contains(err.Error(), "read limited at") {
-				log.D.F("client %s hit message size limit: %v", remote, err)
-				// Don't log this as an error since it's a client-side limit
-				// Just close the connection gracefully
-				return
-			}
-			// Check for websocket close errors
-			if websocket.IsCloseError(err, websocket.CloseNormalClosure,
-				websocket.CloseGoingAway,
-				websocket.CloseNoStatusReceived,
-				websocket.CloseAbnormalClosure,
-				websocket.CloseUnsupportedData,
-				websocket.CloseInvalidFramePayloadData) {
-				log.T.F("connection from %s closed: %v", remote, err)
-			} else if websocket.IsCloseError(err, websocket.CloseMessageTooBig) {
-				log.D.F("client %s sent message too big: %v", remote, err)
-			} else {
-				log.E.F("unexpected close error from %s: %v", remote, err)
-			}
+			cancel() // Cancel context like khatru does
 			return
 		}
 		if typ == websocket.PingMessage {
 			log.D.F("received PING from %s, sending PONG", remote)
-			// Send pong through write channel
-			deadline := time.Now().Add(DefaultWriteTimeout)
-			pongStart := time.Now()
-			if err = listener.WriteControl(websocket.PongMessage, msg, deadline); err != nil {
-				pongDuration := time.Since(pongStart)
-				
-				// Check if this is a timeout vs a connection error
-				isTimeout := strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded")
-				isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
-					strings.Contains(err.Error(), "broken pipe") ||
-					strings.Contains(err.Error(), "connection reset") ||
-					websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
-						websocket.CloseGoingAway,
-						websocket.CloseNoStatusReceived)
-				
-				if isConnectionError {
-					log.E.F(
-						"failed to send PONG to %s after %v (connection error): %v", remote,
-						pongDuration, err,
-					)
-					return
-				} else if isTimeout {
-					// Timeout on pong - log but don't close immediately
-					// The read deadline will catch dead connections
-					log.W.F(
-						"failed to send PONG to %s after %v (timeout, but connection may still be alive): %v", remote,
-						pongDuration, err,
-					)
-					// Continue - don't close connection on pong timeout
-				} else {
-					// Unknown error - log and continue
-					log.E.F(
-						"failed to send PONG to %s after %v (unknown error): %v", remote,
-						pongDuration, err,
-					)
-					// Continue - don't close on unknown errors
-				}
-				continue
-			}
-			pongDuration := time.Since(pongStart)
-			log.D.F("sent PONG to %s successfully in %v", remote, pongDuration)
-			if pongDuration > time.Millisecond*50 {
-				log.D.F("SLOW PONG to %s: %v (>50ms)", remote, pongDuration)
+			// Send pong directly (like khatru does)
+			if err = conn.WriteMessage(websocket.PongMessage, nil); err != nil {
+				log.E.F("failed to send PONG to %s: %v", remote, err)
+				return
 			}
 			continue
 		}
@@ -300,68 +222,25 @@ func (s *Server) Pinger(
 	defer func() {
 		log.D.F("pinger shutting down")
 		ticker.Stop()
-		// DO NOT call cancel here - the pinger should not be able to cancel the connection context
-		// The connection handler will cancel the context when the connection is actually closing
 	}()
-	var err error
 	pingCount := 0
 	for {
 		select {
-		case <-ticker.C:
-			pingCount++
-			log.D.F("sending PING #%d", pingCount)
-
-			// Send ping through write channel
-			deadline := time.Now().Add(DefaultWriteTimeout)
-			pingStart := time.Now()
-
-			if err = listener.WriteControl(websocket.PingMessage, []byte{}, deadline); err != nil {
-				pingDuration := time.Since(pingStart)
-				
-				// Check if this is a timeout vs a connection error
-				isTimeout := strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded")
-				isConnectionError := strings.Contains(err.Error(), "use of closed network connection") ||
-					strings.Contains(err.Error(), "broken pipe") ||
-					strings.Contains(err.Error(), "connection reset") ||
-					websocket.IsCloseError(err, websocket.CloseAbnormalClosure,
-						websocket.CloseGoingAway,
-						websocket.CloseNoStatusReceived)
-				
-				if isConnectionError {
-					log.E.F(
-						"PING #%d FAILED after %v (connection error): %v", pingCount, pingDuration,
-						err,
-					)
-					chk.E(err)
-					return
-				} else if isTimeout {
-					// Timeout on ping - log but don't stop pinger immediately
-					// The read deadline will catch dead connections
-					log.W.F(
-						"PING #%d timeout after %v (connection may still be alive): %v", pingCount, pingDuration,
-						err,
-					)
-					// Continue - don't stop pinger on timeout
-				} else {
-					// Unknown error - log and continue
-					log.E.F(
-						"PING #%d FAILED after %v (unknown error): %v", pingCount, pingDuration,
-						err,
-					)
-					// Continue - don't stop pinger on unknown errors
-				}
-				continue
-			}
-
-			pingDuration := time.Since(pingStart)
-			log.D.F("PING #%d sent successfully in %v", pingCount, pingDuration)
-
-			if pingDuration > time.Millisecond*100 {
-				log.D.F("SLOW PING #%d: %v (>100ms)", pingCount, pingDuration)
-			}
 		case <-ctx.Done():
 			log.T.F("pinger context cancelled after %d pings", pingCount)
 			return
+		case <-ticker.C:
+			pingCount++
+			// Send ping request through write channel - this allows pings to interrupt other writes
+			select {
+			case <-ctx.Done():
+				return
+			case listener.writeChan <- publish.WriteRequest{IsPing: true, MsgType: pingCount}:
+				// Ping request queued successfully
+			case <-time.After(DefaultWriteTimeout):
+				log.E.F("ping #%d channel timeout - connection may be overloaded", pingCount)
+				return
+			}
 		}
 	}
 }

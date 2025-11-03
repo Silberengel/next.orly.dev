@@ -23,6 +23,9 @@ import (
 
 const Type = "socketapi"
 
+// WriteChanMap maps websocket connections to their write channels
+type WriteChanMap map[*websocket.Conn]chan publish.WriteRequest
+
 type Subscription struct {
 	remote       string
 	AuthedPubkey []byte
@@ -32,9 +35,6 @@ type Subscription struct {
 // Map is a map of filters associated with a collection of ws.Listener
 // connections.
 type Map map[*websocket.Conn]map[string]Subscription
-
-// WriteChanMap maps websocket connections to their write channels
-type WriteChanMap map[*websocket.Conn]chan<- publish.WriteRequest
 
 type W struct {
 	*websocket.Conn
@@ -88,25 +88,6 @@ func NewPublisher(c context.Context) (publisher *P) {
 
 func (p *P) Type() (typeName string) { return Type }
 
-// SetWriteChan stores the write channel for a websocket connection
-// If writeChan is nil, the entry is removed from the map
-func (p *P) SetWriteChan(conn *websocket.Conn, writeChan chan<- publish.WriteRequest) {
-	p.Mx.Lock()
-	defer p.Mx.Unlock()
-	if writeChan == nil {
-		delete(p.WriteChans, conn)
-	} else {
-		p.WriteChans[conn] = writeChan
-	}
-}
-
-// GetWriteChan returns the write channel for a websocket connection
-func (p *P) GetWriteChan(conn *websocket.Conn) (chan<- publish.WriteRequest, bool) {
-	p.Mx.RLock()
-	defer p.Mx.RUnlock()
-	ch, ok := p.WriteChans[conn]
-	return ch, ok
-}
 
 // Receive handles incoming messages to manage websocket listener subscriptions
 // and associated filters.
@@ -319,14 +300,14 @@ func (p *P) Deliver(ev *event.E) {
 			log.D.F("subscription delivery QUEUED: event=%s to=%s sub=%s len=%d",
 				hex.Enc(ev.ID), d.sub.remote, d.id, len(msgData))
 		case <-time.After(DefaultWriteTimeout):
-			log.E.F("subscription delivery TIMEOUT: event=%s to=%s sub=%s (write channel full)",
+			log.E.F("subscription delivery TIMEOUT: event=%s to=%s sub=%s",
 				hex.Enc(ev.ID), d.sub.remote, d.id)
 			// Check if connection is still valid
 			p.Mx.RLock()
 			stillSubscribed = p.Map[d.w] != nil
 			p.Mx.RUnlock()
 			if !stillSubscribed {
-				log.D.F("removing failed subscriber connection due to channel timeout: %s", d.sub.remote)
+				log.D.F("removing failed subscriber connection: %s", d.sub.remote)
 				p.removeSubscriber(d.w)
 			}
 		}
@@ -350,6 +331,26 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 			// This allows new subscriptions to be created on the same connection
 		}
 	}
+}
+
+// SetWriteChan stores the write channel for a websocket connection
+// If writeChan is nil, the entry is removed from the map
+func (p *P) SetWriteChan(conn *websocket.Conn, writeChan chan publish.WriteRequest) {
+	p.Mx.Lock()
+	defer p.Mx.Unlock()
+	if writeChan == nil {
+		delete(p.WriteChans, conn)
+	} else {
+		p.WriteChans[conn] = writeChan
+	}
+}
+
+// GetWriteChan returns the write channel for a websocket connection
+func (p *P) GetWriteChan(conn *websocket.Conn) (chan publish.WriteRequest, bool) {
+	p.Mx.RLock()
+	defer p.Mx.RUnlock()
+	ch, ok := p.WriteChans[conn]
+	return ch, ok
 }
 
 // removeSubscriber removes a websocket from the P collection.
