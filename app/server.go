@@ -27,6 +27,7 @@ import (
 	"next.orly.dev/pkg/protocol/httpauth"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/spider"
+	dsync "next.orly.dev/pkg/sync"
 	blossom "next.orly.dev/pkg/blossom"
 )
 
@@ -50,6 +51,7 @@ type Server struct {
 	sprocketManager  *SprocketManager
 	policyManager    *policy.P
 	spiderManager    *spider.Spider
+	syncManager      *dsync.Manager
 	blossomServer    *blossom.Server
 }
 
@@ -243,7 +245,14 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/nip86", s.handleNIP86Management)
 	// ACL mode endpoint
 	s.mux.HandleFunc("/api/acl-mode", s.handleACLMode)
-	
+
+	// Sync endpoints for distributed synchronization
+	if s.syncManager != nil {
+		s.mux.HandleFunc("/api/sync/current", s.handleSyncCurrent)
+		s.mux.HandleFunc("/api/sync/fetch", s.handleSyncFetch)
+		log.Printf("Distributed sync API enabled at /api/sync")
+	}
+
 	// Blossom blob storage API endpoint
 	if s.blossomServer != nil {
 		s.mux.HandleFunc("/blossom/", s.blossomHandler)
@@ -989,4 +998,71 @@ func (s *Server) handleACLMode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(jsonData)
+}
+
+// handleSyncCurrent handles requests for the current serial number
+func (s *Server) handleSyncCurrent(w http.ResponseWriter, r *http.Request) {
+	if s.syncManager == nil {
+		http.Error(w, "Sync manager not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Validate NIP-98 authentication and check peer authorization
+	if !s.validatePeerRequest(w, r) {
+		return
+	}
+
+	s.syncManager.HandleCurrentRequest(w, r)
+}
+
+// handleSyncFetch handles requests for events in a serial range
+func (s *Server) handleSyncFetch(w http.ResponseWriter, r *http.Request) {
+	if s.syncManager == nil {
+		http.Error(w, "Sync manager not initialized", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Validate NIP-98 authentication and check peer authorization
+	if !s.validatePeerRequest(w, r) {
+		return
+	}
+
+	s.syncManager.HandleFetchRequest(w, r)
+}
+
+// validatePeerRequest validates NIP-98 authentication and checks if the requesting peer is authorized
+func (s *Server) validatePeerRequest(w http.ResponseWriter, r *http.Request) bool {
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if err != nil {
+		log.Printf("NIP-98 auth validation error: %v", err)
+		http.Error(w, "Authentication validation failed", http.StatusUnauthorized)
+		return false
+	}
+	if !valid {
+		http.Error(w, "NIP-98 authentication required", http.StatusUnauthorized)
+		return false
+	}
+
+	// Check if this pubkey corresponds to a configured peer relay
+	peerPubkeyHex := hex.Enc(pubkey)
+	for range s.Config.RelayPeers {
+		// Extract pubkey from peer URL (assuming format: https://relay.example.com@pubkey)
+		// For now, check if the pubkey matches any configured admin/owner
+		// TODO: Implement proper peer identity mapping
+		for _, admin := range s.Admins {
+			if hex.Enc(admin) == peerPubkeyHex {
+				return true
+			}
+		}
+		for _, owner := range s.Owners {
+			if hex.Enc(owner) == peerPubkeyHex {
+				return true
+			}
+		}
+	}
+
+	log.Printf("Unauthorized sync request from pubkey: %s", peerPubkeyHex)
+	http.Error(w, "Unauthorized peer", http.StatusForbidden)
+	return false
 }

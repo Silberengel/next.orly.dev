@@ -20,6 +20,7 @@ import (
 	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/spider"
+	dsync "next.orly.dev/pkg/sync"
 )
 
 func Run(
@@ -112,6 +113,27 @@ func Run(
 				log.E.F("failed to start spider manager: %v", err)
 			} else {
 				log.I.F("spider manager started successfully in '%s' mode", cfg.SpiderMode)
+			}
+		}
+	}
+
+	// Initialize sync manager if relay peers are configured
+	if len(cfg.RelayPeers) > 0 {
+		// Get relay identity for node ID
+		sk, err := db.GetOrCreateRelayIdentitySecret()
+		if err != nil {
+			log.E.F("failed to get relay identity for sync: %v", err)
+		} else {
+			nodeID, err := keys.SecretBytesToPubKeyHex(sk)
+			if err != nil {
+				log.E.F("failed to derive pubkey for sync node ID: %v", err)
+			} else {
+				relayURL := cfg.RelayURL
+				if relayURL == "" {
+					relayURL = fmt.Sprintf("http://localhost:%d", cfg.Port)
+				}
+				l.syncManager = dsync.NewManager(ctx, db, nodeID, relayURL, cfg.RelayPeers)
+				log.I.F("distributed sync manager initialized with %d peers", len(cfg.RelayPeers))
 			}
 		}
 	}

@@ -455,6 +455,12 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		chk.E(err)
 		return
 	}
+
+	// Update serial for distributed synchronization
+	if l.syncManager != nil {
+		l.syncManager.UpdateSerial()
+		log.D.F("updated serial for event %s", hex.Enc(env.E.ID))
+	}
 	// Send a success response storing
 	if err = Ok.Ok(l, env, ""); chk.E(err) {
 		return
