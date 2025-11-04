@@ -5,12 +5,12 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 func TestCreateUnsigned(t *testing.T) {
 	var err error
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err = signer.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}

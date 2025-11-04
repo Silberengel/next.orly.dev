@@ -7,14 +7,14 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/ec/secp256k1"
-	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/bech32encoding"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/protocol/directory"
 )
 
-// Helper to create a test keypair using p256k1signer.P256K1Signer
-func createTestKeypair(t *testing.T) (*p256k1signer.P256K1Signer, []byte) {
-	signer := p256k1signer.NewP256K1Signer()
+// Helper to create a test keypair using p8k.Signer
+func createTestKeypair(t *testing.T) (*p8k.Signer, []byte) {
+	signer := p8k.MustNew()
 	if err := signer.Generate(); chk.E(err) {
 		t.Fatalf("failed to generate keypair: %v", err)
 	}

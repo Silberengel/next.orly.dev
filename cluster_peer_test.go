@@ -14,10 +14,10 @@ import (
 	"next.orly.dev/app/config"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/run"
 	relaytester "next.orly.dev/relay-tester"
-	p256k1signer "p256k1.mleku.dev/signer"
 )
 
 // TestClusterPeerPolicyFiltering tests cluster peer synchronization with policy filtering.
@@ -100,7 +100,7 @@ func TestClusterPeerPolicyFiltering(t *testing.T) {
 	}
 
 	// Generate test keys
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err := signer.Generate(); err != nil {
 		t.Fatalf("Failed to generate test signer: %v", err)
 	}
@@ -257,7 +257,7 @@ func waitForTestRelay(url string, timeout time.Duration) error {
 }
 
 // createTestEvent creates a test event with proper signing
-func createTestEvent(t *testing.T, signer *p256k1signer.P256K1Signer, content string, eventKind uint16) *event.E {
+func createTestEvent(t *testing.T, signer *p8k.Signer, content string, eventKind uint16) *event.E {
 	ev := event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = eventKind

@@ -10,7 +10,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -44,7 +44,11 @@ func main() {
 		log.E.F("failed to decode allowed secret key: %v", err)
 		os.Exit(1)
 	}
-	allowedSigner := p256k1signer.NewP256K1Signer()
+	var allowedSigner *p8k.Signer
+	if allowedSigner, err = p8k.New(); chk.E(err) {
+		log.E.F("failed to create allowed signer: %v", err)
+		os.Exit(1)
+	}
 	if err = allowedSigner.InitSec(allowedSecBytes); chk.E(err) {
 		log.E.F("failed to initialize allowed signer: %v", err)
 		os.Exit(1)
@@ -55,7 +59,11 @@ func main() {
 		log.E.F("failed to decode unauthorized secret key: %v", err)
 		os.Exit(1)
 	}
-	unauthorizedSigner := p256k1signer.NewP256K1Signer()
+	var unauthorizedSigner *p8k.Signer
+	if unauthorizedSigner, err = p8k.New(); chk.E(err) {
+		log.E.F("failed to create unauthorized signer: %v", err)
+		os.Exit(1)
+	}
 	if err = unauthorizedSigner.InitSec(unauthorizedSecBytes); chk.E(err) {
 		log.E.F("failed to initialize unauthorized signer: %v", err)
 		os.Exit(1)
@@ -136,7 +144,7 @@ func main() {
 	fmt.Println("\n✅ All tests passed!")
 }
 
-func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner, authSigner *p256k1signer.P256K1Signer) error {
+func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner, authSigner *p8k.Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)
@@ -192,7 +200,7 @@ func testWriteEvent(ctx context.Context, url string, kindNum uint16, eventSigner
 	return nil
 }
 
-func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint16, eventSigner *p256k1signer.P256K1Signer) error {
+func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint16, eventSigner *p8k.Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)
@@ -227,7 +235,7 @@ func testWriteEventUnauthenticated(ctx context.Context, url string, kindNum uint
 	return nil
 }
 
-func testReadEvent(ctx context.Context, url string, kindNum uint16, authSigner *p256k1signer.P256K1Signer) error {
+func testReadEvent(ctx context.Context, url string, kindNum uint16, authSigner *p8k.Signer) error {
 	rl, err := ws.RelayConnect(ctx, url)
 	if err != nil {
 		return fmt.Errorf("connect error: %w", err)

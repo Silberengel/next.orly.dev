@@ -6,7 +6,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/encryption"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
 )
@@ -67,7 +67,10 @@ func ParseConnectionURI(nwcUri string) (parts *ConnectionParams, err error) {
 		err = errors.New("invalid secret")
 		return
 	}
-	clientKey := p256k1signer.NewP256K1Signer()
+	var clientKey *p8k.Signer
+	if clientKey, err = p8k.New(); chk.E(err) {
+		return
+	}
 	if err = clientKey.InitSec(secretBytes); chk.E(err) {
 		return
 	}

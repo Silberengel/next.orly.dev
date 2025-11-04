@@ -15,7 +15,7 @@ import (
 	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 	"next.orly.dev/pkg/acl"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
@@ -152,7 +152,7 @@ func (pp *PaymentProcessor) syncFollowList() error {
 		return err
 	}
 	// signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (pp *PaymentProcessor) createExpiryWarningNote(
 	}
 
 	// Initialize signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
@@ -383,7 +383,7 @@ func (pp *PaymentProcessor) createTrialReminderNote(
 	}
 
 	// Initialize signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
@@ -530,7 +530,7 @@ func (pp *PaymentProcessor) handleNotification(
 		if s, ok := metadata["relay_pubkey"].(string); ok && s != "" {
 			if rpk, err := decodeAnyPubkey(s); err == nil {
 				if skb, err := pp.db.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
-					signer := p256k1signer.NewP256K1Signer()
+					signer := p8k.MustNew()
 					if err := signer.InitSec(skb); err == nil {
 						if !strings.EqualFold(
 							hex.Enc(rpk), hex.Enc(signer.Pub()),
@@ -644,7 +644,7 @@ func (pp *PaymentProcessor) createPaymentNote(
 	}
 
 	// Initialize signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
@@ -738,7 +738,7 @@ func (pp *PaymentProcessor) CreateWelcomeNote(userPubkey []byte) error {
 	}
 
 	// Initialize signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
@@ -1025,7 +1025,7 @@ func (pp *PaymentProcessor) UpdateRelayProfile() error {
 	}
 
 	// Initialize signer
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.InitSec(skb); err != nil {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}

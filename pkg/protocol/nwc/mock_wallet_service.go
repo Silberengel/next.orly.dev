@@ -10,7 +10,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/encryption"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -40,7 +40,10 @@ func NewMockWalletService(
 	relay string, initialBalance int64,
 ) (service *MockWalletService, err error) {
 	// Generate wallet keypair
-	walletKey := p256k1signer.NewP256K1Signer()
+	var walletKey *p8k.Signer
+	if walletKey, err = p8k.New(); chk.E(err) {
+		return
+	}
 	if err = walletKey.Generate(); chk.E(err) {
 		return
 	}

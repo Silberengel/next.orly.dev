@@ -12,6 +12,7 @@ import (
 	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
 	"next.orly.dev/pkg/crypto/ec/secp256k1"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
 )
@@ -30,10 +31,21 @@ func NewIdentityTagBuilder(identityPrivkey []byte) (builder *IdentityTagBuilder,
 		return nil, errorf.E("identity private key must be 32 bytes")
 	}
 
-	// Derive public key from secret key
-	identitySecKey := secp256k1.SecKeyFromBytes(identityPrivkey)
-	identityPubkey := identitySecKey.PubKey()
-	identityPubkeyBytes := schnorr.SerializePubKey(identityPubkey)
+	// Derive public key from secret key using p8k signer
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return nil, errorf.E("failed to create signer: %w", err)
+	}
+	if err = signer.InitSec(identityPrivkey); chk.E(err) {
+		return nil, errorf.E("failed to initialize signer: %w", err)
+	}
+	identityPubkeyBytes := signer.Pub()
+
+	// Parse public key for npub encoding
+	var identityPubkey *secp256k1.PublicKey
+	if identityPubkey, err = schnorr.ParsePubKey(identityPubkeyBytes); chk.E(err) {
+		return nil, errorf.E("failed to parse public key: %w", err)
+	}
 
 	// Encode as npub
 	var npubIdentity []byte
@@ -65,14 +77,19 @@ func (builder *IdentityTagBuilder) CreateIdentityTag(delegatePubkey []byte) (ide
 	identityPubkeyHex := hex.EncodeToString(builder.identityPubkey)
 	message := nonceHex + delegatePubkeyHex + identityPubkeyHex
 
-	// Hash and sign
+	// Hash and sign using p8k signer
 	hash := sha256.Sum256([]byte(message))
-	identitySecKey := secp256k1.SecKeyFromBytes(builder.identityPrivkey)
-	var sig *schnorr.Signature
-	if sig, err = schnorr.Sign(identitySecKey, hash[:]); chk.E(err) {
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return nil, errorf.E("failed to create signer: %w", err)
+	}
+	if err = signer.InitSec(builder.identityPrivkey); chk.E(err) {
+		return nil, errorf.E("failed to initialize signer: %w", err)
+	}
+	var signature []byte
+	if signature, err = signer.Sign(hash[:]); chk.E(err) {
 		return nil, errorf.E("failed to sign identity tag: %w", err)
 	}
-	signature := sig.Serialize()
 
 	identityTag = &IdentityTag{
 		NPubIdentity: builder.npubIdentity,

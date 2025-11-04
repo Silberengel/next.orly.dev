@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
@@ -14,7 +14,7 @@ import (
 
 // createTestEvent creates a realistic test event with proper signing
 func createTestEvent() *E {
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err := signer.Generate(); err != nil {
 		panic(err)
 	}
@@ -44,7 +44,7 @@ func createTestEvent() *E {
 
 // createLargeTestEvent creates a larger event with more tags and content
 func createLargeTestEvent() *E {
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err := signer.Generate(); err != nil {
 		panic(err)
 	}

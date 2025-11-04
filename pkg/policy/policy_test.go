@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
@@ -22,8 +22,8 @@ func int64Ptr(i int64) *int64 {
 }
 
 // Helper function to generate a keypair for testing
-func generateTestKeypair(t *testing.T) (signer *p256k1signer.P256K1Signer, pubkey []byte) {
-	signer = p256k1signer.NewP256K1Signer()
+func generateTestKeypair(t *testing.T) (signer *p8k.Signer, pubkey []byte) {
+	signer = p8k.New()
 	if err := signer.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate test keypair: %v", err)
 	}
@@ -32,8 +32,8 @@ func generateTestKeypair(t *testing.T) (signer *p256k1signer.P256K1Signer, pubke
 }
 
 // Helper function to generate a keypair for benchmarks
-func generateTestKeypairB(b *testing.B) (signer *p256k1signer.P256K1Signer, pubkey []byte) {
-	signer = p256k1signer.NewP256K1Signer()
+func generateTestKeypairB(b *testing.B) (signer *p8k.Signer, pubkey []byte) {
+	signer = p8k.New()
 	if err := signer.Generate(); chk.E(err) {
 		b.Fatalf("Failed to generate test keypair: %v", err)
 	}
@@ -42,7 +42,7 @@ func generateTestKeypairB(b *testing.B) (signer *p256k1signer.P256K1Signer, pubk
 }
 
 // Helper function to create a real test event with proper signing
-func createTestEvent(t *testing.T, signer *p256k1signer.P256K1Signer, content string, kind uint16) *event.E {
+func createTestEvent(t *testing.T, signer *p8k.Signer, content string, kind uint16) *event.E {
 	ev := event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = kind
@@ -58,7 +58,7 @@ func createTestEvent(t *testing.T, signer *p256k1signer.P256K1Signer, content st
 }
 
 // Helper function to create a test event with a specific pubkey (for unauthorized tests)
-func createTestEventWithPubkey(t *testing.T, signer *p256k1signer.P256K1Signer, content string, kind uint16) *event.E {
+func createTestEventWithPubkey(t *testing.T, signer *p8k.Signer, content string, kind uint16) *event.E {
 	ev := event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = kind

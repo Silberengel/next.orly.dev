@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"lol.mleku.dev/log"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/event/examples"
@@ -35,7 +35,7 @@ func randomHex(n int) string {
 	return hex.Enc(b)
 }
 
-func makeEvent(rng *rand.Rand, signer *p256k1signer.P256K1Signer) (*event.E, error) {
+func makeEvent(rng *rand.Rand, signer *p8k.Signer) (*event.E, error) {
 	ev := &event.E{
 		CreatedAt: time.Now().Unix(),
 		Kind:      kind.TextNote.K,
@@ -293,7 +293,12 @@ func publisherWorker(
 	src := rand.NewSource(time.Now().UnixNano() ^ int64(id<<16))
 	rng := rand.New(src)
 	// Generate and reuse signing key per worker
-	signer := p256k1signer.NewP256K1Signer()
+	var signer *p8k.Signer
+	var err error
+	if signer, err = p8k.New(); err != nil {
+		log.E.F("worker %d: signer create error: %v", id, err)
+		return
+	}
 	if err := signer.Generate(); err != nil {
 		log.E.F("worker %d: signer generate error: %v", id, err)
 		return

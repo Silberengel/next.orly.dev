@@ -12,10 +12,10 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	p256k1signer "p256k1.mleku.dev/signer"
 	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/utils"
 )
 
@@ -176,8 +176,10 @@ func GenerateConversationKeyFromHex(pkh, skh string) (ck []byte, err error) {
 		)
 		return
 	}
-	var sign signer.I
-	sign = p256k1signer.NewP256K1Signer()
+	var sign *p8k.Signer
+	if sign, err = p8k.New(); chk.E(err) {
+		return
+	}
 	var sk []byte
 	if sk, err = hex.Dec(skh); chk.E(err) {
 		return
@@ -190,7 +192,7 @@ func GenerateConversationKeyFromHex(pkh, skh string) (ck []byte, err error) {
 		return
 	}
 	var shared []byte
-	if shared, err = sign.ECDH(pk); chk.E(err) {
+	if shared, err = sign.ECDHRaw(pk); chk.E(err) {
 		return
 	}
 	ck = hkdf.Extract(sha256.New, shared, []byte("nip44-v2"))
@@ -201,7 +203,7 @@ func GenerateConversationKeyWithSigner(sign signer.I, pk []byte) (
 	ck []byte, err error,
 ) {
 	var shared []byte
-	if shared, err = sign.ECDH(pk); chk.E(err) {
+	if shared, err = sign.ECDHRaw(pk); chk.E(err) {
 		return
 	}
 	ck = hkdf.Extract(sha256.New, shared, []byte("nip44-v2"))

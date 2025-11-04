@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 // Helper function to create test event for benchmarks (reuses signer)
-func createTestEventBench(b *testing.B, signer *p256k1signer.P256K1Signer, content string, kind uint16) *event.E {
+func createTestEventBench(b *testing.B, signer *p8k.Signer, content string, kind uint16) *event.E {
 	ev := event.New()
 	ev.CreatedAt = time.Now().Unix()
 	ev.Kind = kind
@@ -202,7 +202,7 @@ func BenchmarkCheckPolicyMultipleKinds(b *testing.B) {
 
 	// Generate keypair once for all events
 	signer, pubkey := generateTestKeypairB(b)
-	
+
 	// Create test events with different kinds
 	events := make([]*event.E, 100)
 	for i := 0; i < 100; i++ {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/utils"
@@ -15,7 +15,7 @@ const relayURL = "wss://example.com"
 
 func TestAuth(t *testing.T) {
 	var err error
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err = signer.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}

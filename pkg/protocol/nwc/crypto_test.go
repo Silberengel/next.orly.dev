@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"next.orly.dev/pkg/crypto/encryption"
-	p256k1signer "p256k1.mleku.dev/signer"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/protocol/nwc"
 	"next.orly.dev/pkg/utils"
 )
@@ -101,7 +101,7 @@ func TestNWCEventCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clientKey := p256k1signer.NewP256K1Signer()
+	clientKey := p8k.MustNew()
 	if err := clientKey.InitSec(secretBytes); err != nil {
 		t.Fatal(err)
 	}

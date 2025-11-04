@@ -21,7 +21,7 @@ import (
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
 	"next.orly.dev/pkg/protocol/ws"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 type BenchmarkConfig struct {
@@ -167,7 +167,11 @@ func runNetworkLoad(cfg *BenchmarkConfig) {
 			fmt.Printf("worker %d: connected to %s\n", workerID, cfg.RelayURL)
 
 			// Signer for this worker
-			keys := p256k1signer.NewP256K1Signer()
+			var keys *p8k.Signer
+			if keys, err = p8k.New(); err != nil {
+				fmt.Printf("worker %d: signer create failed: %v\n", workerID, err)
+				return
+			}
 			if err := keys.Generate(); err != nil {
 				fmt.Printf("worker %d: keygen failed: %v\n", workerID, err)
 				return
@@ -960,7 +964,12 @@ func (b *Benchmark) generateEvents(count int) []*event.E {
 	now := timestamp.Now()
 
 	// Generate a keypair for signing all events
-	keys := p256k1signer.NewP256K1Signer()
+	var keys *p8k.Signer
+	var err error
+	if keys, err = p8k.New(); err != nil {
+		fmt.Printf("failed to create signer: %v\n", err)
+		return nil
+	}
 	if err := keys.Generate(); err != nil {
 		log.Fatalf("Failed to generate keys for benchmark events: %v", err)
 	}

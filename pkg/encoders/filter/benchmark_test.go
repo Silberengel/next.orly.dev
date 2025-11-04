@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
@@ -29,7 +29,7 @@ func createTestFilter() *F {
 	
 	// Add some authors
 	for i := 0; i < 3; i++ {
-		signer := p256k1signer.NewP256K1Signer()
+		signer := p8k.MustNew()
 		if err := signer.Generate(); err != nil {
 			panic(err)
 		}
@@ -72,7 +72,7 @@ func createComplexFilter() *F {
 	
 	// Add many authors
 	for i := 0; i < 15; i++ {
-		signer := p256k1signer.NewP256K1Signer()
+		signer := p8k.MustNew()
 		if err := signer.Generate(); err != nil {
 			panic(err)
 		}
@@ -100,7 +100,7 @@ func createComplexFilter() *F {
 
 // createTestEvent creates a test event for matching
 func createTestEvent() *event.E {
-	signer := p256k1signer.NewP256K1Signer()
+	signer := p8k.MustNew()
 	if err := signer.Generate(); err != nil {
 		panic(err)
 	}

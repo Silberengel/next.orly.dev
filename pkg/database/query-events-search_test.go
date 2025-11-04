@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/kind"
@@ -44,7 +44,7 @@ func TestQueryEventsBySearchTerms(t *testing.T) {
 	}()
 
 	// signer for all events
-	sign := p256k1signer.NewP256K1Signer()
+	sign := p8k.MustNew()
 	if err := sign.Generate(); chk.E(err) {
 		t.Fatalf("signer generate: %v", err)
 	}

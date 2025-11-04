@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"next.orly.dev/pkg/acl"
-	p256k1signer "p256k1.mleku.dev/signer"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
@@ -59,8 +59,8 @@ func testSetup(t *testing.T) (*Server, func()) {
 }
 
 // createTestKeypair creates a test keypair for signing events
-func createTestKeypair(t *testing.T) ([]byte, *p256k1signer.P256K1Signer) {
-	signer := p256k1signer.NewP256K1Signer()
+func createTestKeypair(t *testing.T) ([]byte, *p8k.Signer) {
+	signer := p8k.MustNew()
 	if err := signer.Generate(); err != nil {
 		t.Fatalf("Failed to generate keypair: %v", err)
 	}
@@ -70,7 +70,7 @@ func createTestKeypair(t *testing.T) ([]byte, *p256k1signer.P256K1Signer) {
 
 // createAuthEvent creates a valid kind 24242 authorization event
 func createAuthEvent(
-	t *testing.T, signer *p256k1signer.P256K1Signer, verb string,
+	t *testing.T, signer *p8k.Signer, verb string,
 	sha256Hash []byte, expiresIn int64,
 ) *event.E {
 	now := time.Now().Unix()
