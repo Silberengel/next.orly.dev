@@ -120,11 +120,6 @@ whitelist:
 		log.D.F("AUTH challenge sent successfully to %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
-	// Set pong handler - extends read deadline when pongs are received
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
-		return nil
-	})
 	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
 	go s.Pinger(ctx, listener, ticker)
 	defer func() {
