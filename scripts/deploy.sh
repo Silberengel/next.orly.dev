@@ -6,7 +6,7 @@
 set -e
 
 # Configuration
-GO_VERSION="1.23.1"
+GO_VERSION="1.25.3"
 GOROOT="$HOME/go"
 GOPATH="$HOME"
 GOBIN="$HOME/.local/bin"
@@ -160,7 +160,7 @@ build_application() {
     
     # Build the binary in the current directory
     log_info "Building binary in current directory..."
-    CGO_ENABLED=1 go build -o "$BINARY_NAME"
+    CGO_ENABLED=0 go build -o "$BINARY_NAME"
     
     if [[ -f "./$BINARY_NAME" ]]; then
         log_success "ORLY relay built successfully"
@@ -221,16 +221,6 @@ RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=$SERVICE_NAME
-
-# Security settings
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=$working_dir $HOME/.local/share/ORLY $HOME/.cache/ORLY
-PrivateTmp=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
 
 # Network settings
 AmbientCapabilities=CAP_NET_BIND_SERVICE

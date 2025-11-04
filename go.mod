@@ -22,16 +22,12 @@ require (
 	honnef.co/go/tools v0.6.1
 	lol.mleku.dev v1.0.5
 	lukechampine.com/frand v1.5.1
-	p256k1.mleku.dev v1.0.1
+	p256k1.mleku.dev v1.0.3
 )
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/btcsuite/btcd/btcec/v2 v2.3.6 // indirect
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/decred/dcrd/crypto/blake256 v1.0.0 // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/fgprof v0.9.5 // indirect
