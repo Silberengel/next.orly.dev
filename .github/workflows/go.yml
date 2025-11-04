@@ -1,6 +1,9 @@
 # This workflow will build a golang project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
 #
+# NOTE: All builds use CGO_ENABLED=0 since p8k library uses purego (not CGO)
+#       The library dynamically loads libsecp256k1 at runtime via purego
+#
 # Release Process:
 # 1. Update the version in the pkg/version/version file (e.g. v1.2.3)
 # 2. Create and push a tag matching the version:
@@ -29,14 +32,25 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Set CGO off
-        run: echo "CGO_ENABLED=0" >> $GITHUB_ENV
+      - name: Install libsecp256k1 (runtime optional)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config
+          
+          # Build and install libsecp256k1 for runtime performance boost
+          git clone https://github.com/bitcoin-core/secp256k1.git /tmp/secp256k1
+          cd /tmp/secp256k1
+          ./autogen.sh
+          ./configure --enable-module-recovery --enable-module-ecdh --enable-module-schnorrsig --enable-module-extrakeys
+          make
+          sudo make install
+          sudo ldconfig
 
-      - name: Build
-        run: go build -v ./...
+      - name: Build (Pure Go + purego)
+        run: CGO_ENABLED=0 go build -v ./...
 
-      - name: Test
-        run: go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
+      - name: Test (Pure Go + purego)
+        run: CGO_ENABLED=0 go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -52,18 +66,61 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Build Release Binaries
+      - name: Install libsecp256k1 (for bundling with releases)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config
+          
+          # Build and install libsecp256k1
+          git clone https://github.com/bitcoin-core/secp256k1.git /tmp/secp256k1
+          cd /tmp/secp256k1
+          ./autogen.sh
+          ./configure --enable-module-recovery --enable-module-ecdh --enable-module-schnorrsig --enable-module-extrakeys
+          make
+          sudo make install
+          sudo ldconfig
+
+      - name: Build Release Binaries (Pure Go + purego)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
           VERSION=${GITHUB_REF#refs/tags/v}
-          echo "Building release binaries for version $VERSION"
+          echo "Building release binaries for version $VERSION (pure Go + purego)"
 
           # Create directory for binaries
           mkdir -p release-binaries
 
-          # Build for different platforms
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
+          # Build for Linux AMD64 (pure Go with purego)
+          echo "Building Linux AMD64 (pure Go + purego)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
+          
+          # Copy libsecp256k1.so for Linux (runtime optional, for performance)
+          if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then
+            cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
+          elif [ -f /usr/local/lib/libsecp256k1.so.2 ]; then
+            cp /usr/local/lib/libsecp256k1.so.2 release-binaries/libsecp256k1-linux-amd64.so
+          fi
+
+          # Build for Linux ARM64 (pure Go with purego)
+          echo "Building Linux ARM64 (pure Go + purego)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-arm64 .
+          
+          # Build for macOS (pure Go with purego)
+          echo "Building macOS AMD64 (pure Go + purego)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-amd64 .
+          
+          echo "Building macOS ARM64 (pure Go + purego)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-arm64 .
+
+          # Build for Windows (pure Go with purego)
+          echo "Building Windows AMD64 (pure Go + purego)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-windows-amd64.exe .
 
           # Note: Only building orly binary as requested
           # Other cmd utilities (aggregator, benchmark, convert, policytest, stresstest) are development tools

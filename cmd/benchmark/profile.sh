@@ -45,8 +45,13 @@ mkdir -p "$RUN_DIR"
 LOG_FILE="$RUN_DIR/relay.log"
 LOAD_LOG_FILE="$RUN_DIR/load.log"
 
-echo "[profile.sh] Building relay binary ..."
-go build -o "$BIN" .
+echo "[profile.sh] Building relay binary (pure Go + purego)..."
+CGO_ENABLED=0 go build -o "$BIN" .
+
+# Copy libsecp256k1.so next to binary if available (runtime optional)
+if [[ -f "pkg/crypto/p8k/libsecp256k1.so" ]]; then
+    cp pkg/crypto/p8k/libsecp256k1.so "$(dirname "$BIN")/"
+fi
 
 # Ensure we clean up the child process on exit
 RELAY_PID=""
@@ -108,8 +113,14 @@ if [[ "$LOAD_ENABLED" == "1" ]]; then
   # Build benchmark binary if not provided
   if [[ -z "$BENCHMARK_BIN" ]]; then
     BENCHMARK_BIN="$RUN_DIR/benchmark"
-    echo "[profile.sh] Building benchmark load generator ($BENCHMARK_PKG_DIR) ..."
-    go build -o "$BENCHMARK_BIN" "$BENCHMARK_PKG_DIR"
+    echo "[profile.sh] Building benchmark load generator (pure Go + purego) ($BENCHMARK_PKG_DIR) ..."
+    cd "$BENCHMARK_PKG_DIR"
+    CGO_ENABLED=0 go build -o "$BENCHMARK_BIN" .
+    # Copy libsecp256k1.so if available (runtime optional)
+    if [[ -f "$REPO_ROOT/pkg/crypto/p8k/libsecp256k1.so" ]]; then
+        cp "$REPO_ROOT/pkg/crypto/p8k/libsecp256k1.so" "$RUN_DIR/"
+    fi
+    cd "$REPO_ROOT"
   fi
   BENCH_DB_DIR="$RUN_DIR/benchdb"
   mkdir -p "$BENCH_DB_DIR"

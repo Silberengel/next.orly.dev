@@ -1,8 +1,17 @@
 # Dockerfile for benchmark runner
 FROM golang:1.25-alpine AS builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
+# Install build dependencies including libsecp256k1 build requirements
+RUN apk add --no-cache git ca-certificates gcc musl-dev autoconf automake libtool make
+
+# Build libsecp256k1
+RUN cd /tmp && \
+    git clone https://github.com/bitcoin-core/secp256k1.git && \
+    cd secp256k1 && \
+    ./autogen.sh && \
+    ./configure --enable-module-recovery --enable-module-ecdh --enable-module-schnorrsig --enable-module-extrakeys && \
+    make && \
+    make install
 
 # Set working directory
 WORKDIR /build
@@ -14,19 +23,27 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the benchmark tool
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o benchmark cmd/benchmark/main.go
+# Build the benchmark tool with CGO enabled
+RUN CGO_ENABLED=1 GOOS=linux go build -a -o benchmark cmd/benchmark/main.go
+
+# Copy libsecp256k1.so if available
+RUN if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then \
+        cp pkg/crypto/p8k/libsecp256k1.so /build/; \
+    fi
 
 # Final stage
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk --no-cache add ca-certificates curl wget
+# Install runtime dependencies including libsecp256k1
+RUN apk --no-cache add ca-certificates curl wget libsecp256k1
 
 WORKDIR /app
 
 # Copy benchmark binary
 COPY --from=builder /build/benchmark /app/benchmark
+
+# Copy libsecp256k1.so if available
+COPY --from=builder /build/libsecp256k1.so /app/libsecp256k1.so 2>/dev/null || true
 
 # Copy benchmark runner script
 COPY cmd/benchmark/benchmark-runner.sh /app/benchmark-runner
@@ -38,6 +55,9 @@ RUN chmod +x /app/benchmark-runner
 RUN adduser -u 1000 -D appuser && \
     mkdir -p /reports && \
     chown -R 1000:1000 /app /reports
+
+# Set library path
+ENV LD_LIBRARY_PATH=/app:/usr/local/lib:/usr/lib
 
 # Environment variables
 ENV BENCHMARK_EVENTS=10000

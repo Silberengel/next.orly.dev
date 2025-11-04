@@ -162,8 +162,13 @@ else
 fi
 
 echo -e "${YELLOW}8. Testing build capability...${NC}"
-if go build -o "$temp_dir/test-orly" . >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ Project builds successfully${NC}"
+if CGO_ENABLED=0 go build -o "$temp_dir/test-orly" . >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ Project builds successfully (pure Go + purego)${NC}"
+    # Copy libsecp256k1.so if available (runtime optional)
+    if [[ -f "pkg/crypto/p8k/libsecp256k1.so" ]]; then
+        cp pkg/crypto/p8k/libsecp256k1.so "$temp_dir/"
+        echo -e "${GREEN}✓ libsecp256k1.so copied (runtime optional)${NC}"
+    fi
     if [[ -x "$temp_dir/test-orly" ]]; then
         echo -e "${GREEN}✓ Binary is executable${NC}"
     else

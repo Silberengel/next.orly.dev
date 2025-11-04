@@ -3742,3 +3742,8 @@ pkg/protocol/directory-client/node_modules/yocto-queue/index.js
 pkg/protocol/directory-client/node_modules/yocto-queue/license
 pkg/protocol/directory-client/node_modules/yocto-queue/package.json
 pkg/protocol/directory-client/node_modules/yocto-queue/readme.md
+
+# Build outputs
+build/orly-*
+build/libsecp256k1-*
+build/SHA256SUMS-*

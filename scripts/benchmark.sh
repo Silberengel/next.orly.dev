@@ -30,8 +30,14 @@ RUN_DIR="${REPORTS_DIR}/run_${TIMESTAMP}"
 # Ensure the benchmark binary is built
 BENCHMARK_BIN="${REPO_ROOT}/cmd/benchmark/benchmark"
 if [[ ! -x "$BENCHMARK_BIN" ]]; then
-    echo "Building benchmark binary..."
-    go build -o "$BENCHMARK_BIN" "$REPO_ROOT/cmd/benchmark"
+    echo "Building benchmark binary (pure Go + purego)..."
+    cd "$REPO_ROOT/cmd/benchmark"
+    CGO_ENABLED=0 go build -o "$BENCHMARK_BIN" .
+    # Copy libsecp256k1.so if available (runtime optional)
+    if [[ -f "$REPO_ROOT/pkg/crypto/p8k/libsecp256k1.so" ]]; then
+        cp "$REPO_ROOT/pkg/crypto/p8k/libsecp256k1.so" "$(dirname "$BENCHMARK_BIN")/"
+    fi
+    cd "$REPO_ROOT"
 fi
 
 # Create output directory

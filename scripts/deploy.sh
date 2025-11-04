@@ -159,8 +159,14 @@ build_application() {
     ./scripts/update-embedded-web.sh
     
     # Build the binary in the current directory
-    log_info "Building binary in current directory..."
+    log_info "Building binary in current directory (pure Go + purego)..."
     CGO_ENABLED=0 go build -o "$BINARY_NAME"
+    
+    # Copy libsecp256k1.so next to the binary (optional, for runtime performance)
+    if [[ -f "pkg/crypto/p8k/libsecp256k1.so" ]]; then
+        cp pkg/crypto/p8k/libsecp256k1.so .
+        log_info "Copied libsecp256k1.so next to binary (runtime optional)"
+    fi
     
     if [[ -f "./$BINARY_NAME" ]]; then
         log_success "ORLY relay built successfully"
@@ -190,9 +196,15 @@ install_binary() {
     # Ensure GOBIN directory exists
     mkdir -p "$GOBIN"
     
-    # Copy binary
+    # Copy binary and library
     cp "./$BINARY_NAME" "$GOBIN/"
     chmod +x "$GOBIN/$BINARY_NAME"
+    
+    # Copy library if it exists
+    if [[ -f "./libsecp256k1.so" ]]; then
+        cp "./libsecp256k1.so" "$GOBIN/"
+        log_info "Copied libsecp256k1.so to $GOBIN/"
+    fi
     
     log_success "Binary installed to $GOBIN/$BINARY_NAME"
 }
