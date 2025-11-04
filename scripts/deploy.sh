@@ -199,11 +199,12 @@ install_binary() {
 
 # Create systemd service
 create_systemd_service() {
-    log_info "Creating systemd service..."
-    
+    local port="$1"
+    log_info "Creating systemd service (port: $port)..."
+
     local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
     local working_dir=$(pwd)
-    
+
     # Create service file content
     local service_content="[Unit]
 Description=ORLY Nostr Relay
@@ -215,6 +216,7 @@ Type=simple
 User=$USER
 Group=$USER
 WorkingDirectory=$working_dir
+Environment=ORLY_PORT=$port
 ExecStart=$GOBIN/$BINARY_NAME
 Restart=always
 RestartSec=5
@@ -249,31 +251,32 @@ WantedBy=multi-user.target"
 
 # Main deployment function
 main() {
-    log_info "Starting ORLY relay deployment..."
-    
+    local port="${1:-3334}"
+    log_info "Starting ORLY relay deployment (port: $port)..."
+
     # Check if we're in the right directory
     if [[ ! -f "go.mod" ]] || ! grep -q "next.orly.dev" go.mod; then
         log_error "This script must be run from the next.orly.dev project root directory"
         exit 1
     fi
-    
+
     # Check and install Go if needed
     if ! check_go_installation; then
         install_go
         setup_go_environment
     fi
-    
+
     # Build application
     build_application
-    
+
     # Set capabilities
     set_capabilities
-    
+
     # Install binary
     install_binary
-    
+
     # Create systemd service
-    create_systemd_service
+    create_systemd_service "$port"
     
     log_success "ORLY relay deployment completed successfully!"
     echo ""
@@ -295,14 +298,18 @@ main() {
 }
 
 # Handle command line arguments
+PORT=""
 case "${1:-}" in
     --help|-h)
         echo "ORLY Relay Deployment Script"
         echo ""
-        echo "Usage: $0 [options]"
+        echo "Usage: $0 [options] [port]"
+        echo ""
+        echo "Arguments:"
+        echo "  port         Port number for the relay to listen on (default: 3334)"
         echo ""
         echo "Options:"
-        echo "  --help, -h    Show this help message"
+        echo "  --help, -h   Show this help message"
         echo ""
         echo "This script will:"
         echo "  1. Install Go $GO_VERSION if not present"
@@ -312,7 +319,17 @@ case "${1:-}" in
         echo "  5. Set capabilities for port 443 binding"
         echo "  6. Install the binary to ~/.local/bin"
         echo "  7. Create and enable systemd service"
+        echo ""
+        echo "Examples:"
+        echo "  $0              # Deploy with default port 3334"
+        echo "  $0 8080         # Deploy with port 8080"
         exit 0
+        ;;
+    [0-9]*)
+        # First argument is a number, treat it as port
+        PORT="$1"
+        shift
+        main "$PORT" "$@"
         ;;
     *)
         main "$@"

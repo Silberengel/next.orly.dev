@@ -19,7 +19,7 @@ import (
 )
 
 func (l *Listener) HandleEvent(msg []byte) (err error) {
-	log.D.F("handling event: %s", msg)
+	log.D.F("HandleEvent: START handling event: %s", msg)
 	// decode the envelope
 	env := eventenvelope.NewSubmission()
 	log.I.F("HandleEvent: received event message length: %d", len(msg))
@@ -28,8 +28,8 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		return
 	}
 	log.I.F(
-		"HandleEvent: successfully unmarshaled event, kind: %d, pubkey: %s",
-		env.E.Kind, hex.Enc(env.E.Pubkey),
+		"HandleEvent: successfully unmarshaled event, kind: %d, pubkey: %s, id: %0x",
+		env.E.Kind, hex.Enc(env.E.Pubkey), env.E.ID,
 	)
 	defer func() {
 		if env != nil && env.E != nil {
@@ -344,6 +344,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		log.D.F("delivered ephemeral event %0x", env.E.ID)
 		return
 	}
+	log.D.F("processing regular event %0x (kind %d)", env.E.ID, env.E.Kind)
 
 	// check for protected tag (NIP-70)
 	protectedTag := env.E.Tags.GetFirst([]byte("-"))

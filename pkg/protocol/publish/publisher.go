@@ -20,8 +20,8 @@ type WriteRequest struct {
 
 // WriteChanSetter defines the interface for setting write channels
 type WriteChanSetter interface {
-	SetWriteChan(*websocket.Conn, chan<- WriteRequest)
-	GetWriteChan(*websocket.Conn) (chan<- WriteRequest, bool)
+	SetWriteChan(*websocket.Conn, chan WriteRequest)
+	GetWriteChan(*websocket.Conn) (chan WriteRequest, bool)
 }
 
 // S is the control structure for the subscription management scheme.

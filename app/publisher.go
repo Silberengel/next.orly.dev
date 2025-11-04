@@ -111,17 +111,8 @@ func (p *P) Receive(msg typer.T) {
 		if m.Cancel {
 			if m.Id == "" {
 				p.removeSubscriber(m.Conn)
-				// log.D.F("removed listener %s", m.remote)
 			} else {
 				p.removeSubscriberId(m.Conn, m.Id)
-				// log.D.C(
-				// 	func() string {
-				// 		return fmt.Sprintf(
-				// 			"removed subscription %s for %s", m.Id,
-				// 			m.remote,
-				// 		)
-				// 	},
-				// )
 			}
 			return
 		}
@@ -133,27 +124,10 @@ func (p *P) Receive(msg typer.T) {
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
 			}
 			p.Map[m.Conn] = subs
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"created new subscription for %s, %s",
-			// 			m.remote,
-			// 			m.Filters.Marshal(nil),
-			// 		)
-			// 	},
-			// )
 		} else {
 			subs[m.Id] = Subscription{
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
 			}
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"added subscription %s for %s", m.Id,
-			// 			m.remote,
-			// 		)
-			// 	},
-			// )
 		}
 	}
 }

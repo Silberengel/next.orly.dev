@@ -373,21 +373,22 @@ func (s *TestSuite) topologicalSort() {
 
 // Run runs all tests in the suite.
 func (s *TestSuite) Run() (results []TestResult, err error) {
-	client, err := NewClient(s.relayURL)
-	if err != nil {
-		return nil, errorf.E("failed to connect to relay: %w", err)
-	}
-	defer client.Close()
 	for _, name := range s.order {
 		tc := s.tests[name]
 		if tc == nil {
 			continue
+		}
+		// Create a new client for each test to avoid connection issues
+		client, clientErr := NewClient(s.relayURL)
+		if clientErr != nil {
+			return nil, errorf.E("failed to connect to relay: %w", clientErr)
 		}
 		result := tc.Func(client, s.key1, s.key2)
 		result.Name = name
 		result.Required = tc.Required
 		s.results[name] = result
 		results = append(results, result)
+		client.Close()
 		time.Sleep(100 * time.Millisecond) // Small delay between tests
 	}
 	return
@@ -408,9 +409,10 @@ func (s *TestSuite) RunTest(testName string) (result TestResult, err error) {
 			return result, errorf.E("test %s depends on %s which failed", testName, dep)
 		}
 	}
-	client, err := NewClient(s.relayURL)
-	if err != nil {
-		return result, errorf.E("failed to connect to relay: %w", err)
+	// Create a new client for the test
+	client, clientErr := NewClient(s.relayURL)
+	if clientErr != nil {
+		return result, errorf.E("failed to connect to relay: %w", clientErr)
 	}
 	defer client.Close()
 	result = tc.Func(client, s.key1, s.key2)

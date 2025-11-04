@@ -14,15 +14,15 @@ import (
 
 // Client wraps a WebSocket connection to a relay for testing.
 type Client struct {
-	conn       *websocket.Conn
-	url        string
-	mu         sync.Mutex
-	subs       map[string]chan []byte
-	complete   map[string]bool // Track if subscription is complete (e.g., by ID)
-	okCh       chan []byte      // Channel for OK messages
-	countCh    chan []byte      // Channel for COUNT messages
-	ctx        context.Context
-	cancel     context.CancelFunc
+	conn     *websocket.Conn
+	url      string
+	mu       sync.Mutex
+	subs     map[string]chan []byte
+	complete map[string]bool // Track if subscription is complete (e.g., by ID)
+	okCh     chan []byte     // Channel for OK messages
+	countCh  chan []byte     // Channel for COUNT messages
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
 // NewClient creates a new test client connected to the relay.
@@ -36,19 +36,7 @@ func NewClient(url string) (c *Client, err error) {
 		cancel()
 		return
 	}
-	
-	// Set up ping/pong handling to keep connection alive
-	pongWait := 60 * time.Second
-	conn.SetReadDeadline(time.Now().Add(pongWait))
-	// Set pong handler to extend deadline when pongs are received
-	// Note: Relay sends pings, gorilla/websocket auto-responds with pongs
-	// The relay typically doesn't send pongs back, so we also handle timeouts in readLoop
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
-	// Don't set ping handler - let gorilla/websocket auto-respond to pings
-	
+
 	c = &Client{
 		conn:     conn,
 		url:      url,
@@ -59,6 +47,27 @@ func NewClient(url string) (c *Client, err error) {
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+
+	// Set up ping/pong handling to keep connection alive
+	pongWait := 60 * time.Second
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+	conn.SetPingHandler(func(appData string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		deadline := time.Now().Add(10 * time.Second)
+		c.mu.Lock()
+		err := conn.WriteControl(websocket.PongMessage, []byte(appData), deadline)
+		c.mu.Unlock()
+		if err != nil {
+			return nil
+		}
+		return nil
+	})
+	// Also extend deadlines after each successful read in the loop below
+
 	go c.readLoop()
 	return
 }

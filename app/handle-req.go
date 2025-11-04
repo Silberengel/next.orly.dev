@@ -566,9 +566,20 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	)
 	var subbedFilters filter.S
 	for _, f := range *env.Filters {
+		// Check if this filter's limit was satisfied
+		limitSatisfied := false
+		if pointers.Present(f.Limit) {
+			if len(events) >= int(*f.Limit) {
+				limitSatisfied = true
+			}
+		}
+		
 		if f.Ids.Len() < 1 {
-			cancel = false
-			subbedFilters = append(subbedFilters, f)
+			// Filter has no IDs - keep subscription open unless limit was satisfied
+			if !limitSatisfied {
+				cancel = false
+				subbedFilters = append(subbedFilters, f)
+			}
 		} else {
 			// remove the IDs that we already sent, as it's one less
 			// comparison we have to make.
@@ -587,16 +598,15 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			if len(notFounds) == 0 {
 				continue
 			}
+			// Check if limit was satisfied
+			if limitSatisfied {
+				continue
+			}
 			// rewrite the filter Ids to remove the ones we already sent
 			f.Ids = tag.NewFromBytesSlice(notFounds...)
 			// add the filter to the list of filters we're subscribing to
+			cancel = false
 			subbedFilters = append(subbedFilters, f)
-		}
-		// also, if we received the limit number of events, subscription ded
-		if pointers.Present(f.Limit) {
-			if len(events) >= int(*f.Limit) {
-				cancel = true
-			}
 		}
 	}
 	receiver := make(event.C, 32)

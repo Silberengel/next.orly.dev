@@ -4,16 +4,17 @@ import (
 	"bytes"
 	"sort"
 
+	"github.com/minio/sha256-simd"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/ints"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/text"
 	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/pointers"
 )
 
@@ -113,8 +114,17 @@ func (f *F) MatchesIgnoringTimestampConstraints(ev *event.E) bool {
 	if f.Kinds.Len() > 0 && !f.Kinds.Contains(ev.Kind) {
 		return false
 	}
-	if f.Authors.Len() > 0 && !f.Authors.Contains(ev.Pubkey) {
-		return false
+	if f.Authors.Len() > 0 {
+		found := false
+		for _, author := range f.Authors.T {
+			if utils.FastEqual(author, ev.Pubkey) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
 	}
 	if f.Tags.Len() > 0 {
 		for _, v := range *f.Tags {
@@ -150,7 +160,7 @@ func (f *F) Matches(ev *event.E) (match bool) {
 func (f *F) EstimateSize() (size int) {
 	// JSON structure overhead: {, }, commas, quotes, keys
 	size = 50
-	
+
 	// IDs: "ids":["hex1","hex2",...]
 	if f.Ids != nil && f.Ids.Len() > 0 {
 		size += 7 // "ids":[
@@ -159,14 +169,14 @@ func (f *F) EstimateSize() (size int) {
 		}
 		size += 1 // closing ]
 	}
-	
+
 	// Kinds: "kinds":[1,2,3,...]
 	if f.Kinds.Len() > 0 {
-		size += 9 // "kinds":[
+		size += 9                 // "kinds":[
 		size += f.Kinds.Len() * 5 // assume average 5 bytes per kind number
-		size += 1 // closing ]
+		size += 1                 // closing ]
 	}
-	
+
 	// Authors: "authors":["hex1","hex2",...]
 	if f.Authors.Len() > 0 {
 		size += 11 // "authors":[
@@ -175,7 +185,7 @@ func (f *F) EstimateSize() (size int) {
 		}
 		size += 1 // closing ]
 	}
-	
+
 	// Tags: "#x":["val1","val2",...]
 	if f.Tags != nil && f.Tags.Len() > 0 {
 		for _, tg := range *f.Tags {
@@ -189,29 +199,29 @@ func (f *F) EstimateSize() (size int) {
 			size += 1 // closing ]
 		}
 	}
-	
+
 	// Since: "since":1234567890
 	if f.Since != nil && f.Since.U64() > 0 {
 		size += 10 // "since": + timestamp
 	}
-	
+
 	// Until: "until":1234567890
 	if f.Until != nil && f.Until.U64() > 0 {
 		size += 10 // "until": + timestamp
 	}
-	
+
 	// Search: "search":"escaped text"
 	if len(f.Search) > 0 {
-		size += 11 // "search":"
+		size += 11                // "search":"
 		size += len(f.Search) * 2 // worst case escaping
-		size += 1 // closing quote
+		size += 1                 // closing quote
 	}
-	
+
 	// Limit: "limit":100
 	if pointers.Present(f.Limit) {
 		size += 11 // "limit": + number
 	}
-	
+
 	return
 }
 
@@ -284,16 +294,16 @@ func (f *F) Marshal(dst []byte) (b []byte) {
 			} else {
 				first = true
 			}
-		// append the key with # prefix
-		b = append(b, '"', '#', tKey[0], '"', ':')
-		b = append(b, '[')
-		for i, value := range values {
-			b = text.AppendQuote(b, value, text.NostrEscape)
-			if i < len(values)-1 {
-				b = append(b, ',')
+			// append the key with # prefix
+			b = append(b, '"', '#', tKey[0], '"', ':')
+			b = append(b, '[')
+			for i, value := range values {
+				b = text.AppendQuote(b, value, text.NostrEscape)
+				if i < len(values)-1 {
+					b = append(b, ',')
+				}
 			}
-		}
-		b = append(b, ']')
+			b = append(b, ']')
 		}
 	}
 	if f.Since != nil && f.Since.U64() > 0 {

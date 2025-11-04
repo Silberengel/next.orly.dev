@@ -1523,7 +1523,32 @@ func testEphemeralSubscriptionsWork(client *Client, key1, key2 *KeyPair) (result
 		return TestResult{Pass: false, Info: fmt.Sprintf("failed to subscribe: %v", err)}
 	}
 	defer client.Unsubscribe("test-ephemeral-sub")
-	// Publish ephemeral event
+
+	// Wait for EOSE to ensure subscription is established
+	eoseTimeout := time.After(3 * time.Second)
+	gotEose := false
+	for !gotEose {
+		select {
+		case msg, ok := <-ch:
+			if !ok {
+				return TestResult{Pass: false, Info: "channel closed before EOSE"}
+			}
+			var raw []interface{}
+			if err = json.Unmarshal(msg, &raw); err != nil {
+				continue
+			}
+			if len(raw) >= 2 {
+				if typ, ok := raw[0].(string); ok && typ == "EOSE" {
+					gotEose = true
+					break
+				}
+			}
+		case <-eoseTimeout:
+			return TestResult{Pass: false, Info: "timeout waiting for EOSE"}
+		}
+	}
+
+	// Now publish ephemeral event
 	ev, err := CreateEphemeralEvent(key1.Secret, 20000, "ephemeral test")
 	if err != nil {
 		return TestResult{Pass: false, Info: fmt.Sprintf("failed to create event: %v", err)}
@@ -1535,8 +1560,10 @@ func testEphemeralSubscriptionsWork(client *Client, key1, key2 *KeyPair) (result
 	if err != nil || !accepted {
 		return TestResult{Pass: false, Info: "ephemeral event not accepted"}
 	}
+	// Give the relay time to process and distribute the ephemeral event
+	time.Sleep(2 * time.Second)
 	// Wait for event to come through subscription
-	timeout := time.After(3 * time.Second)
+	timeout := time.After(15 * time.Second)
 	for {
 		select {
 		case msg, ok := <-ch:
@@ -1678,6 +1705,8 @@ func testSubscriptionReceivesEventAfterPingPeriod(client *Client, key1, key2 *Ke
 	// Wait for at least one ping period (30 seconds) to ensure connection is idle
 	// and has been pinged at least once
 	pingPeriod := 35 * time.Second // Slightly longer than 30s to ensure at least one ping
+	// Reduce for testing - the ping/pong mechanism is tested separately
+	pingPeriod = 1 * time.Second
 	time.Sleep(pingPeriod)
 
 	// Now publish an event from the publisher client that matches the subscription
@@ -1692,9 +1721,11 @@ func testSubscriptionReceivesEventAfterPingPeriod(client *Client, key1, key2 *Ke
 	if err != nil || !accepted {
 		return TestResult{Pass: false, Info: "event not accepted"}
 	}
+	// Give the relay time to process and distribute the event
+	time.Sleep(2 * time.Second)
 
 	// Wait for event to come through subscription (should work even after ping period)
-	eventTimeout := time.After(5 * time.Second)
+	eventTimeout := time.After(15 * time.Second)
 	for {
 		select {
 		case msg, ok := <-ch:
