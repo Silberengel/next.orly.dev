@@ -362,6 +362,11 @@ func (s *FallbackSigner) InitPub(pub []byte) (err error) {
 	s.xonlyPub = make([]byte, 32)
 	copy(s.xonlyPub, pub)
 
+	// Parse the x-only public key into a full public key for verification
+	if s.pubKey, err = schnorr.ParsePubKey(pub); err != nil {
+		return errorf.E("failed to parse public key: %w", err)
+	}
+
 	return nil
 }
 

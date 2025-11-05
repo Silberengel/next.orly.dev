@@ -36,7 +36,10 @@ jobs:
         run: CGO_ENABLED=0 go build -v ./...
 
       - name: Test (Pure Go + purego)
-        run: CGO_ENABLED=0 go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
+        run: |
+          # Copy the libsecp256k1.so to root directory so tests can find it
+          cp pkg/crypto/p8k/libsecp256k1.so .
+          CGO_ENABLED=0 go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
   release:
     needs: build
     runs-on: ubuntu-latest
