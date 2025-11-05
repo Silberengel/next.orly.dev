@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 		log.W = lol.GetNullPrinter()
 		log.E = lol.GetNullPrinter()
 		log.F = lol.GetNullPrinter()
-		
+
 		// Also suppress badger logs
 		os.Setenv("BADGER_LOG_LEVEL", "CRITICAL")
 	}
@@ -31,4 +31,3 @@ func TestMain(m *testing.M) {
 	// Run tests
 	os.Exit(m.Run())
 }
-

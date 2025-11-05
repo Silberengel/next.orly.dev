@@ -1,8 +1,6 @@
 package app
 
 import (
-	"fmt"
-
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/indexes/types"
@@ -261,7 +259,10 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 	// If no valid deletions were found, return an error
 	if !validDeletionFound {
 		log.W.F("HandleDelete: no valid deletions found for event %0x", env.E.ID)
-		return fmt.Errorf("blocked: cannot delete events that belong to other users")
+		// Don't block delete events from being stored - just log the issue
+		// The delete event itself should still be accepted even if no targets are found
+		log.I.F("HandleDelete: delete event %0x stored but no target events found to delete", env.E.ID)
+		return nil
 	}
 
 	log.I.F("HandleDelete: successfully processed %d deletions for event %0x", deletionCount, env.E.ID)

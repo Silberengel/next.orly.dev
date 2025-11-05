@@ -17,7 +17,7 @@ const (
 	maxRangeSize    = 10 * 1024 * 1024 // 10MB max range request
 )
 
-var sha256Regex = regexp.MustCompile(`^[a-fA-F0-9]{64}`)
+var sha256Regex = regexp.MustCompile(`[a-fA-F0-9]{64}`)
 
 // CalculateSHA256 calculates the SHA256 hash of data
 func CalculateSHA256(data []byte) []byte {

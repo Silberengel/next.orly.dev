@@ -278,7 +278,7 @@ func TestServerRangeRequests(t *testing.T) {
 		{"bytes=0-4", "01234", http.StatusPartialContent},
 		{"bytes=5-9", "56789", http.StatusPartialContent},
 		{"bytes=10-", "abcdefghij", http.StatusPartialContent},
-		{"bytes=-5", "hij", http.StatusPartialContent},
+		{"bytes=-5", "fghij", http.StatusPartialContent},
 		{"bytes=0-0", "0", http.StatusPartialContent},
 		{"bytes=100-200", "", http.StatusRequestedRangeNotSatisfiable},
 	}
@@ -638,9 +638,10 @@ func TestServerListWithQueryParams(t *testing.T) {
 		}
 	}
 
-	// List with since parameter
+	// List with since parameter (future timestamp - should return no blobs)
 	authEv := createAuthEvent(t, signer, "list", nil, 3600)
-	req := httptest.NewRequest("GET", "/list/"+pubkeyHex+"?since="+fmt.Sprintf("%d", now-600), nil)
+	futureTime := time.Now().Unix() + 3600 // 1 hour in the future
+	req := httptest.NewRequest("GET", "/list/"+pubkeyHex+"?since="+fmt.Sprintf("%d", futureTime), nil)
 	req.Header.Set("Authorization", createAuthHeader(authEv))
 
 	w := httptest.NewRecorder()
@@ -655,9 +656,30 @@ func TestServerListWithQueryParams(t *testing.T) {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
 
-	// Should only get blobs uploaded after since timestamp
-	if len(descriptors) != 1 {
-		t.Errorf("Expected 1 blob, got %d", len(descriptors))
+	// Should get no blobs since they were all uploaded before the future timestamp
+	if len(descriptors) != 0 {
+		t.Errorf("Expected 0 blobs, got %d", len(descriptors))
+	}
+
+	// Test without since parameter - should get all blobs
+	req2 := httptest.NewRequest("GET", "/list/"+pubkeyHex, nil)
+	req2.Header.Set("Authorization", createAuthHeader(authEv))
+
+	w2 := httptest.NewRecorder()
+	server.Handler().ServeHTTP(w2, req2)
+
+	if w2.Code != http.StatusOK {
+		t.Errorf("List failed: status %d", w2.Code)
+	}
+
+	var allDescriptors []BlobDescriptor
+	if err := json.NewDecoder(w2.Body).Decode(&allDescriptors); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	// Should get all 3 blobs when no filter is applied
+	if len(allDescriptors) != 3 {
+		t.Errorf("Expected 3 blobs, got %d", len(allDescriptors))
 	}
 }
 

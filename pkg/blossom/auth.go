@@ -246,9 +246,9 @@ func ValidateAuthEventForGet(
 		return
 	}
 
-		// Otherwise, verify at least one x tag matches the hash
-		if sha256Hash != nil && len(sha256Hash) > 0 {
-			sha256Hex := hex.Enc(sha256Hash)
+	// Otherwise, verify at least one x tag matches the hash
+	if sha256Hash != nil && len(sha256Hash) > 0 {
+		sha256Hex := hex.Enc(sha256Hash)
 		found := false
 		for _, xTag := range xTags {
 			if string(xTag.Value()) == sha256Hex {
@@ -293,4 +293,3 @@ func GetPubkeyFromRequest(r *http.Request) (pubkey []byte, err error) {
 
 	return nil, nil
 }
-

@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"next.orly.dev/pkg/acl"
-	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 // testSetup creates a test database, ACL, and server
@@ -201,23 +201,24 @@ func TestUtils(t *testing.T) {
 	}
 
 	// Test ExtractSHA256FromPath
-	sha256Hex, ext, err := ExtractSHA256FromPath("abc123def456")
+	testHash := "abc123def456789012345678901234567890123456789012345678901234abcd"
+	sha256Hex, ext, err := ExtractSHA256FromPath(testHash)
 	if err != nil {
 		t.Fatalf("Failed to extract SHA256: %v", err)
 	}
-	if sha256Hex != "abc123def456" {
-		t.Errorf("Expected %s, got %s", "abc123def456", sha256Hex)
+	if sha256Hex != testHash {
+		t.Errorf("Expected %s, got %s", testHash, sha256Hex)
 	}
 	if ext != "" {
 		t.Errorf("Expected empty ext, got %s", ext)
 	}
 
-	sha256Hex, ext, err = ExtractSHA256FromPath("abc123def456.pdf")
+	sha256Hex, ext, err = ExtractSHA256FromPath(testHash + ".pdf")
 	if err != nil {
 		t.Fatalf("Failed to extract SHA256: %v", err)
 	}
-	if sha256Hex != "abc123def456" {
-		t.Errorf("Expected %s, got %s", "abc123def456", sha256Hex)
+	if sha256Hex != testHash {
+		t.Errorf("Expected %s, got %s", testHash, sha256Hex)
 	}
 	if ext != ".pdf" {
 		t.Errorf("Expected .pdf, got %s", ext)
@@ -379,4 +380,3 @@ func TestServerHandler(t *testing.T) {
 		t.Error("Missing CORS header")
 	}
 }
-

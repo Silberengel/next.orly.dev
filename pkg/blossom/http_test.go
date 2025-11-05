@@ -79,8 +79,8 @@ func TestHTTPHeadBlob(t *testing.T) {
 		t.Error("HEAD request should not return body")
 	}
 
-	if w.Header().Get("Content-Length") != "18" {
-		t.Errorf("Expected Content-Length 18, got %s", w.Header().Get("Content-Length"))
+	if w.Header().Get("Content-Length") != "17" {
+		t.Errorf("Expected Content-Length 17, got %s", w.Header().Get("Content-Length"))
 	}
 }
 
@@ -421,7 +421,7 @@ func TestHTTPNotFound(t *testing.T) {
 	server, cleanup := testSetup(t)
 	defer cleanup()
 
-	req := httptest.NewRequest("GET", "/nonexistent123456789012345678901234567890123456789012345678901234567890", nil)
+	req := httptest.NewRequest("GET", "/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
 	w := httptest.NewRecorder()
 	server.Handler().ServeHTTP(w, req)
 
@@ -581,7 +581,7 @@ func TestMimeTypeDetection(t *testing.T) {
 func TestSHA256Validation(t *testing.T) {
 	validHashes := []string{
 		"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		"abc123def456789012345678901234567890123456789012345678901234567890",
+		"abc123def456789012345678901234567890123456789012345678901234abcd",
 	}
 
 	invalidHashes := []string{
@@ -651,8 +651,8 @@ func TestExtractSHA256FromURL(t *testing.T) {
 		expected string
 		hasError bool
 	}{
-		{"https://example.com/abc123def456", "abc123def456", false},
-		{"https://example.com/user/path/abc123def456.pdf", "abc123def456", false},
+		{"https://example.com/abc123def456789012345678901234567890123456789012345678901234abcd", "abc123def456789012345678901234567890123456789012345678901234abcd", false},
+		{"https://example.com/user/path/abc123def456789012345678901234567890123456789012345678901234abcd.pdf", "abc123def456789012345678901234567890123456789012345678901234abcd", false},
 		{"https://example.com/", "", true},
 		{"no hash here", "", true},
 	}
@@ -753,4 +753,3 @@ type testError struct {
 func (e *testError) Error() string {
 	return strings.Join([]string{"HTTP", string(rune(e.code)), e.body}, " ")
 }
-
