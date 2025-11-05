@@ -4,6 +4,7 @@ package secp
 
 import (
 	"fmt"
+	"log"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -158,6 +159,7 @@ func LoadLibrary() (err error) {
 			return
 		}
 
+		log.Printf("INFO: Successfully loaded libsecp256k1 v5.0.0 from %s", libPath)
 		loadLibErr = nil
 	})
 
