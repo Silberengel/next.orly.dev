@@ -32,20 +32,6 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install libsecp256k1 (runtime optional)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config
-          
-          # Build and install libsecp256k1 for runtime performance boost
-          git clone https://github.com/bitcoin-core/secp256k1.git /tmp/secp256k1
-          cd /tmp/secp256k1
-          ./autogen.sh
-          ./configure --enable-module-recovery --enable-module-ecdh --enable-module-schnorrsig --enable-module-extrakeys
-          make
-          sudo make install
-          sudo ldconfig
-
       - name: Build (Pure Go + purego)
         run: CGO_ENABLED=0 go build -v ./...
 
@@ -66,21 +52,6 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install libsecp256k1 (for bundling with releases)
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool pkg-config
-          
-          # Build and install libsecp256k1
-          git clone https://github.com/bitcoin-core/secp256k1.git /tmp/secp256k1
-          cd /tmp/secp256k1
-          ./autogen.sh
-          ./configure --enable-module-recovery --enable-module-ecdh --enable-module-schnorrsig --enable-module-extrakeys
-          make
-          sudo make install
-          sudo ldconfig
-
       - name: Build Release Binaries (Pure Go + purego)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -88,24 +59,17 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Building release binaries for version $VERSION (pure Go + purego)"
 
-          # Copy libsecp256k1.so for Linux (runtime optional, for performance)
-          if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then
-            cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
-          elif [ -f /usr/local/lib/libsecp256k1.so.2 ]; then
-            cp /usr/local/lib/libsecp256k1.so.2 release-binaries/libsecp256k1-linux-amd64.so
-          fi
-
           # Create directory for binaries
           mkdir -p release-binaries
 
-          # Build for Linux AMD64 (pure Go with purego)
-          echo "Building Linux AMD64 (pure Go + purego)..."
+          # Copy the pre-compiled libsecp256k1.so for Linux AMD64
+          cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
+
+          # Build for Linux AMD64 (pure Go + purego dynamic loading)
+          echo "Building Linux AMD64 (pure Go + purego dynamic loading)..."
           GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
             go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
           
-          # Note: Only building orly binary as requested
-          # Other cmd utilities (aggregator, benchmark, convert, policytest, stresstest) are development tools
-
           # Create checksums
           cd release-binaries
           sha256sum * > SHA256SUMS.txt
