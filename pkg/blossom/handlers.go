@@ -163,14 +163,9 @@ func (s *Server) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 
 // handleUpload handles PUT /upload requests (BUD-02)
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	// Check ACL
+	// Get initial pubkey from request (may be updated by auth validation)
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-
-	if !s.checkACL(pubkey, remoteAddr, "write") {
-		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
-		return
-	}
 
 	// Read request body
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxBlobSize+1))
@@ -189,15 +184,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	sha256Hash := CalculateSHA256(body)
 	sha256Hex := hex.Enc(sha256Hash)
 
-	// Check if blob already exists
-	exists, err := s.storage.HasBlob(sha256Hash)
-	if err != nil {
-		log.E.F("error checking blob existence: %v", err)
-		s.setErrorResponse(w, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	// Optional authorization validation
+	// Optional authorization validation (do this BEFORE ACL check)
 	if r.Header.Get(AuthorizationHeader) != "" {
 		authEv, err := ValidateAuthEvent(r, "upload", sha256Hash)
 		if err != nil {
@@ -207,6 +194,20 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		if authEv != nil {
 			pubkey = authEv.Pubkey
 		}
+	}
+
+	// Check ACL (do this AFTER getting pubkey from auth)
+	if !s.checkACL(pubkey, remoteAddr, "write") {
+		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
+	// Check if blob already exists
+	exists, err := s.storage.HasBlob(sha256Hash)
+	if err != nil {
+		log.E.F("error checking blob existence: %v", err)
+		s.setErrorResponse(w, http.StatusInternalServerError, "internal server error")
+		return
 	}
 
 	if len(pubkey) == 0 {
@@ -533,14 +534,9 @@ func (s *Server) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 
 // handleMirror handles PUT /mirror requests (BUD-04)
 func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
-	// Check ACL
+	// Get initial pubkey from request (may be updated by auth validation)
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-
-	if !s.checkACL(pubkey, remoteAddr, "write") {
-		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
-		return
-	}
 
 	// Read request body (JSON with URL)
 	var req struct {
@@ -596,7 +592,7 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 	sha256Hash := CalculateSHA256(body)
 	sha256Hex := hex.Enc(sha256Hash)
 
-	// Optional authorization validation
+	// Optional authorization validation (do this BEFORE ACL check)
 	if r.Header.Get(AuthorizationHeader) != "" {
 		authEv, err := ValidateAuthEvent(r, "upload", sha256Hash)
 		if err != nil {
@@ -606,6 +602,12 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 		if authEv != nil {
 			pubkey = authEv.Pubkey
 		}
+	}
+
+	// Check ACL (do this AFTER getting pubkey from auth)
+	if !s.checkACL(pubkey, remoteAddr, "write") {
+		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
+		return
 	}
 
 	if len(pubkey) == 0 {
@@ -654,14 +656,9 @@ func (s *Server) handleMirror(w http.ResponseWriter, r *http.Request) {
 
 // handleMediaUpload handles PUT /media requests (BUD-05)
 func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
-	// Check ACL
+	// Get initial pubkey from request (may be updated by auth validation)
 	pubkey, _ := GetPubkeyFromRequest(r)
 	remoteAddr := s.getRemoteAddr(r)
-
-	if !s.checkACL(pubkey, remoteAddr, "write") {
-		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
-		return
-	}
 
 	// Read request body
 	body, err := io.ReadAll(io.LimitReader(r.Body, s.maxBlobSize+1))
@@ -679,7 +676,7 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 	// Calculate SHA256 for authorization validation
 	sha256Hash := CalculateSHA256(body)
 
-	// Optional authorization validation
+	// Optional authorization validation (do this BEFORE ACL check)
 	if r.Header.Get(AuthorizationHeader) != "" {
 		authEv, err := ValidateAuthEvent(r, "media", sha256Hash)
 		if err != nil {
@@ -689,6 +686,12 @@ func (s *Server) handleMediaUpload(w http.ResponseWriter, r *http.Request) {
 		if authEv != nil {
 			pubkey = authEv.Pubkey
 		}
+	}
+
+	// Check ACL (do this AFTER getting pubkey from auth)
+	if !s.checkACL(pubkey, remoteAddr, "write") {
+		s.setErrorResponse(w, http.StatusForbidden, "insufficient permissions")
+		return
 	}
 
 	if len(pubkey) == 0 {

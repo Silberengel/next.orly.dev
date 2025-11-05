@@ -2,6 +2,7 @@ package database
 
 import (
 	"bytes"
+	"context"
 	"sort"
 
 	"github.com/dgraph-io/badger/v4"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	currentVersion uint32 = 2
+	currentVersion uint32 = 3
 )
 
 func (d *D) RunMigrations() {
@@ -55,7 +56,6 @@ func (d *D) RunMigrations() {
 	); chk.E(err) {
 	}
 	if dbVersion == 0 {
-		log.D.F("no version tag found, creating...")
 		// write the version tag now (ensure any old tags are removed first)
 		if err = d.writeVersionTag(currentVersion); chk.E(err) {
 			return
@@ -74,6 +74,13 @@ func (d *D) RunMigrations() {
 		d.UpdateWordIndexes()
 		// bump to version 2
 		_ = d.writeVersionTag(2)
+	}
+	if dbVersion < 3 {
+		log.I.F("migrating to version 3...")
+		// clean up ephemeral events that should never have been stored
+		d.CleanupEphemeralEvents()
+		// bump to version 3
+		_ = d.writeVersionTag(3)
 	}
 }
 
@@ -109,7 +116,6 @@ func (d *D) writeVersionTag(ver uint32) (err error) {
 }
 
 func (d *D) UpdateWordIndexes() {
-	log.T.F("updating word indexes...")
 	var err error
 	var wordIndexes [][]byte
 	// iterate all events and generate word index keys from content and tags
@@ -194,11 +200,9 @@ func (d *D) UpdateWordIndexes() {
 		}
 	}
 	_ = batch.Flush()
-	log.T.F("finished updating word indexes...")
 }
 
 func (d *D) UpdateExpirationTags() {
-	log.T.F("updating expiration tag indexes...")
 	var err error
 	var expIndexes [][]byte
 	// iterate all event records and decode and look for version tags
@@ -269,4 +273,53 @@ func (d *D) UpdateExpirationTags() {
 	if err = batch.Flush(); chk.E(err) {
 		return
 	}
+}
+
+func (d *D) CleanupEphemeralEvents() {
+	log.I.F("cleaning up ephemeral events (kinds 20000-29999)...")
+	var err error
+	var ephemeralEvents [][]byte
+	
+	// iterate all event records and find ephemeral events
+	if err = d.View(
+		func(txn *badger.Txn) (err error) {
+			prf := new(bytes.Buffer)
+			if err = indexes.EventEnc(nil).MarshalWrite(prf); chk.E(err) {
+				return
+			}
+			it := txn.NewIterator(badger.IteratorOptions{Prefix: prf.Bytes()})
+			defer it.Close()
+			for it.Rewind(); it.Valid(); it.Next() {
+				item := it.Item()
+				var val []byte
+				if val, err = item.ValueCopy(nil); chk.E(err) {
+					continue
+				}
+				// decode the event
+				ev := new(event.E)
+				if err = ev.UnmarshalBinary(bytes.NewBuffer(val)); chk.E(err) {
+					continue
+				}
+				// check if it's an ephemeral event (kinds 20000-29999)
+				if ev.Kind >= 20000 && ev.Kind <= 29999 {
+					ephemeralEvents = append(ephemeralEvents, ev.ID)
+				}
+			}
+			return
+		},
+	); chk.E(err) {
+		return
+	}
+	
+	// delete all found ephemeral events
+	deletedCount := 0
+	for _, eventId := range ephemeralEvents {
+		if err = d.DeleteEvent(context.Background(), eventId); chk.E(err) {
+			log.W.F("failed to delete ephemeral event %x: %v", eventId, err)
+			continue
+		}
+		deletedCount++
+	}
+	
+	log.I.F("cleaned up %d ephemeral events from database", deletedCount)
 }

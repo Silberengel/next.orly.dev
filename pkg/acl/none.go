@@ -1,7 +1,6 @@
 package acl
 
 import (
-	"lol.mleku.dev/log"
 	"next.orly.dev/app/config"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/encoders/event"
@@ -86,6 +85,5 @@ func (n None) CheckPolicy(ev *event.E) (allowed bool, err error) {
 func (n None) Syncer() {}
 
 func init() {
-	log.T.F("registering none ACL")
 	Registry.Register(new(None))
 }

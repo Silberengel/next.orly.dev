@@ -150,11 +150,11 @@ func TestMultipleParameterizedReplaceableEvents(t *testing.T) {
 		t.Fatalf("Failed to query for base event by ID: %v", err)
 	}
 
-	// Verify we get 0 events when querying for the base event by ID
-	// This is correct behavior for parameterized replaceable events - older events are replaced
-	if len(evs) != 0 {
+	// Verify we get 1 event when querying for the base event by ID
+	// Replaced events should still be accessible by their ID
+	if len(evs) != 1 {
 		t.Fatalf(
-			"Expected 0 events when querying for replaced base event by ID, got %d",
+			"Expected 1 event when querying for replaced base event by ID, got %d",
 			len(evs),
 		)
 	}

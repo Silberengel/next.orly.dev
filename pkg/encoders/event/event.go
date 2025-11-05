@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/minio/sha256-simd"
 	"github.com/templexxx/xhex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/ints"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
@@ -399,7 +398,7 @@ eof:
 //
 // Call ev.Free() to return the provided buffer to the bufpool afterwards.
 func (ev *E) UnmarshalJSON(b []byte) (err error) {
-	log.I.F("UnmarshalJSON: '%s'", b)
+	// log.I.F("UnmarshalJSON: '%s'", b)
 	_, err = ev.Unmarshal(b)
 	return
 }

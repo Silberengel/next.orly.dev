@@ -139,7 +139,9 @@ func ValidateAuthEvent(
 	}
 
 	eventVerb := string(tTags[0].Value())
-	if eventVerb != verb {
+	// If verb is non-empty, verify it matches the event verb
+	// Empty verb means "don't check the verb" (used by GetPubkeyFromRequest)
+	if verb != "" && eventVerb != verb {
 		err = errorf.E(
 			"authorization event verb '%s' does not match required verb '%s'",
 			eventVerb, verb,

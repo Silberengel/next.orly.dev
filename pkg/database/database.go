@@ -12,7 +12,6 @@ import (
 	"github.com/dgraph-io/badger/v4/options"
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/utils/apputil"
 	"next.orly.dev/pkg/utils/units"
 )
@@ -83,7 +82,6 @@ func New(
 	if d.DB, err = badger.Open(opts); chk.E(err) {
 		return
 	}
-	log.T.Ln("getting event sequence lease", d.dataDir)
 	if d.seq, err = d.DB.GetSequence([]byte("EVENTS"), 1000); chk.E(err) {
 		return
 	}
@@ -142,7 +140,6 @@ func (d *D) Sync() (err error) {
 
 // Close releases resources and closes the database.
 func (d *D) Close() (err error) {
-	log.D.F("%s: closing database", d.dataDir)
 	if d.seq != nil {
 		if err = d.seq.Release(); chk.E(err) {
 			return
@@ -153,6 +150,5 @@ func (d *D) Close() (err error) {
 			return
 		}
 	}
-	log.I.F("%s: database closed", d.dataDir)
 	return
 }

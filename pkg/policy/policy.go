@@ -296,6 +296,10 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 				log.W.F("policy script check failed for kind %d: %v, applying other criteria", ev.Kind, err)
 			}
 			// Script doesn't exist or failed, fall through to apply other criteria
+		} else {
+			// Policy manager is disabled, fall back to default policy
+			log.D.F("policy manager is disabled for kind %d, falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
+			return p.getDefaultPolicyAction(), nil
 		}
 	}
 

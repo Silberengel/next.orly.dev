@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 	"unicode"
 
@@ -137,19 +138,22 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 
 	// Handle any processing errors
 	if err != nil {
-		log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
-		// Don't log message preview as it may contain binary data
+		// Don't log context cancellation errors as they're expected during shutdown
+		if !strings.Contains(err.Error(), "context canceled") {
+			log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
+			// Don't log message preview as it may contain binary data
 
-		// Send error notice to client (use generic message to avoid control chars in errors)
-		noticeMsg := fmt.Sprintf("%s processing failed", t)
-		if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
-			log.E.F(
-				"%s failed to send error notice after %s processing failure: %v",
-				remote, t, noticeErr,
-			)
-			return
+			// Send error notice to client (use generic message to avoid control chars in errors)
+			noticeMsg := fmt.Sprintf("%s processing failed", t)
+			if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
+				log.E.F(
+					"%s failed to send error notice after %s processing failure: %v",
+					remote, t, noticeErr,
+				)
+				return
+			}
+			log.T.F("%s sent error notice for %s processing failure", remote, t)
 		}
-		log.T.F("%s sent error notice for %s processing failure", remote, t)
 	} else {
 		log.T.F("%s message processing SUCCESS (type=%s)", remote, t)
 	}

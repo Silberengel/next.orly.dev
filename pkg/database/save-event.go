@@ -111,6 +111,13 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 		err = errors.New("nil event")
 		return
 	}
+	
+	// Reject ephemeral events (kinds 20000-29999) - they should never be stored
+	if ev.Kind >= 20000 && ev.Kind <= 29999 {
+		err = errors.New("blocked: ephemeral events should not be stored")
+		return
+	}
+	
 	// check if the event already exists
 	var ser *types.Uint40
 	if ser, err = d.GetSerialById(ev.ID); err == nil && ser != nil {
@@ -202,5 +209,17 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 			return
 		},
 	)
+	if err != nil {
+		return
+	}
+	
+	// Process deletion events to actually delete the referenced events
+	if ev.Kind == kind.Deletion.K {
+		if err = d.ProcessDelete(ev, nil); chk.E(err) {
+			log.W.F("failed to process deletion for event %x: %v", ev.ID, err)
+			// Don't return error - the deletion event was saved successfully
+			err = nil
+		}
+	}
 	return
 }

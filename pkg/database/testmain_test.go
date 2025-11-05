@@ -1,0 +1,34 @@
+package database
+
+import (
+	"io"
+	"os"
+	"testing"
+
+	"lol.mleku.dev"
+	"lol.mleku.dev/log"
+)
+
+func TestMain(m *testing.M) {
+	// Disable all logging during tests unless explicitly enabled
+	if os.Getenv("TEST_LOG") == "" {
+		// Set log level to Off to suppress all logs
+		lol.SetLogLevel("off")
+		// Also redirect output to discard
+		lol.Writer = io.Discard
+		// Disable all log printers
+		log.T = lol.GetNullPrinter()
+		log.D = lol.GetNullPrinter()
+		log.I = lol.GetNullPrinter()
+		log.W = lol.GetNullPrinter()
+		log.E = lol.GetNullPrinter()
+		log.F = lol.GetNullPrinter()
+		
+		// Also suppress badger logs
+		os.Setenv("BADGER_LOG_LEVEL", "CRITICAL")
+	}
+
+	// Run tests
+	os.Exit(m.Run())
+}
+

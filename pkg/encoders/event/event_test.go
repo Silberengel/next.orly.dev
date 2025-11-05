@@ -76,8 +76,8 @@ func TestExamplesCache(t *testing.T) {
 		c := bufpool.Get()
 		c = c[:0]
 		c = append(c, b...)
-		log.I.F("c: %s", c)
-		log.I.F("b: %s", b)
+		// log.I.F("c: %s", c)
+		// log.I.F("b: %s", b)
 		ev := New()
 		if _, err = ev.Unmarshal(c); chk.E(err) {
 			t.Fatal(err)

@@ -36,15 +36,16 @@ func testSetup(t *testing.T) (*Server, func()) {
 		t.Fatalf("Failed to create database: %v", err)
 	}
 
-	// Create ACL registry
+	// Create ACL registry and set to "none" mode for tests
 	aclRegistry := acl.Registry
+	aclRegistry.Active.Store("none") // Allow all access for tests
 
 	// Create server
 	cfg := &Config{
-		BaseURL:         "http://localhost:8080",
-		MaxBlobSize:     100 * 1024 * 1024, // 100MB
+		BaseURL:          "http://localhost:8080",
+		MaxBlobSize:      100 * 1024 * 1024, // 100MB
 		AllowedMimeTypes: nil,
-		RequireAuth:     false,
+		RequireAuth:      false,
 	}
 
 	server := NewServer(db, aclRegistry, cfg)

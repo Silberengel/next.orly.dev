@@ -88,6 +88,13 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Building release binaries for version $VERSION (pure Go + purego)"
 
+          # Copy libsecp256k1.so for Linux (runtime optional, for performance)
+          if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then
+            cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
+          elif [ -f /usr/local/lib/libsecp256k1.so.2 ]; then
+            cp /usr/local/lib/libsecp256k1.so.2 release-binaries/libsecp256k1-linux-amd64.so
+          fi
+
           # Create directory for binaries
           mkdir -p release-binaries
 
@@ -96,31 +103,24 @@ jobs:
           GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
             go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
           
-          # Copy libsecp256k1.so for Linux (runtime optional, for performance)
-          if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then
-            cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
-          elif [ -f /usr/local/lib/libsecp256k1.so.2 ]; then
-            cp /usr/local/lib/libsecp256k1.so.2 release-binaries/libsecp256k1-linux-amd64.so
-          fi
-
-          # Build for Linux ARM64 (pure Go with purego)
-          echo "Building Linux ARM64 (pure Go + purego)..."
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
-            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-arm64 .
+          # # Build for Linux ARM64 (pure Go with purego)
+          # echo "Building Linux ARM64 (pure Go + purego)..."
+          # GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+          #   go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-arm64 .
           
-          # Build for macOS (pure Go with purego)
-          echo "Building macOS AMD64 (pure Go + purego)..."
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
-            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-amd64 .
+          # # Build for macOS (pure Go with purego)
+          # echo "Building macOS AMD64 (pure Go + purego)..."
+          # GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 \
+          #   go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-amd64 .
           
-          echo "Building macOS ARM64 (pure Go + purego)..."
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-arm64 .
+          # echo "Building macOS ARM64 (pure Go + purego)..."
+          # GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
+          #   go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-darwin-arm64 .
 
-          # Build for Windows (pure Go with purego)
-          echo "Building Windows AMD64 (pure Go + purego)..."
-          GOEXPERIMENT=greenteagc,jsonv2 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
-            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-windows-amd64.exe .
+          # # Build for Windows (pure Go with purego)
+          # echo "Building Windows AMD64 (pure Go + purego)..."
+          # GOEXPERIMENT=greenteagc,jsonv2 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+          #   go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-windows-amd64.exe .
 
           # Note: Only building orly binary as requested
           # Other cmd utilities (aggregator, benchmark, convert, policytest, stresstest) are development tools

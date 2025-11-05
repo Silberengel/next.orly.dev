@@ -964,6 +964,5 @@ func (f *Follows) AddFollow(pub []byte) {
 }
 
 func init() {
-	log.T.F("registering follows ACL")
 	Registry.Register(new(Follows))
 }

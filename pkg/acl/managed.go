@@ -235,6 +235,5 @@ func (m *Managed) GetManagedACL() *database.ManagedACL {
 }
 
 func init() {
-	log.T.F("registering managed ACL")
 	Registry.Register(new(Managed))
 }

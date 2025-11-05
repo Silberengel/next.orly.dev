@@ -533,20 +533,24 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				)
 			},
 		)
-		log.T.C(
-			func() string {
-				return fmt.Sprintf("event:\n%s\n", ev.Serialize())
-			},
-		)
-		var res *eventenvelope.Result
-		if res, err = eventenvelope.NewResultWith(
-			env.Subscription, ev,
-		); chk.E(err) {
-			return
+	log.T.C(
+		func() string {
+			return fmt.Sprintf("event:\n%s\n", ev.Serialize())
+		},
+	)
+	var res *eventenvelope.Result
+	if res, err = eventenvelope.NewResultWith(
+		env.Subscription, ev,
+	); chk.E(err) {
+		return
+	}
+	if err = res.Write(l); err != nil {
+		// Don't log context canceled errors as they're expected during shutdown
+		if !strings.Contains(err.Error(), "context canceled") {
+			chk.E(err)
 		}
-		if err = res.Write(l); chk.E(err) {
-			return
-		}
+		return
+	}
 		// track the IDs we've sent (use hex encoding for stable key)
 		seen[hexenc.Enc(ev.ID)] = struct{}{}
 	}
