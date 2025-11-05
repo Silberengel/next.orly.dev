@@ -23,7 +23,7 @@ func int64Ptr(i int64) *int64 {
 
 // Helper function to generate a keypair for testing
 func generateTestKeypair(t *testing.T) (signer *p8k.Signer, pubkey []byte) {
-	signer = p8k.New()
+	signer = p8k.MustNew()
 	if err := signer.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate test keypair: %v", err)
 	}
@@ -33,7 +33,7 @@ func generateTestKeypair(t *testing.T) (signer *p8k.Signer, pubkey []byte) {
 
 // Helper function to generate a keypair for benchmarks
 func generateTestKeypairB(b *testing.B) (signer *p8k.Signer, pubkey []byte) {
-	signer = p8k.New()
+	signer = p8k.MustNew()
 	if err := signer.Generate(); chk.E(err) {
 		b.Fatalf("Failed to generate test keypair: %v", err)
 	}

@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 // TestPolicyIntegration runs the relay with policy enabled and tests event filtering
@@ -23,13 +23,13 @@ func TestPolicyIntegration(t *testing.T) {
 	}
 
 	// Generate test keys
-	allowedSigner := p8k.New()
+	allowedSigner := p8k.MustNew()
 	if err := allowedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate allowed signer: %v", err)
 	}
 	allowedPubkeyHex := hex.Enc(allowedSigner.Pub())
 
-	unauthorizedSigner := p8k.New()
+	unauthorizedSigner := p8k.MustNew()
 	if err := unauthorizedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate unauthorized signer: %v", err)
 	}
@@ -367,13 +367,13 @@ func TestPolicyWithRelay(t *testing.T) {
 	}
 
 	// Generate keys
-	allowedSigner := p8k.New()
+	allowedSigner := p8k.MustNew()
 	if err := allowedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate allowed signer: %v", err)
 	}
 	allowedPubkeyHex := hex.Enc(allowedSigner.Pub())
 
-	unauthorizedSigner := p8k.New()
+	unauthorizedSigner := p8k.MustNew()
 	if err := unauthorizedSigner.Generate(); chk.E(err) {
 		t.Fatalf("Failed to generate unauthorized signer: %v", err)
 	}
@@ -513,4 +513,3 @@ func TestPolicyWithRelay(t *testing.T) {
 		})
 	}
 }
-

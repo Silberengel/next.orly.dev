@@ -76,6 +76,12 @@ whitelist:
 	// Set initial read deadline - pong handler will extend it when pongs are received
 	conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
 	
+	// Add pong handler to extend read deadline when client responds to pings
+	conn.SetPongHandler(func(string) error {
+		log.T.F("received PONG from %s, extending read deadline", remote)
+		return conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
+	})
+	
 	defer conn.Close()
 	listener := &Listener{
 		ctx:            ctx,
@@ -231,6 +237,10 @@ func (s *Server) Pinger(
 	defer func() {
 		log.D.F("pinger shutting down")
 		ticker.Stop()
+		// Recover from panic if channel is closed
+		if r := recover(); r != nil {
+			log.D.F("pinger recovered from panic (channel likely closed): %v", r)
+		}
 	}()
 	pingCount := 0
 	for {

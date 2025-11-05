@@ -52,15 +52,18 @@ func (s *Signer) Generate() (err error) {
 		return
 	}
 	
-	// Extract x-only public key
+	// Extract x-only public key (internal 64-byte format)
 	var xonly secp.XOnlyPublicKey
 	var parity int32
 	if xonly, parity, err = s.ctx.KeypairXOnlyPub(s.keypair); err != nil {
 		return
 	}
 	_ = parity
-	// XOnlyPublicKey is [64]byte, but we only need the first 32 bytes (the x coordinate)
-	s.pubKey = xonly[:32]
+	
+	// Serialize the x-only public key to 32 bytes
+	if s.pubKey, err = s.ctx.SerializeXOnlyPublicKey(xonly[:]); err != nil {
+		return
+	}
 	return
 }
 
@@ -79,15 +82,18 @@ func (s *Signer) InitSec(sec []byte) (err error) {
 		return
 	}
 	
-	// Extract x-only public key
+	// Extract x-only public key (internal 64-byte format)
 	var xonly secp.XOnlyPublicKey
 	var parity int32
 	if xonly, parity, err = s.ctx.KeypairXOnlyPub(s.keypair); err != nil {
 		return
 	}
 	_ = parity
-	// XOnlyPublicKey is [64]byte, but we only need the first 32 bytes (the x coordinate)
-	s.pubKey = xonly[:32]
+	
+	// Serialize the x-only public key to 32 bytes
+	if s.pubKey, err = s.ctx.SerializeXOnlyPublicKey(xonly[:]); err != nil {
+		return
+	}
 	return
 }
 
