@@ -181,8 +181,9 @@ func (m *MockWalletService) processRequestEvent(ev *event.E) (err error) {
 	if existingKey, exists := m.connectedClients[clientPubkeyHex]; exists {
 		conversationKey = existingKey
 	} else {
-		if conversationKey, err = encryption.GenerateConversationKeyWithSigner(
-			m.walletSecretKey, clientPubkey,
+		// Generate conversation key using the wallet's secret key and client's public key
+		if conversationKey, err = encryption.GenerateConversationKey(
+			m.walletSecretKey.Sec(), clientPubkey,
 		); chk.E(err) {
 			m.clientsMutex.Unlock()
 			return
@@ -192,15 +193,15 @@ func (m *MockWalletService) processRequestEvent(ev *event.E) (err error) {
 	m.clientsMutex.Unlock()
 
 	// Decrypt request content
-	var decrypted []byte
+	var decrypted string
 	if decrypted, err = encryption.Decrypt(
-		ev.Content, conversationKey,
+		conversationKey, string(ev.Content),
 	); chk.E(err) {
 		return
 	}
 
 	var request map[string]any
-	if err = json.Unmarshal(decrypted, &request); chk.E(err) {
+	if err = json.Unmarshal([]byte(decrypted), &request); chk.E(err) {
 		return
 	}
 
@@ -394,15 +395,15 @@ func (m *MockWalletService) sendErrorResponse(
 func (m *MockWalletService) sendEncryptedResponse(
 	clientPubkey []byte, conversationKey []byte, content []byte,
 ) (err error) {
-	var encrypted []byte
+	var encrypted string
 	if encrypted, err = encryption.Encrypt(
-		content, conversationKey,
+		conversationKey, content, nil,
 	); chk.E(err) {
 		return
 	}
 
 	ev := &event.E{
-		Content:   encrypted,
+		Content:   []byte(encrypted),
 		CreatedAt: time.Now().Unix(),
 		Kind:      23195,
 		Tags: tag.NewS(
@@ -442,15 +443,15 @@ func (m *MockWalletService) emitPaymentNotification(
 			continue
 		}
 
-		var encrypted []byte
+		var encrypted string
 		if encrypted, err = encryption.Encrypt(
-			content, conversationKey,
+			conversationKey, content, nil,
 		); chk.E(err) {
 			continue
 		}
 
 		ev := &event.E{
-			Content:   encrypted,
+			Content:   []byte(encrypted),
 			CreatedAt: time.Now().Unix(),
 			Kind:      23197,
 			Tags: tag.NewS(

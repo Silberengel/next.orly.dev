@@ -75,8 +75,8 @@ func ParseConnectionURI(nwcUri string) (parts *ConnectionParams, err error) {
 		return
 	}
 	parts.clientSecretKey = clientKey
-	if parts.conversationKey, err = encryption.GenerateConversationKeyWithSigner(
-		clientKey,
+	if parts.conversationKey, err = encryption.GenerateConversationKey(
+		clientKey.Sec(),
 		parts.walletPublicKey,
 	); chk.E(err) {
 		return

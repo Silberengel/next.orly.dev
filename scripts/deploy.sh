@@ -48,6 +48,39 @@ check_root() {
     fi
 }
 
+# Check if bun is installed
+check_bun_installation() {
+    if command -v bun >/dev/null 2>&1; then
+        local installed_version=$(bun --version)
+        log_success "Bun $installed_version is already installed"
+        return 0
+    else
+        log_info "Bun is not installed"
+        return 1
+    fi
+}
+
+# Install bun
+install_bun() {
+    log_info "Installing Bun..."
+    
+    # Install bun using official installer
+    curl -fsSL https://bun.com/install | bash
+    
+    # Source bashrc to pick up bun in current session
+    if [[ -f "$HOME/.bashrc" ]]; then
+        source "$HOME/.bashrc"
+    fi
+    
+    # Verify installation
+    if command -v bun >/dev/null 2>&1; then
+        log_success "Bun installed successfully"
+    else
+        log_error "Failed to install Bun"
+        exit 1
+    fi
+}
+
 # Check if Go is installed and get version
 check_go_installation() {
     if command -v go >/dev/null 2>&1; then
@@ -86,6 +119,14 @@ install_go() {
     local go_archive="go${GO_VERSION}.linux-${arch}.tar.gz"
     local download_url="https://golang.org/dl/${go_archive}"
     
+    # Remove existing installation if present (before download to save space/time)
+    if [[ -d "$GOROOT" ]]; then
+        log_info "Removing existing Go installation..."
+        # Make it writable in case it's read-only
+        chmod -R u+w "$GOROOT" 2>/dev/null || true
+        rm -rf "$GOROOT"
+    fi
+    
     # Create directories
     mkdir -p "$GOBIN"
     
@@ -96,12 +137,6 @@ install_go() {
         log_error "Failed to download Go"
         exit 1
     }
-    
-    # Remove existing installation if present
-    if [[ -d "$GOROOT" ]]; then
-        log_info "Removing existing Go installation..."
-        rm -rf "$GOROOT"
-    fi
     
     # Extract Go to a temporary location first, then move to final destination
     log_info "Extracting Go..."
@@ -272,6 +307,11 @@ main() {
         exit 1
     fi
 
+    # Check and install Bun if needed
+    if ! check_bun_installation; then
+        install_bun
+    fi
+
     # Check and install Go if needed
     if ! check_go_installation; then
         install_go
@@ -324,13 +364,14 @@ case "${1:-}" in
         echo "  --help, -h   Show this help message"
         echo ""
         echo "This script will:"
-        echo "  1. Install Go $GO_VERSION if not present"
-        echo "  2. Set up Go environment in ~/.goenv"
-        echo "  3. Install build dependencies (requires sudo)"
-        echo "  4. Build the ORLY relay"
-        echo "  5. Set capabilities for port 443 binding"
-        echo "  6. Install the binary to ~/.local/bin"
-        echo "  7. Create and enable systemd service"
+        echo "  1. Install Bun if not present"
+        echo "  2. Install Go $GO_VERSION if not present"
+        echo "  3. Set up Go environment in ~/.goenv"
+        echo "  4. Install build dependencies (requires sudo)"
+        echo "  5. Build the ORLY relay"
+        echo "  6. Set capabilities for port 443 binding"
+        echo "  7. Install the binary to ~/.local/bin"
+        echo "  8. Create and enable systemd service"
         echo ""
         echo "Examples:"
         echo "  $0              # Deploy with default port 3334"

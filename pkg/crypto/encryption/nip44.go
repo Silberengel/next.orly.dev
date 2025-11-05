@@ -1,283 +1,280 @@
 package encryption
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 
-	"github.com/minio/sha256-simd"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/hkdf"
-	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/interfaces/signer"
-	"next.orly.dev/pkg/interfaces/signer/p8k"
-	"next.orly.dev/pkg/utils"
+	"next.orly.dev/pkg/crypto/ec/secp256k1"
 )
 
-const (
-	version          byte = 2
-	MinPlaintextSize int  = 0x0001 // 1b msg => padded to 32b
-	MaxPlaintextSize int  = 0xffff // 65535 (64kb-1) => padded to 64kb
+var (
+	MinPlaintextSize = 0x0001 // 1b msg => padded to 32b
+	MaxPlaintextSize = 0xffff // 65535 (64kb-1) => padded to 64kb
 )
 
-type Opts struct {
-	err   error
-	nonce []byte
+type EncryptOptions struct {
+	Salt    []byte
+	Version int
 }
 
-// Deprecated: use WithCustomNonce instead of WithCustomSalt, so the naming is less confusing
-var WithCustomSalt = WithCustomNonce
-
-// WithCustomNonce enables using a custom nonce (salt) instead of using the
-// system crypto/rand entropy source.
-func WithCustomNonce(salt []byte) func(opts *Opts) {
-	return func(opts *Opts) {
-		if len(salt) != 32 {
-			opts.err = errorf.E("salt must be 32 bytes, got %d", len(salt))
-		}
-		opts.nonce = salt
+func Encrypt(conversationKey []byte, plaintext []byte, options *EncryptOptions) (ciphertext string, err error) {
+	var (
+		version   int = 2
+		salt      []byte
+		enc       []byte
+		nonce     []byte
+		auth      []byte
+		padded    []byte
+		encrypted []byte
+		hmac_     []byte
+		concat    []byte
+	)
+	if options != nil && options.Version != 0 {
+		version = options.Version
 	}
-}
-
-// Encrypt data using a provided symmetric conversation key using NIP-44
-// encryption (chacha20 cipher stream and sha256 HMAC).
-func Encrypt(
-	plaintext, conversationKey []byte, applyOptions ...func(opts *Opts),
-) (
-	cipherString []byte, err error,
-) {
-
-	var o Opts
-	for _, apply := range applyOptions {
-		apply(&o)
-	}
-	if chk.E(o.err) {
-		err = o.err
-		return
-	}
-	if o.nonce == nil {
-		o.nonce = make([]byte, 32)
-		if _, err = rand.Read(o.nonce); chk.E(err) {
+	if options != nil && options.Salt != nil {
+		salt = options.Salt
+	} else {
+		if salt, err = randomBytes(32); err != nil {
 			return
 		}
 	}
-	var enc, cc20nonce, auth []byte
-	if enc, cc20nonce, auth, err = getKeys(
-		conversationKey, o.nonce,
-	); chk.E(err) {
+	if version != 2 {
+		err = errorf.E("unknown version %d", version)
 		return
 	}
-	plain := plaintext
-	size := len(plain)
-	if size < MinPlaintextSize || size > MaxPlaintextSize {
-		err = errorf.E("plaintext should be between 1b and 64kB")
+	if len(salt) != 32 {
+		err = errorf.E("salt must be 32 bytes")
 		return
 	}
-	padding := CalcPadding(size)
-	padded := make([]byte, 2+padding)
-	binary.BigEndian.PutUint16(padded, uint16(size))
-	copy(padded[2:], plain)
-	var cipher []byte
-	if cipher, err = encrypt(enc, cc20nonce, padded); chk.E(err) {
+	if enc, nonce, auth, err = MessageKeys(conversationKey, salt); err != nil {
 		return
 	}
-	var mac []byte
-	if mac, err = sha256Hmac(auth, cipher, o.nonce); chk.E(err) {
+	if padded, err = pad(plaintext); err != nil {
 		return
 	}
-	// Pre-allocate with exact size to avoid reallocation
-	ctLen := 1 + 32 + len(cipher) + 32
-	ct := make([]byte, ctLen)
-	ct[0] = version
-	copy(ct[1:], o.nonce)
-	copy(ct[33:], cipher)
-	copy(ct[33+len(cipher):], mac)
-	cipherString = make([]byte, base64.StdEncoding.EncodedLen(ctLen))
-	base64.StdEncoding.Encode(cipherString, ct)
+	if encrypted, err = chacha20_(enc, nonce, padded); err != nil {
+		return
+	}
+	if hmac_, err = sha256Hmac(auth, encrypted, salt); err != nil {
+		return
+	}
+	concat = append(concat, []byte{byte(version)}...)
+	concat = append(concat, salt...)
+	concat = append(concat, encrypted...)
+	concat = append(concat, hmac_...)
+	ciphertext = base64.StdEncoding.EncodeToString(concat)
 	return
 }
 
-// Decrypt data that has been encoded using a provided symmetric conversation
-// key using NIP-44 encryption (chacha20 cipher stream and sha256 HMAC).
-func Decrypt(b64ciphertextWrapped, conversationKey []byte) (
-	plaintext []byte,
-	err error,
-) {
-	cLen := len(b64ciphertextWrapped)
+func Decrypt(conversationKey []byte, ciphertext string) (plaintext string, err error) {
+	var (
+		version     int = 2
+		decoded     []byte
+		cLen        int
+		dLen        int
+		salt        []byte
+		ciphertext_ []byte
+		hmac        []byte
+		hmac_       []byte
+		enc         []byte
+		nonce       []byte
+		auth        []byte
+		padded      []byte
+		unpaddedLen uint16
+		unpadded    []byte
+	)
+	cLen = len(ciphertext)
 	if cLen < 132 || cLen > 87472 {
 		err = errorf.E("invalid payload length: %d", cLen)
 		return
 	}
-	if len(b64ciphertextWrapped) > 0 && b64ciphertextWrapped[0] == '#' {
+	if ciphertext[0:1] == "#" {
 		err = errorf.E("unknown version")
 		return
 	}
-	// Pre-allocate decoded buffer to avoid string conversion overhead
-	decodedLen := base64.StdEncoding.DecodedLen(len(b64ciphertextWrapped))
-	decoded := make([]byte, decodedLen)
-	var n int
-	if n, err = base64.StdEncoding.Decode(decoded, b64ciphertextWrapped); chk.E(err) {
+	if decoded, err = base64.StdEncoding.DecodeString(ciphertext); err != nil {
+		err = errorf.E("invalid base64")
 		return
 	}
-	decoded = decoded[:n]
-	if decoded[0] != version {
-		err = errorf.E("unknown version %d", decoded[0])
+	if version = int(decoded[0]); version != 2 {
+		err = errorf.E("unknown version %d", version)
 		return
 	}
-	dLen := len(decoded)
+	dLen = len(decoded)
 	if dLen < 99 || dLen > 65603 {
 		err = errorf.E("invalid data length: %d", dLen)
 		return
 	}
-	nonce, ciphertext, givenMac := decoded[1:33], decoded[33:dLen-32], decoded[dLen-32:]
-	var enc, cc20nonce, auth []byte
-	if enc, cc20nonce, auth, err = getKeys(conversationKey, nonce); chk.E(err) {
+	salt, ciphertext_, hmac_ = decoded[1:33], decoded[33:dLen-32], decoded[dLen-32:]
+	if enc, nonce, auth, err = MessageKeys(conversationKey, salt); err != nil {
 		return
 	}
-	var expectedMac []byte
-	if expectedMac, err = sha256Hmac(auth, ciphertext, nonce); chk.E(err) {
+	if hmac, err = sha256Hmac(auth, ciphertext_, salt); err != nil {
 		return
 	}
-	if !utils.FastEqual(givenMac, expectedMac) {
+	if !bytes.Equal(hmac_, hmac) {
 		err = errorf.E("invalid hmac")
 		return
 	}
-	var padded []byte
-	if padded, err = encrypt(enc, cc20nonce, ciphertext); chk.E(err) {
+	if padded, err = chacha20_(enc, nonce, ciphertext_); err != nil {
 		return
 	}
-	unpaddedLen := binary.BigEndian.Uint16(padded[0:2])
-	if unpaddedLen < uint16(MinPlaintextSize) || unpaddedLen > uint16(MaxPlaintextSize) ||
-		len(padded) != 2+CalcPadding(int(unpaddedLen)) {
+	unpaddedLen = binary.BigEndian.Uint16(padded[0:2])
+	if unpaddedLen < uint16(MinPlaintextSize) || unpaddedLen > uint16(MaxPlaintextSize) || len(padded) != 2+calcPadding(int(unpaddedLen)) {
 		err = errorf.E("invalid padding")
 		return
 	}
-	unpadded := padded[2:][:unpaddedLen]
+	unpadded = padded[2 : unpaddedLen+2]
 	if len(unpadded) == 0 || len(unpadded) != int(unpaddedLen) {
 		err = errorf.E("invalid padding")
 		return
 	}
-	plaintext = unpadded
+	plaintext = string(unpadded)
 	return
 }
 
-// GenerateConversationKeyFromHex performs an ECDH key generation hashed with the nip-44-v2 using hkdf.
-// Parameters match NIP-44 spec: sender's private key first, then recipient's public key.
-// The public key can be either:
-// - 32 bytes (x-coordinate only, 64 hex characters)
-// - 33 bytes (compressed format with 0x02/0x03 prefix, 66 hex characters)
-func GenerateConversationKeyFromHex(skh, pkh string) (ck []byte, err error) {
-	if skh >= "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141" ||
-		skh == "0000000000000000000000000000000000000000000000000000000000000000" {
-		err = errorf.E(
-			"invalid private key: x coordinate %s is not on the secp256k1 curve",
-			skh,
-		)
+func GenerateConversationKey(sendPrivkey []byte, recvPubkey []byte) (conversationKey []byte, err error) {
+	// Parse the private key
+	var privKey secp256k1.SecretKey
+	if overflow := privKey.Key.SetByteSlice(sendPrivkey); overflow {
+		err = errorf.E("invalid private key: x coordinate %x is not on the secp256k1 curve", sendPrivkey)
 		return
 	}
-	var sign *p8k.Signer
-	if sign, err = p8k.New(); chk.E(err) {
+
+	// Check if private key is zero
+	if privKey.Key.IsZero() {
+		err = errorf.E("invalid private key: x coordinate %x is not on the secp256k1 curve", sendPrivkey)
 		return
 	}
-	var sk []byte
-	if sk, err = hex.Dec(skh); chk.E(err) {
+
+	// Parse the public key
+	// If it's 32 bytes, prepend format byte for compressed format (0x02 for even y)
+	// If it's already 33 bytes, use as-is
+	var pubKeyBytes []byte
+	if len(recvPubkey) == 32 {
+		// Nostr-style 32-byte public key - prepend compressed format byte
+		pubKeyBytes = make([]byte, 33)
+		pubKeyBytes[0] = secp256k1.PubKeyFormatCompressedEven
+		copy(pubKeyBytes[1:], recvPubkey)
+	} else if len(recvPubkey) == 33 {
+		// Already in compressed format
+		pubKeyBytes = recvPubkey
+	} else {
+		err = errorf.E("invalid public key length: %d (expected 32 or 33 bytes)", len(recvPubkey))
 		return
 	}
-	if err = sign.InitSec(sk); chk.E(err) {
+
+	pubKey, err := secp256k1.ParsePubKey(pubKeyBytes)
+	if err != nil {
 		return
 	}
-	var pk []byte
-	if pk, err = hex.Dec(pkh); chk.E(err) {
-		return
-	}
-	// pk can be 32 bytes (x-coordinate) or 33 bytes (compressed)
-	if len(pk) != 32 && len(pk) != 33 {
-		err = errorf.E("public key must be 32 bytes (x-coordinate) or 33 bytes (compressed format), got %d bytes", len(pk))
-		return
-	}
-	var shared []byte
-	if shared, err = sign.ECDHRaw(pk); chk.E(err) {
-		return
-	}
-	ck = hkdf.Extract(sha256.New, shared, []byte("nip44-v2"))
+
+	// Compute ECDH shared secret (returns only x-coordinate, 32 bytes)
+	shared := secp256k1.GenerateSharedSecret(&privKey, pubKey)
+
+	// Apply HKDF-Extract with salt "nip44-v2"
+	conversationKey = hkdf.Extract(sha256.New, shared, []byte("nip44-v2"))
 	return
 }
 
-func GenerateConversationKeyWithSigner(sign signer.I, pk []byte) (
-	ck []byte, err error,
-) {
-	var shared []byte
-	if shared, err = sign.ECDHRaw(pk); chk.E(err) {
-		return
+func chacha20_(key []byte, nonce []byte, message []byte) ([]byte, error) {
+	var (
+		cipher *chacha20.Cipher
+		dst    = make([]byte, len(message))
+		err    error
+	)
+	if cipher, err = chacha20.NewUnauthenticatedCipher(key, nonce); err != nil {
+		return nil, err
 	}
-	ck = hkdf.Extract(sha256.New, shared, []byte("nip44-v2"))
-	return
-}
-
-func encrypt(key, nonce, message []byte) (dst []byte, err error) {
-	var cipher *chacha20.Cipher
-	if cipher, err = chacha20.NewUnauthenticatedCipher(key, nonce); chk.E(err) {
-		return
-	}
-	dst = make([]byte, len(message))
 	cipher.XORKeyStream(dst, message)
-	return
+	return dst, nil
 }
 
-func sha256Hmac(key, ciphertext, nonce []byte) (h []byte, err error) {
-	if len(nonce) != sha256.Size {
-		err = errorf.E("nonce aad must be 32 bytes")
-		return
+func randomBytes(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, err
 	}
-	hm := hmac.New(sha256.New, key)
-	hm.Write(nonce)
-	hm.Write(ciphertext)
-	h = hm.Sum(nil)
-	return
+	return buf, nil
 }
 
-func getKeys(conversationKey, nonce []byte) (
-	enc, cc20nonce, auth []byte, err error,
-) {
+func sha256Hmac(key []byte, ciphertext []byte, aad []byte) ([]byte, error) {
+	if len(aad) != 32 {
+		return nil, errors.New("aad data must be 32 bytes")
+	}
+	h := hmac.New(sha256.New, key)
+	h.Write(aad)
+	h.Write(ciphertext)
+	return h.Sum(nil), nil
+}
+
+func MessageKeys(conversationKey []byte, salt []byte) ([]byte, []byte, []byte, error) {
+	var (
+		r     io.Reader
+		enc   []byte = make([]byte, 32)
+		nonce []byte = make([]byte, 12)
+		auth  []byte = make([]byte, 32)
+		err   error
+	)
 	if len(conversationKey) != 32 {
-		err = errorf.E("conversation key must be 32 bytes")
-		return
+		return nil, nil, nil, errors.New("conversation key must be 32 bytes")
 	}
-	if len(nonce) != 32 {
-		err = errorf.E("nonce must be 32 bytes")
-		return
+	if len(salt) != 32 {
+		return nil, nil, nil, errors.New("salt must be 32 bytes")
 	}
-	r := hkdf.Expand(sha256.New, conversationKey, nonce)
-	enc = make([]byte, 32)
-	if _, err = io.ReadFull(r, enc); chk.E(err) {
-		return
+	r = hkdf.Expand(sha256.New, conversationKey, salt)
+	if _, err = io.ReadFull(r, enc); err != nil {
+		return nil, nil, nil, err
 	}
-	cc20nonce = make([]byte, 12)
-	if _, err = io.ReadFull(r, cc20nonce); chk.E(err) {
-		return
+	if _, err = io.ReadFull(r, nonce); err != nil {
+		return nil, nil, nil, err
 	}
-	auth = make([]byte, 32)
-	if _, err = io.ReadFull(r, auth); chk.E(err) {
-		return
+	if _, err = io.ReadFull(r, auth); err != nil {
+		return nil, nil, nil, err
 	}
-	return
+	return enc, nonce, auth, nil
 }
 
-// CalcPadding creates padding for the message payload that is precisely a power
-// of two in order to reduce the chances of plaintext attack. This is plainly
-// retarded because it could blow out the message size a lot when just a random few
-// dozen bytes and a length prefix would achieve the same result.
-func CalcPadding(sLen int) (l int) {
+func pad(s []byte) ([]byte, error) {
+	var (
+		sb      []byte
+		sbLen   int
+		padding int
+		result  []byte
+	)
+	sb = s
+	sbLen = len(sb)
+	if sbLen < 1 || sbLen > MaxPlaintextSize {
+		return nil, errors.New("plaintext should be between 1b and 64kB")
+	}
+	padding = calcPadding(sbLen)
+	result = make([]byte, 2)
+	binary.BigEndian.PutUint16(result, uint16(sbLen))
+	result = append(result, sb...)
+	result = append(result, make([]byte, padding-sbLen)...)
+	return result, nil
+}
+
+func calcPadding(sLen int) int {
+	var (
+		nextPower int
+		chunk     int
+	)
 	if sLen <= 32 {
 		return 32
 	}
-	nextPower := 1 << int(math.Floor(math.Log2(float64(sLen-1)))+1)
-	chunk := int(math.Max(32, float64(nextPower/8)))
-	l = chunk * int(math.Floor(float64((sLen-1)/chunk))+1)
-	return
+	nextPower = 1 << int(math.Floor(math.Log2(float64(sLen-1)))+1)
+	chunk = int(math.Max(32, float64(nextPower/8)))
+	return chunk * int(math.Floor(float64((sLen-1)/chunk))+1)
 }

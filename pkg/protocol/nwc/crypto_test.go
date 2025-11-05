@@ -70,7 +70,7 @@ func TestNWCEncryptionDecryption(t *testing.T) {
 	testMessage := `{"method":"get_info","params":null}`
 
 	// Test encryption
-	encrypted, err := encryption.Encrypt([]byte(testMessage), convKey)
+	encrypted, err := encryption.Encrypt(convKey, []byte(testMessage), nil)
 	if err != nil {
 		t.Fatalf("encryption failed: %v", err)
 	}
@@ -80,14 +80,14 @@ func TestNWCEncryptionDecryption(t *testing.T) {
 	}
 
 	// Test decryption
-	decrypted, err := encryption.Decrypt(encrypted, convKey)
+	decrypted, err := encryption.Decrypt(convKey, encrypted)
 	if err != nil {
 		t.Fatalf("decryption failed: %v", err)
 	}
 
-	if string(decrypted) != testMessage {
+	if decrypted != testMessage {
 		t.Fatalf(
-			"decrypted message mismatch: got %s, want %s", string(decrypted),
+			"decrypted message mismatch: got %s, want %s", decrypted,
 			testMessage,
 		)
 	}
@@ -111,8 +111,8 @@ func TestNWCEventCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	convKey, err := encryption.GenerateConversationKeyWithSigner(
-		clientKey, walletPubkey,
+	convKey, err := encryption.GenerateConversationKey(
+		clientKey.Sec(), walletPubkey,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -124,14 +124,14 @@ func TestNWCEventCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	encrypted, err := encryption.Encrypt(reqBytes, convKey)
+	encrypted, err := encryption.Encrypt(convKey, reqBytes, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Create NWC event
 	ev := &event.E{
-		Content:   encrypted,
+		Content:   []byte(encrypted),
 		CreatedAt: time.Now().Unix(),
 		Kind:      23194,
 		Tags: tag.NewS(
