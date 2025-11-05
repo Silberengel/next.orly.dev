@@ -52,7 +52,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		},
 	)
 	// send a challenge to the client to auth if an ACL is active, auth is required, or AuthToWrite is enabled
-	if acl.Registry.Active.Load() != "none" || l.Config.AuthRequired || l.Config.AuthToWrite {
+	if len(l.authedPubkey.Load()) == 0 && (acl.Registry.Active.Load() != "none" || l.Config.AuthRequired || l.Config.AuthToWrite) {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).
 			Write(l); chk.E(err) {
 			return

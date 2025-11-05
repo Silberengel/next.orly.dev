@@ -9,6 +9,7 @@ import (
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/crypto/ec/schnorr"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/envelopes/countenvelope"
 	"next.orly.dev/pkg/utils/normalize"
@@ -28,7 +29,7 @@ func (l *Listener) HandleCount(msg []byte) (err error) {
 	log.D.C(func() string { return fmt.Sprintf("COUNT sub=%s filters=%d", env.Subscription, len(env.Filters)) })
 
 	// If ACL is active, auth is required, or AuthToWrite is enabled, send a challenge (same as REQ path)
-	if acl.Registry.Active.Load() != "none" || l.Config.AuthRequired || l.Config.AuthToWrite {
+	if len(l.authedPubkey.Load()) != schnorr.PubKeyBytesLen && (acl.Registry.Active.Load() != "none" || l.Config.AuthRequired || l.Config.AuthToWrite) {
 		if err = authenvelope.NewChallengeWith(l.challenge.Load()).Write(l); chk.E(err) {
 			return
 		}
