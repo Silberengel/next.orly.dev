@@ -8,11 +8,11 @@ import (
 	"io"
 	"math"
 
+	"github.com/minio/sha256-simd"
 	"golang.org/x/crypto/chacha20"
 	"golang.org/x/crypto/hkdf"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/interfaces/signer"
 	"next.orly.dev/pkg/interfaces/signer/p8k"
@@ -167,7 +167,11 @@ func Decrypt(b64ciphertextWrapped, conversationKey []byte) (
 }
 
 // GenerateConversationKeyFromHex performs an ECDH key generation hashed with the nip-44-v2 using hkdf.
-func GenerateConversationKeyFromHex(pkh, skh string) (ck []byte, err error) {
+// Parameters match NIP-44 spec: sender's private key first, then recipient's public key.
+// The public key can be either:
+// - 32 bytes (x-coordinate only, 64 hex characters)
+// - 33 bytes (compressed format with 0x02/0x03 prefix, 66 hex characters)
+func GenerateConversationKeyFromHex(skh, pkh string) (ck []byte, err error) {
 	if skh >= "fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141" ||
 		skh == "0000000000000000000000000000000000000000000000000000000000000000" {
 		err = errorf.E(
@@ -189,6 +193,11 @@ func GenerateConversationKeyFromHex(pkh, skh string) (ck []byte, err error) {
 	}
 	var pk []byte
 	if pk, err = hex.Dec(pkh); chk.E(err) {
+		return
+	}
+	// pk can be 32 bytes (x-coordinate) or 33 bytes (compressed)
+	if len(pk) != 32 && len(pk) != 33 {
+		err = errorf.E("public key must be 32 bytes (x-coordinate) or 33 bytes (compressed format), got %d bytes", len(pk))
 		return
 	}
 	var shared []byte

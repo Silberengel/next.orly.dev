@@ -7,11 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/minio/sha256-simd"
 	"github.com/stretchr/testify/assert"
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/keys"
-	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 func assertCryptPriv(
@@ -81,7 +82,7 @@ func assertDecryptFail(
 func assertConversationKeyFail(
 	t *testing.T, priv string, pub string, msg string,
 ) {
-	_, err := GenerateConversationKeyFromHex(pub, priv)
+	_, err := GenerateConversationKeyFromHex(priv, pub)
 	assert.ErrorContains(t, err, msg)
 }
 
@@ -100,7 +101,7 @@ func assertConversationKeyGeneration(
 	); !ok {
 		return false
 	}
-	actualConversationKey, err = GenerateConversationKeyFromHex(pub, priv)
+	actualConversationKey, err = GenerateConversationKeyFromHex(priv, pub)
 	if ok = assert.NoErrorf(
 		t, err, "conversation key generation failed: %v", err,
 	); !ok {
@@ -118,12 +119,38 @@ func assertConversationKeyGeneration(
 func assertConversationKeyGenerationSec(
 	t *testing.T, sk1, sk2, conversationKey string,
 ) bool {
-	pub2, err := keys.GetPublicKeyHex(sk2)
-	if ok := assert.NoErrorf(
-		t, err, "failed to derive pubkey from sk2: %v", err,
-	); !ok {
+	// Like ekzyis reference: derive compressed public key from sk2
+	var signer2 *p8k.Signer
+	var err error
+	var sk2Bytes []byte
+
+	if sk2Bytes, err = hex.Dec(sk2); !assert.NoErrorf(
+		t, err, "hex decode failed for sk2: %v", err,
+	) {
 		return false
 	}
+
+	if signer2, err = p8k.New(); !assert.NoErrorf(
+		t, err, "failed to create signer: %v", err,
+	) {
+		return false
+	}
+
+	if err = signer2.InitSec(sk2Bytes); !assert.NoErrorf(
+		t, err, "failed to init secret: %v", err,
+	) {
+		return false
+	}
+
+	// Get compressed public key (33 bytes with 0x02/0x03 prefix)
+	var pub2Compressed []byte
+	if pub2Compressed, err = signer2.PubCompressed(); !assert.NoErrorf(
+		t, err, "failed to get compressed pubkey: %v", err,
+	) {
+		return false
+	}
+
+	pub2 := hex.Enc(pub2Compressed)
 	return assertConversationKeyGeneration(t, sk1, pub2, conversationKey)
 }
 
@@ -258,10 +285,10 @@ func TestCryptPriv001(t *testing.T) {
 		t,
 		"0000000000000000000000000000000000000000000000000000000000000001",
 		"0000000000000000000000000000000000000000000000000000000000000002",
-		"d927e07202f86f1175e9dfc90fbbcd61963c5ee2506a10654641a826dd371a1b",
+		"c41c775356fd92eadc63ff5a0dc1da211b268cbea22316767095b2871ea1412d",
 		"0000000000000000000000000000000000000000000000000000000000000001",
 		"a",
-		"AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4ZAC1J9dJuHPtWNca8rycgBrU2S0ClwfvXjrTr0BZSm54UFqMJpt2easxakffyhgWf/PrUrSLJHJg1cfJ/MAh/Wy",
+		"AgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABee0G5VSK0/9YypIObAtDKfYEAjD35uVkHyB0F4DwrcNaCXlCWZKaArsGrY6M9wnuTMxWfp1RTN9Xga8no+kF5Vsb",
 	)
 }
 
@@ -447,7 +474,7 @@ func TestConversationKeyFail003(t *testing.T) {
 		t,
 		"fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364139",
 		"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-		"invalid public key: x >= field prime",
+		"failed to parse public key",
 		// "invalid public key: x >= field prime",
 	)
 }
@@ -468,7 +495,7 @@ func TestConversationKeyFail005(t *testing.T) {
 		t,
 		"0000000000000000000000000000000000000000000000000000000000000002",
 		"1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-		"invalid public key: x coordinate 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef is not on the secp256k1 curve",
+		"failed to parse public key",
 		// "invalid public key: x coordinate 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef is not on the secp256k1 curve",
 	)
 }
@@ -479,7 +506,7 @@ func TestConversationKeyFail006(t *testing.T) {
 		t,
 		"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 		"0000000000000000000000000000000000000000000000000000000000000000",
-		"invalid public key: x coordinate 0000000000000000000000000000000000000000000000000000000000000000 is not on the secp256k1 curve",
+		"failed to parse public key",
 		// "invalid public key: x coordinate 0000000000000000000000000000000000000000000000000000000000000000 is not on the secp256k1 curve",
 	)
 }
@@ -490,7 +517,7 @@ func TestConversationKeyFail007(t *testing.T) {
 		t,
 		"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 		"eb1f7200aecaa86682376fb1c13cd12b732221e774f553b0a0857f88fa20f86d",
-		"invalid public key: x coordinate eb1f7200aecaa86682376fb1c13cd12b732221e774f553b0a0857f88fa20f86d is not on the secp256k1 curve",
+		"failed to parse public key",
 		// "invalid public key: x coordinate eb1f7200aecaa86682376fb1c13cd12b732221e774f553b0a0857f88fa20f86d is not on the secp256k1 curve",
 	)
 }
@@ -501,7 +528,7 @@ func TestConversationKeyFail008(t *testing.T) {
 		t,
 		"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
 		"709858a4c121e4a84eb59c0ded0261093c71e8ca29efeef21a6161c447bcaf9f",
-		"invalid public key: x coordinate 709858a4c121e4a84eb59c0ded0261093c71e8ca29efeef21a6161c447bcaf9f is not on the secp256k1 curve",
+		"failed to parse public key",
 		// "invalid public key: x coordinate 709858a4c121e4a84eb59c0ded0261093c71e8ca29efeef21a6161c447bcaf9f is not on the secp256k1 curve",
 	)
 }
@@ -643,7 +670,7 @@ func TestConversationKey001(t *testing.T) {
 		t,
 		"315e59ff51cb9209768cf7da80791ddcaae56ac9775eb25b6dee1234bc5d2268",
 		"c2f9d9948dc8c7c38321e4b85c8558872eafa0641cd269db76848a6073e69133",
-		"8bc1eda9f0bd37d986c4cda4872af3409d8efbf4ff93e6ab61c3cc035cc06365",
+		"9d4ce2dced70fd54894bd4e1e3509136bee1c5573b08ffd86c3dcc04f2cc99ca",
 	)
 }
 
@@ -1314,7 +1341,7 @@ func TestMaxLength(t *testing.T) {
 	pub2, _ := keys.GetPublicKeyHex(string(sk2))
 	salt := make([]byte, 32)
 	rand.Read(salt)
-	conversationKey, _ := GenerateConversationKeyFromHex(pub2, string(sk1))
+	conversationKey, _ := GenerateConversationKeyFromHex(string(sk1), pub2)
 	plaintext := strings.Repeat("a", MaxPlaintextSize)
 	plaintextBytes := []byte(plaintext)
 	encrypted, err := Encrypt(

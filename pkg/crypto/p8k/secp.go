@@ -67,6 +67,7 @@ var (
 	xonlyPubkeyParse     func(ctx uintptr, pubkey *byte, input32 *byte) int32
 	xonlyPubkeySerialize func(ctx uintptr, output32 *byte, pubkey *byte) int32
 	keypairXonlyPub      func(ctx uintptr, pubkey *byte, pkParity *int32, keypair *byte) int32
+	keypairPub           func(ctx uintptr, pubkey *byte, keypair *byte) int32
 
 	// ECDH functions
 	ecdh func(ctx uintptr, output *byte, pubkey *byte, seckey *byte, hashfp uintptr, data uintptr) int32
@@ -193,6 +194,7 @@ func registerSymbols() (err error) {
 	tryRegister(&xonlyPubkeyParse, "secp256k1_xonly_pubkey_parse")
 	tryRegister(&xonlyPubkeySerialize, "secp256k1_xonly_pubkey_serialize")
 	tryRegister(&keypairXonlyPub, "secp256k1_keypair_xonly_pub")
+	tryRegister(&keypairPub, "secp256k1_keypair_pub")
 	tryRegister(&xonlyPubkeyFromPubkey, "secp256k1_xonly_pubkey_from_pubkey")
 
 	// ECDH module
@@ -306,6 +308,11 @@ func (c *Context) SerializePublicKey(pubkey []byte, compressed bool) (output []b
 
 	output = output[:outputLen]
 	return
+}
+
+// SerializePublicKeyCompressed serializes a public key in compressed format (33 bytes)
+func (c *Context) SerializePublicKeyCompressed(pubkey []byte) (output []byte, err error) {
+	return c.SerializePublicKey(pubkey, true)
 }
 
 // ParsePublicKey parses a serialized public key

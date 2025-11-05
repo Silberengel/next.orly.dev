@@ -3,7 +3,7 @@ package p8k
 
 import (
 	"crypto/rand"
-	
+
 	"lol.mleku.dev/errorf"
 	secp "next.orly.dev/pkg/crypto/p8k"
 	"next.orly.dev/pkg/interfaces/signer"
@@ -11,10 +11,10 @@ import (
 
 // Signer implements the signer.I interface using p8k.mleku.dev
 type Signer struct {
-	ctx      *secp.Context
-	secKey   []byte
-	pubKey   []byte
-	keypair  secp.Keypair
+	ctx     *secp.Context
+	secKey  []byte
+	pubKey  []byte
+	keypair secp.Keypair
 }
 
 // Ensure Signer implements signer.I
@@ -46,12 +46,12 @@ func (s *Signer) Generate() (err error) {
 	if _, err = rand.Read(s.secKey); err != nil {
 		return
 	}
-	
+
 	// Create keypair
 	if s.keypair, err = s.ctx.CreateKeypair(s.secKey); err != nil {
 		return
 	}
-	
+
 	// Extract x-only public key (internal 64-byte format)
 	var xonly secp.XOnlyPublicKey
 	var parity int32
@@ -59,7 +59,7 @@ func (s *Signer) Generate() (err error) {
 		return
 	}
 	_ = parity
-	
+
 	// Serialize the x-only public key to 32 bytes
 	if s.pubKey, err = s.ctx.SerializeXOnlyPublicKey(xonly[:]); err != nil {
 		return
@@ -73,15 +73,15 @@ func (s *Signer) InitSec(sec []byte) (err error) {
 	if len(sec) != 32 {
 		return errorf.E("secret key must be 32 bytes")
 	}
-	
+
 	s.secKey = make([]byte, 32)
 	copy(s.secKey, sec)
-	
+
 	// Create keypair
 	if s.keypair, err = s.ctx.CreateKeypair(s.secKey); err != nil {
 		return
 	}
-	
+
 	// Extract x-only public key (internal 64-byte format)
 	var xonly secp.XOnlyPublicKey
 	var parity int32
@@ -89,7 +89,7 @@ func (s *Signer) InitSec(sec []byte) (err error) {
 		return
 	}
 	_ = parity
-	
+
 	// Serialize the x-only public key to 32 bytes
 	if s.pubKey, err = s.ctx.SerializeXOnlyPublicKey(xonly[:]); err != nil {
 		return
@@ -103,7 +103,7 @@ func (s *Signer) InitPub(pub []byte) (err error) {
 	if len(pub) != 32 {
 		return errorf.E("public key must be 32 bytes")
 	}
-	
+
 	s.pubKey = make([]byte, 32)
 	copy(s.pubKey, pub)
 	return
@@ -119,23 +119,44 @@ func (s *Signer) Pub() []byte {
 	return s.pubKey
 }
 
+// PubCompressed returns the compressed public key (33 bytes with 0x02/0x03 prefix).
+// This is needed for ECDH operations like NIP-44.
+func (s *Signer) PubCompressed() (compressed []byte, err error) {
+	if len(s.keypair) == 0 {
+		return nil, errorf.E("keypair not initialized")
+	}
+
+	// Get the internal public key from keypair
+	var pubkeyInternal []byte
+	if pubkeyInternal, err = s.ctx.KeypairPub(s.keypair); err != nil {
+		return
+	}
+
+	// Serialize as compressed (33 bytes)
+	if compressed, err = s.ctx.SerializePublicKeyCompressed(pubkeyInternal); err != nil {
+		return
+	}
+
+	return
+}
+
 // Sign creates a signature using the stored secret key.
 func (s *Signer) Sign(msg []byte) (sig []byte, err error) {
 	if len(s.keypair) == 0 {
 		return nil, errorf.E("keypair not initialized")
 	}
-	
+
 	// Generate auxiliary randomness
 	auxRand := make([]byte, 32)
 	if _, err = rand.Read(auxRand); err != nil {
 		return
 	}
-	
+
 	// Sign with Schnorr
 	if sig, err = s.ctx.SchnorrSign(msg, s.keypair, auxRand); err != nil {
 		return
 	}
-	
+
 	return
 }
 
@@ -144,11 +165,11 @@ func (s *Signer) Verify(msg, sig []byte) (valid bool, err error) {
 	if s.pubKey == nil {
 		return false, errorf.E("public key not initialized")
 	}
-	
+
 	if valid, err = s.ctx.SchnorrVerify(sig, msg, s.pubKey); err != nil {
 		return
 	}
-	
+
 	return
 }
 
@@ -174,37 +195,46 @@ func (s *Signer) ECDH(pub []byte) (secret []byte, err error) {
 
 // ECDHRaw returns the raw shared secret point (x-coordinate only, 32 bytes) without hashing.
 // This is needed for protocols like NIP-44 that do their own key derivation.
+// The pub parameter can be either:
+// - 32 bytes (x-only): will be converted to compressed format by trying 0x02 then 0x03
+// - 33 bytes (compressed): will be used as-is
 func (s *Signer) ECDHRaw(pub []byte) (sharedX []byte, err error) {
 	if s.secKey == nil {
 		return nil, errorf.E("secret key not initialized")
 	}
-	
-	if len(pub) != 32 {
-		return nil, errorf.E("public key must be 32 bytes")
+
+	var pubKeyFull []byte
+
+	if len(pub) == 33 {
+		// Already compressed format (0x02 or 0x03 prefix)
+		pubKeyFull = pub
+	} else if len(pub) == 32 {
+		// X-only format: try with 0x02 (even y), then try 0x03 (odd y) if that fails
+		pubKeyFull = make([]byte, 33)
+		pubKeyFull[0] = 0x02 // compressed even y
+		copy(pubKeyFull[1:], pub)
+	} else {
+		return nil, errorf.E("public key must be 32 bytes (x-only) or 33 bytes (compressed), got %d bytes", len(pub))
 	}
-	
-	// Convert x-only pubkey to full pubkey
-	// For ECDH, we need the full public key, not just x-only
-	// Try with 0x02 (even y), then try 0x03 (odd y) if that fails
-	pubKeyFull := make([]byte, 33)
-	pubKeyFull[0] = 0x02 // compressed even y
-	copy(pubKeyFull[1:], pub)
-	
+
 	// Parse the public key
 	var pubKeyInternal []byte
 	if pubKeyInternal, err = s.ctx.ParsePublicKey(pubKeyFull); err != nil {
-		// Try odd y coordinate
-		pubKeyFull[0] = 0x03
-		if pubKeyInternal, err = s.ctx.ParsePublicKey(pubKeyFull); err != nil {
+		// If 32-byte x-only and even y failed, try odd y
+		if len(pub) == 32 {
+			pubKeyFull[0] = 0x03
+			if pubKeyInternal, err = s.ctx.ParsePublicKey(pubKeyFull); err != nil {
+				return nil, err
+			}
+		} else {
 			return nil, err
 		}
 	}
-	
+
 	// Compute ECDH - this returns the 32-byte x-coordinate of the shared point
 	if sharedX, err = s.ctx.ECDH(pubKeyInternal, s.secKey); err != nil {
 		return
 	}
-	
+
 	return
 }
-

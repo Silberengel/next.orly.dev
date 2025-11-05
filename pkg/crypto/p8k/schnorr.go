@@ -47,6 +47,23 @@ func (c *Context) KeypairXOnlyPub(keypair Keypair) (xonly XOnlyPublicKey, pkPari
 	return
 }
 
+// KeypairPub extracts the full public key (64-byte internal format) from a keypair
+func (c *Context) KeypairPub(keypair Keypair) (pubkey []byte, err error) {
+	if keypairPub == nil {
+		err = fmt.Errorf("keypair_pub function not available")
+		return
+	}
+
+	pubkey = make([]byte, PublicKeySize)
+	ret := keypairPub(c.ctx, &pubkey[0], &keypair[0])
+	if ret != 1 {
+		err = fmt.Errorf("failed to extract public key from keypair")
+		return
+	}
+
+	return
+}
+
 // SchnorrSign creates a Schnorr signature (BIP-340)
 func (c *Context) SchnorrSign(msg32 []byte, keypair Keypair, auxRand32 []byte) (sig []byte, err error) {
 	if schnorrsigSign32 == nil {
