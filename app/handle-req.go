@@ -43,7 +43,6 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		}
 		return normalize.Error.Errorf(err.Error())
 	}
-
 	log.T.C(
 		func() string {
 			return fmt.Sprintf(
@@ -533,24 +532,24 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				)
 			},
 		)
-	log.T.C(
-		func() string {
-			return fmt.Sprintf("event:\n%s\n", ev.Serialize())
-		},
-	)
-	var res *eventenvelope.Result
-	if res, err = eventenvelope.NewResultWith(
-		env.Subscription, ev,
-	); chk.E(err) {
-		return
-	}
-	if err = res.Write(l); err != nil {
-		// Don't log context canceled errors as they're expected during shutdown
-		if !strings.Contains(err.Error(), "context canceled") {
-			chk.E(err)
+		log.T.C(
+			func() string {
+				return fmt.Sprintf("event:\n%s\n", ev.Serialize())
+			},
+		)
+		var res *eventenvelope.Result
+		if res, err = eventenvelope.NewResultWith(
+			env.Subscription, ev,
+		); chk.E(err) {
+			return
 		}
-		return
-	}
+		if err = res.Write(l); err != nil {
+			// Don't log context canceled errors as they're expected during shutdown
+			if !strings.Contains(err.Error(), "context canceled") {
+				chk.E(err)
+			}
+			return
+		}
 		// track the IDs we've sent (use hex encoding for stable key)
 		seen[hexenc.Enc(ev.ID)] = struct{}{}
 	}
@@ -577,7 +576,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				limitSatisfied = true
 			}
 		}
-		
+
 		if f.Ids.Len() < 1 {
 			// Filter has no IDs - keep subscription open unless limit was satisfied
 			if !limitSatisfied {
@@ -616,18 +615,81 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 	receiver := make(event.C, 32)
 	// if the subscription should be cancelled, do so
 	if !cancel {
+		// Create a dedicated context for this subscription that's independent of query context
+		// but is child of the listener context so it gets cancelled when connection closes
+		subCtx, subCancel := context.WithCancel(l.ctx)
+
+		// Track this subscription so we can cancel it on CLOSE or connection close
+		subID := string(env.Subscription)
+		l.subscriptionsMu.Lock()
+		l.subscriptions[subID] = subCancel
+		l.subscriptionsMu.Unlock()
+
+		// Register subscription with publisher
 		l.publishers.Receive(
 			&W{
 				Conn:         l.conn,
 				remote:       l.remote,
-				Id:           string(env.Subscription),
+				Id:           subID,
 				Receiver:     receiver,
 				Filters:      &subbedFilters,
 				AuthedPubkey: l.authedPubkey.Load(),
 			},
 		)
+
+		// Launch goroutine to consume from receiver channel and forward to client
+		// This is the critical missing piece - without this, the receiver channel fills up
+		// and the publisher times out trying to send, causing subscription to be removed
+		go func() {
+			defer func() {
+				// Clean up when subscription ends
+				l.subscriptionsMu.Lock()
+				delete(l.subscriptions, subID)
+				l.subscriptionsMu.Unlock()
+				log.D.F("subscription goroutine exiting for %s @ %s", subID, l.remote)
+			}()
+
+			for {
+				select {
+				case <-subCtx.Done():
+					// Subscription cancelled (CLOSE message or connection closing)
+					log.D.F("subscription %s cancelled for %s", subID, l.remote)
+					return
+				case ev, ok := <-receiver:
+					if !ok {
+						// Channel closed - subscription ended
+						log.D.F("subscription %s receiver channel closed for %s", subID, l.remote)
+						return
+					}
+
+					// Forward event to client via write channel
+					var res *eventenvelope.Result
+					var err error
+					if res, err = eventenvelope.NewResultWith(subID, ev); chk.E(err) {
+						log.E.F("failed to create event envelope for subscription %s: %v", subID, err)
+						continue
+					}
+
+					// Write to client - this goes through the write worker
+					if err = res.Write(l); err != nil {
+						if !strings.Contains(err.Error(), "context canceled") {
+							log.E.F("failed to write event to subscription %s @ %s: %v", subID, l.remote, err)
+						}
+						// Don't return here - write errors shouldn't kill the subscription
+						// The connection cleanup will handle removing the subscription
+						continue
+					}
+
+					log.D.F("delivered real-time event %s to subscription %s @ %s",
+						hexenc.Enc(ev.ID), subID, l.remote)
+				}
+			}
+		}()
+
+		log.D.F("subscription %s created and goroutine launched for %s", subID, l.remote)
 	} else {
 		// suppress server-sent CLOSED; client will close subscription if desired
+		log.D.F("subscription request cancelled immediately (all IDs found or limit satisfied)")
 	}
 	log.T.F("HandleReq: COMPLETED processing from %s", l.remote)
 	return

@@ -4,7 +4,18 @@
       "Skill(skill-creator)",
       "Bash(cat:*)",
       "Bash(python3:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Skill(nostr-websocket)",
+      "Bash(go build:*)",
+      "Bash(chmod:*)",
+      "Bash(journalctl:*)",
+      "Bash(timeout 5 bash -c 'echo [\"\"REQ\"\",\"\"test123\"\",{\"\"kinds\"\":[1],\"\"limit\"\":1}] | websocat ws://localhost:3334':*)",
+      "Bash(pkill:*)",
+      "Bash(timeout 5 bash:*)",
+      "Bash(md5sum:*)",
+      "Bash(timeout 3 bash -c 'echo [\\\"\"REQ\\\"\",\\\"\"test456\\\"\",{\\\"\"kinds\\\"\":[1],\\\"\"limit\\\"\":10}] | websocat ws://localhost:3334')",
+      "Bash(printf:*)",
+      "Bash(websocat:*)"
     ],
     "deny": [],
     "ask": []

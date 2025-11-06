@@ -47,17 +47,24 @@ func (s *S) Marshal(dst []byte) (b []byte) {
 }
 
 // Unmarshal decodes one or more filters from JSON.
+// This handles both array-wrapped filters [{},...] and unwrapped filters {},...
 func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 	r = b
 	if len(r) == 0 {
 		return
 	}
-	r = r[1:]
-	// Handle empty array "[]"
-	if len(r) > 0 && r[0] == ']' {
+
+	// Check if filters are wrapped in an array
+	isArrayWrapped := r[0] == '['
+	if isArrayWrapped {
 		r = r[1:]
-		return
+		// Handle empty array "[]"
+		if len(r) > 0 && r[0] == ']' {
+			r = r[1:]
+			return
+		}
 	}
+
 	for {
 		if len(r) == 0 {
 			return
@@ -73,13 +80,17 @@ func (s *S) Unmarshal(b []byte) (r []byte, err error) {
 			return
 		}
 		if r[0] == ',' {
-			// Next element in the array
+			// Next element
 			r = r[1:]
 			continue
 		}
 		if r[0] == ']' {
-			// End of the enclosed array; consume and return
-			r = r[1:]
+			// End of array or envelope
+			if isArrayWrapped {
+				// Consume the closing bracket of the filter array
+				r = r[1:]
+			}
+			// Otherwise leave it for the envelope parser
 			return
 		}
 		// Unexpected token

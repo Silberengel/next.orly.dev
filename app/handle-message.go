@@ -142,8 +142,7 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 		if !strings.Contains(err.Error(), "context canceled") {
 			log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
 			// Don't log message preview as it may contain binary data
-
-			// Send error notice to client (use generic message to avoid control chars in errors)
+ 			// Send error notice to client (use generic message to avoid control chars in errors)
 			noticeMsg := fmt.Sprintf("%s processing failed", t)
 			if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
 				log.E.F(

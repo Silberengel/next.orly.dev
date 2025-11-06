@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,7 @@ type Listener struct {
 	*Server
 	conn             *websocket.Conn
 	ctx              context.Context
+	cancel           context.CancelFunc // Cancel function for this listener's context
 	remote           string
 	req              *http.Request
 	challenge        atomicutils.Bytes
@@ -41,6 +43,9 @@ type Listener struct {
 	msgCount   int
 	reqCount   int
 	eventCount int
+	// Subscription tracking for cleanup
+	subscriptions    map[string]context.CancelFunc // Map of subscription ID to cancel function
+	subscriptionsMu  sync.Mutex                     // Protects subscriptions map
 }
 
 type messageRequest struct {
@@ -189,8 +194,9 @@ func (l *Listener) messageProcessor() {
 				return
 			}
 
-			// Process the message synchronously in this goroutine
-			l.HandleMessage(req.data, req.remote)
+			// Process the message in a separate goroutine to avoid blocking
+			// This allows multiple messages to be processed concurrently (like khatru does)
+			go l.HandleMessage(req.data, req.remote)
 		}
 	}
 }

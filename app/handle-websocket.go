@@ -72,19 +72,20 @@ whitelist:
 	// Set read limit immediately after connection is established
 	conn.SetReadLimit(DefaultMaxMessageSize)
 	log.D.F("set read limit to %d bytes (%d MB) for %s", DefaultMaxMessageSize, DefaultMaxMessageSize/units.Mb, remote)
-	
+
 	// Set initial read deadline - pong handler will extend it when pongs are received
 	conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
-	
+
 	// Add pong handler to extend read deadline when client responds to pings
 	conn.SetPongHandler(func(string) error {
 		log.T.F("received PONG from %s, extending read deadline", remote)
 		return conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
 	})
-	
+
 	defer conn.Close()
 	listener := &Listener{
 		ctx:            ctx,
+		cancel:         cancel,
 		Server:         s,
 		conn:           conn,
 		remote:         remote,
@@ -94,6 +95,7 @@ whitelist:
 		writeDone:      make(chan struct{}),
 		messageQueue:   make(chan messageRequest, 100), // Buffered channel for message processing
 		processingDone: make(chan struct{}),
+		subscriptions:  make(map[string]context.CancelFunc),
 	}
 
 	// Start write worker goroutine
@@ -131,12 +133,21 @@ whitelist:
 	defer func() {
 		log.D.F("closing websocket connection from %s", remote)
 
+		// Cancel all active subscriptions first
+		listener.subscriptionsMu.Lock()
+		for subID, cancelFunc := range listener.subscriptions {
+			log.D.F("cancelling subscription %s for %s", subID, remote)
+			cancelFunc()
+		}
+		listener.subscriptions = nil
+		listener.subscriptionsMu.Unlock()
+
 		// Cancel context and stop pinger
 		cancel()
 		ticker.Stop()
 
-		// Cancel all subscriptions for this connection
-		log.D.F("cancelling subscriptions for %s", remote)
+		// Cancel all subscriptions for this connection at publisher level
+		log.D.F("removing subscriptions from publisher for %s", remote)
 		listener.publishers.Receive(&W{
 			Cancel: true,
 			Conn:   listener.conn,

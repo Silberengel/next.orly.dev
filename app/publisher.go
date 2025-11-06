@@ -7,10 +7,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/acl"
-	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -29,6 +27,7 @@ type WriteChanMap map[*websocket.Conn]chan publish.WriteRequest
 type Subscription struct {
 	remote       string
 	AuthedPubkey []byte
+	Receiver     event.C // Channel for delivering events to this subscription
 	*filter.S
 }
 
@@ -121,12 +120,12 @@ func (p *P) Receive(msg typer.T) {
 		if subs, ok := p.Map[m.Conn]; !ok {
 			subs = make(map[string]Subscription)
 			subs[m.Id] = Subscription{
-				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey, Receiver: m.Receiver,
 			}
 			p.Map[m.Conn] = subs
 		} else {
 			subs[m.Id] = Subscription{
-				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey, Receiver: m.Receiver,
 			}
 		}
 	}
@@ -144,7 +143,6 @@ func (p *P) Receive(msg typer.T) {
 // applies authentication checks if required by the server and skips delivery
 // for unauthenticated users when events are privileged.
 func (p *P) Deliver(ev *event.E) {
-	var err error
 	// Snapshot the deliveries under read lock to avoid holding locks during I/O
 	p.Mx.RLock()
 	type delivery struct {
@@ -238,52 +236,30 @@ func (p *P) Deliver(ev *event.E) {
 			}
 		}
 
-		var res *eventenvelope.Result
-		if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
-			log.E.F("failed to create event envelope for %s to %s: %v",
-				hex.Enc(ev.ID), d.sub.remote, err)
+		// Send event to the subscription's receiver channel
+		// The consumer goroutine (in handle-req.go) will read from this channel
+		// and forward it to the client via the write channel
+		log.D.F("attempting delivery of event %s (kind=%d) to subscription %s @ %s",
+			hex.Enc(ev.ID), ev.Kind, d.id, d.sub.remote)
+
+		// Check if receiver channel exists
+		if d.sub.Receiver == nil {
+			log.E.F("subscription %s has nil receiver channel for %s", d.id, d.sub.remote)
 			continue
 		}
 
-		// Log delivery attempt
-		msgData := res.Marshal(nil)
-		log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s",
-			hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
-
-		// Get write channel for this connection
-		p.Mx.RLock()
-		writeChan, hasChan := p.GetWriteChan(d.w)
-		stillSubscribed := p.Map[d.w] != nil
-		p.Mx.RUnlock()
-
-		if !stillSubscribed {
-			log.D.F("skipping delivery to %s - connection no longer subscribed", d.sub.remote)
-			continue
-		}
-
-		if !hasChan {
-			log.D.F("skipping delivery to %s - no write channel available", d.sub.remote)
-			continue
-		}
-
-		// Send to write channel - non-blocking with timeout
+		// Send to receiver channel - non-blocking with timeout
 		select {
 		case <-p.c.Done():
 			continue
-		case writeChan <- publish.WriteRequest{Data: msgData, MsgType: websocket.TextMessage, IsControl: false}:
-			log.D.F("subscription delivery QUEUED: event=%s to=%s sub=%s len=%d",
-				hex.Enc(ev.ID), d.sub.remote, d.id, len(msgData))
+		case d.sub.Receiver <- ev:
+			log.D.F("subscription delivery QUEUED: event=%s to=%s sub=%s",
+				hex.Enc(ev.ID), d.sub.remote, d.id)
 		case <-time.After(DefaultWriteTimeout):
 			log.E.F("subscription delivery TIMEOUT: event=%s to=%s sub=%s",
 				hex.Enc(ev.ID), d.sub.remote, d.id)
-			// Check if connection is still valid
-			p.Mx.RLock()
-			stillSubscribed = p.Map[d.w] != nil
-			p.Mx.RUnlock()
-			if !stillSubscribed {
-				log.D.F("removing failed subscriber connection: %s", d.sub.remote)
-				p.removeSubscriber(d.w)
-			}
+			// Receiver channel is full - subscription consumer is stuck or slow
+			// The subscription should be removed by the cleanup logic
 		}
 	}
 }
