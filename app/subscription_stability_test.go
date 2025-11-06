@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -12,8 +13,50 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"next.orly.dev/app/config"
+	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
+	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
+	"next.orly.dev/pkg/protocol/publish"
 )
+
+// createSignedTestEvent creates a properly signed test event for use in tests
+func createSignedTestEvent(t *testing.T, kind uint16, content string, tags ...*tag.T) *event.E {
+	t.Helper()
+
+	// Create a signer
+	signer, err := p8k.New()
+	if err != nil {
+		t.Fatalf("Failed to create signer: %v", err)
+	}
+	defer signer.Zero()
+
+	// Generate a keypair
+	if err := signer.Generate(); err != nil {
+		t.Fatalf("Failed to generate keypair: %v", err)
+	}
+
+	// Create event
+	ev := &event.E{
+		Kind:      kind,
+		Content:   []byte(content),
+		CreatedAt: time.Now().Unix(),
+		Tags:      &tag.S{},
+	}
+
+	// Add any provided tags
+	for _, tg := range tags {
+		*ev.Tags = append(*ev.Tags, tg)
+	}
+
+	// Sign the event (this sets Pubkey, ID, and Sig)
+	if err := ev.Sign(signer); err != nil {
+		t.Fatalf("Failed to sign event: %v", err)
+	}
+
+	return ev
+}
 
 // TestLongRunningSubscriptionStability verifies that subscriptions remain active
 // for extended periods and correctly receive real-time events without dropping.
@@ -68,23 +111,45 @@ func TestLongRunningSubscriptionStability(t *testing.T) {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
+		defer func() {
+			// Recover from any panic in read goroutine
+			if r := recover(); r != nil {
+				t.Logf("Read goroutine panic (recovered): %v", r)
+			}
+		}()
 		for {
+			// Check context first before attempting any read
 			select {
 			case <-ctx.Done():
 				return
 			default:
 			}
 
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			// Use a longer deadline and check context more frequently
+			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
+				// Immediately check if context is done - if so, just exit without continuing
+				if ctx.Err() != nil {
+					return
+				}
+
+				// Check for normal close
 				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
 					return
 				}
-				if strings.Contains(err.Error(), "timeout") {
+
+				// Check if this is a timeout error - those are recoverable
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Double-check context before continuing
+					if ctx.Err() != nil {
+						return
+					}
 					continue
 				}
-				t.Logf("Read error: %v", err)
+
+				// Any other error means connection is broken, exit
+				t.Logf("Read error (non-timeout): %v", err)
 				return
 			}
 
@@ -130,18 +195,17 @@ func TestLongRunningSubscriptionStability(t *testing.T) {
 		default:
 		}
 
-		// Create test event
-		ev := &event.E{
-			Kind:      1,
-			Content:   []byte(fmt.Sprintf("Test event %d for long-running subscription", i)),
-			CreatedAt: uint64(time.Now().Unix()),
-		}
+		// Create and sign test event
+		ev := createSignedTestEvent(t, 1, fmt.Sprintf("Test event %d for long-running subscription", i))
 
-		// Save event to database (this will trigger publisher)
-		if err := server.D.SaveEvent(context.Background(), ev); err != nil {
+		// Save event to database
+		if _, err := server.D.SaveEvent(context.Background(), ev); err != nil {
 			t.Errorf("Failed to save event %d: %v", i, err)
 			continue
 		}
+
+		// Manually trigger publisher to deliver event to subscriptions
+		server.publishers.Deliver(ev)
 
 		t.Logf("Published event %d", i)
 
@@ -240,7 +304,14 @@ func TestMultipleConcurrentSubscriptions(t *testing.T) {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
+		defer func() {
+			// Recover from any panic in read goroutine
+			if r := recover(); r != nil {
+				t.Logf("Read goroutine panic (recovered): %v", r)
+			}
+		}()
 		for {
+			// Check context first before attempting any read
 			select {
 			case <-ctx.Done():
 				return
@@ -250,9 +321,27 @@ func TestMultipleConcurrentSubscriptions(t *testing.T) {
 			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
-				if strings.Contains(err.Error(), "timeout") {
+				// Immediately check if context is done - if so, just exit without continuing
+				if ctx.Err() != nil {
+					return
+				}
+
+				// Check for normal close
+				if websocket.IsCloseError(err, websocket.CloseNormalClosure) {
+					return
+				}
+
+				// Check if this is a timeout error - those are recoverable
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// Double-check context before continuing
+					if ctx.Err() != nil {
+						return
+					}
 					continue
 				}
+
+				// Any other error means connection is broken, exit
+				t.Logf("Read error (non-timeout): %v", err)
 				return
 			}
 
@@ -284,15 +373,15 @@ func TestMultipleConcurrentSubscriptions(t *testing.T) {
 	// Publish events for each kind
 	for _, sub := range subscriptions {
 		for i := 0; i < 5; i++ {
-			ev := &event.E{
-				Kind:      uint16(sub.kind),
-				Content:   []byte(fmt.Sprintf("Test for kind %d event %d", sub.kind, i)),
-				CreatedAt: uint64(time.Now().Unix()),
-			}
+			// Create and sign test event
+			ev := createSignedTestEvent(t, uint16(sub.kind), fmt.Sprintf("Test for kind %d event %d", sub.kind, i))
 
-			if err := server.D.SaveEvent(context.Background(), ev); err != nil {
+			if _, err := server.D.SaveEvent(context.Background(), ev); err != nil {
 				t.Errorf("Failed to save event: %v", err)
 			}
+
+			// Manually trigger publisher to deliver event to subscriptions
+			server.publishers.Deliver(ev)
 
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -321,8 +410,40 @@ func TestMultipleConcurrentSubscriptions(t *testing.T) {
 
 // setupTestServer creates a test relay server for subscription testing
 func setupTestServer(t *testing.T) (*Server, func()) {
-	// This is a simplified setup - adapt based on your actual test setup
-	// You may need to create a proper test database, etc.
-	t.Skip("Implement setupTestServer based on your existing test infrastructure")
-	return nil, func() {}
+	// Setup test database
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Use a temporary directory for the test database
+	tmpDir := t.TempDir()
+	db, err := database.New(ctx, cancel, tmpDir, "test.db")
+	if err != nil {
+		t.Fatalf("Failed to create test database: %v", err)
+	}
+
+	// Setup basic config
+	cfg := &config.C{
+		AuthRequired: false,
+		Owners:       []string{},
+		Admins:       []string{},
+		ACLMode:      "none",
+	}
+
+	// Setup server
+	server := &Server{
+		Config:     cfg,
+		D:          db,
+		Ctx:        ctx,
+		publishers: publish.New(NewPublisher(ctx)),
+		Admins:     [][]byte{},
+		Owners:     [][]byte{},
+		challenges: make(map[string][]byte),
+	}
+
+	// Cleanup function
+	cleanup := func() {
+		db.Close()
+		cancel()
+	}
+
+	return server, cleanup
 }

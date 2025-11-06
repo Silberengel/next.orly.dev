@@ -15,7 +15,9 @@
       "Bash(md5sum:*)",
       "Bash(timeout 3 bash -c 'echo [\\\"\"REQ\\\"\",\\\"\"test456\\\"\",{\\\"\"kinds\\\"\":[1],\\\"\"limit\\\"\":10}] | websocat ws://localhost:3334')",
       "Bash(printf:*)",
-      "Bash(websocat:*)"
+      "Bash(websocat:*)",
+      "Bash(go test:*)",
+      "Bash(timeout 180 go test:*)"
     ],
     "deny": [],
     "ask": []

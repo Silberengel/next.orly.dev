@@ -37,6 +37,7 @@ type Listener struct {
 	// Message processing queue for async handling
 	messageQueue     chan messageRequest // Buffered channel for message processing
 	processingDone   chan struct{}       // Closed when message processor exits
+	handlerWg        sync.WaitGroup      // Tracks spawned message handler goroutines
 	// Flow control counters (atomic for concurrent access)
 	droppedMessages  atomic.Int64 // Messages dropped due to full queue
 	// Diagnostics: per-connection counters
@@ -85,6 +86,15 @@ func (l *Listener) QueueMessage(data []byte, remote string) bool {
 
 
 func (l *Listener) Write(p []byte) (n int, err error) {
+	// Defensive: recover from any panic when sending to closed channel
+	defer func() {
+		if r := recover(); r != nil {
+			log.D.F("ws->%s write panic recovered (channel likely closed): %v", l.remote, r)
+			err = errorf.E("write channel closed")
+			n = 0
+		}
+	}()
+
 	// Send write request to channel - non-blocking with timeout
 	select {
 	case <-l.ctx.Done():
@@ -99,6 +109,14 @@ func (l *Listener) Write(p []byte) (n int, err error) {
 
 // WriteControl sends a control message through the write channel
 func (l *Listener) WriteControl(messageType int, data []byte, deadline time.Time) (err error) {
+	// Defensive: recover from any panic when sending to closed channel
+	defer func() {
+		if r := recover(); r != nil {
+			log.D.F("ws->%s writeControl panic recovered (channel likely closed): %v", l.remote, r)
+			err = errorf.E("write channel closed")
+		}
+	}()
+
 	select {
 	case <-l.ctx.Done():
 		return l.ctx.Err()
@@ -196,7 +214,12 @@ func (l *Listener) messageProcessor() {
 
 			// Process the message in a separate goroutine to avoid blocking
 			// This allows multiple messages to be processed concurrently (like khatru does)
-			go l.HandleMessage(req.data, req.remote)
+			// Track the goroutine so we can wait for it during cleanup
+			l.handlerWg.Add(1)
+			go func(data []byte, remote string) {
+				defer l.handlerWg.Done()
+				l.HandleMessage(data, remote)
+			}(req.data, req.remote)
 		}
 	}
 }

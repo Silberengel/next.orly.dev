@@ -174,6 +174,12 @@ whitelist:
 		// Wait for message processor to finish
 		<-listener.processingDone
 
+		// Wait for all spawned message handlers to complete
+		// This is critical to prevent "send on closed channel" panics
+		log.D.F("ws->%s waiting for message handlers to complete", remote)
+		listener.handlerWg.Wait()
+		log.D.F("ws->%s all message handlers completed", remote)
+
 		// Close write channel to signal worker to exit
 		close(listener.writeChan)
 		// Wait for write worker to finish
