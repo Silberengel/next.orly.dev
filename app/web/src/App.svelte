@@ -10,12 +10,16 @@
     import RecoveryView from "./RecoveryView.svelte";
     import SprocketView from "./SprocketView.svelte";
     import SearchResultsView from "./SearchResultsView.svelte";
+    import FilterBuilder from "./FilterBuilder.svelte";
+    import FilterDisplay from "./FilterDisplay.svelte";
+    import { buildFilter } from "./helpers.tsx";
     import {
         initializeNostrClient,
         fetchUserProfile,
         fetchAllEvents,
         fetchUserEvents,
         searchEvents,
+        fetchEvents,
         fetchEventById,
         fetchDeleteEventsByTarget,
         queryEvents,
@@ -43,7 +47,7 @@
     let userSigner = null;
     let showSettingsDrawer = false;
     let selectedTab = localStorage.getItem("selectedTab") || "export";
-    let isSearchMode = false;
+    let showFilterBuilder = false; // Show advanced filter builder
     let searchQuery = "";
     let searchTabs = [];
     let allEvents = [];
@@ -58,7 +62,7 @@
     let viewAsRole = "";
 
     // Search results state
-    let searchResults = new Map(); // Map of searchTabId -> { events, isLoading, hasMore, oldestTimestamp }
+    let searchResults = new Map(); // Map of searchTabId -> { filter, events, isLoading, hasMore, oldestTimestamp }
     let isLoadingSearch = false;
 
     // Screen-filling events view state
@@ -1671,37 +1675,43 @@
     }
 
     function toggleSearchMode() {
-        isSearchMode = !isSearchMode;
-        if (!isSearchMode) {
+        showFilterBuilder = !showFilterBuilder;
+        if (!showFilterBuilder) {
             searchQuery = "";
         }
     }
 
     function handleSearchKeydown(event) {
         if (event.key === "Enter" && searchQuery.trim()) {
-            createSearchTab(searchQuery.trim());
+            createSimpleSearchTab(searchQuery.trim());
             searchQuery = "";
-            isSearchMode = false;
+            showFilterBuilder = false;
         } else if (event.key === "Escape") {
-            isSearchMode = false;
+            showFilterBuilder = false;
             searchQuery = "";
         }
     }
 
-    function createSearchTab(query) {
+    function createSimpleSearchTab(query) {
+        const filter = buildFilter({ searchText: query, limit: 100 });
+        createSearchTab(filter, `Search: ${query}`);
+    }
+
+    function createSearchTab(filter, label) {
         const searchTabId = `search-${Date.now()}`;
         const newSearchTab = {
             id: searchTabId,
             icon: "🔍",
-            label: query,
+            label: label,
             isSearchTab: true,
-            query: query,
+            filter: filter,
         };
         searchTabs = [...searchTabs, newSearchTab];
         selectedTab = searchTabId;
 
         // Initialize search results for this tab
         searchResults.set(searchTabId, {
+            filter: filter,
             events: [],
             isLoading: false,
             hasMore: true,
@@ -1709,7 +1719,44 @@
         });
 
         // Start loading search results
-        loadSearchResults(searchTabId, query);
+        loadSearchResults(searchTabId, true);
+    }
+
+    function handleFilterApply(event) {
+        const { searchText, selectedKinds, pubkeys, eventIds, tags, sinceTimestamp, untilTimestamp, limit } = event.detail;
+        
+        const filter = buildFilter({
+            searchText,
+            kinds: selectedKinds,
+            authors: pubkeys,
+            ids: eventIds,
+            tags,
+            since: sinceTimestamp,
+            until: untilTimestamp,
+            limit: limit || 100,
+        });
+
+        let label = "Filter";
+        if (searchText) {
+            label = `Search: ${searchText.substring(0, 20)}${searchText.length > 20 ? '...' : ''}`;
+        } else if (selectedKinds.length > 0) {
+            label = `Kinds: ${selectedKinds.slice(0, 3).join(', ')}${selectedKinds.length > 3 ? '...' : ''}`;
+        } else if (pubkeys.length > 0) {
+            label = `Authors: ${pubkeys.length}`;
+        }
+
+        createSearchTab(filter, label);
+        showFilterBuilder = false;
+    }
+
+    function handleFilterClear() {
+        // Just close the filter builder
+        showFilterBuilder = false;
+    }
+
+    function handleFilterSweep(searchTabId) {
+        // Close the search tab
+        closeSearchTab(searchTabId);
     }
 
     function closeSearchTab(tabId) {
@@ -1720,7 +1767,7 @@
         }
     }
 
-    async function loadSearchResults(searchTabId, query, reset = true) {
+    async function loadSearchResults(searchTabId, reset = true) {
         const searchResult = searchResults.get(searchTabId);
         if (!searchResult || searchResult.isLoading) return;
 
@@ -1729,20 +1776,25 @@
         searchResults.set(searchTabId, searchResult);
 
         try {
-            const options = {
-                limit: reset ? 100 : 200,
-                until: reset
-                    ? Math.floor(Date.now() / 1000)
-                    : searchResult.oldestTimestamp,
-            };
+            const filter = { ...searchResult.filter };
+            
+            // Apply timestamp-based pagination
+            if (!reset && searchResult.oldestTimestamp) {
+                filter.until = searchResult.oldestTimestamp;
+            }
+            
+            // Override limit for pagination
+            if (!reset) {
+                filter.limit = 200;
+            }
 
             console.log(
-                "Loading search results for query:",
-                query,
-                "with options:",
-                options,
+                "Loading search results with filter:",
+                filter,
             );
-            const events = await searchEvents(query, options);
+            
+            // Use fetchEvents with the filter array
+            const events = await fetchEvents([filter], { timeout: 30000 });
             console.log("Received search results:", events.length, "events");
 
             if (reset) {
@@ -1768,7 +1820,7 @@
                 }
             }
 
-            searchResult.hasMore = events.length === (reset ? 100 : 200);
+            searchResult.hasMore = events.length === (reset ? filter.limit || 100 : 200);
             searchResult.isLoading = false;
             searchResults.set(searchTabId, searchResult);
         } catch (error) {
@@ -1780,10 +1832,7 @@
     }
 
     async function loadMoreSearchResults(searchTabId) {
-        const searchTab = searchTabs.find((tab) => tab.id === searchTabId);
-        if (searchTab) {
-            await loadSearchResults(searchTabId, searchTab.query, false);
-        }
+        await loadSearchResults(searchTabId, false);
     }
 
     function handleSearchScroll(event, searchTabId) {
@@ -2485,7 +2534,7 @@
 <!-- Header -->
 <Header
     {isDarkTheme}
-    {isSearchMode}
+    isSearchMode={showFilterBuilder}
     bind:searchQuery
     {isLoggedIn}
     {userRole}
@@ -2498,6 +2547,18 @@
     on:openSettingsDrawer={openSettingsDrawer}
     on:openLoginModal={openLoginModal}
 />
+
+<!-- FilterBuilder - shown when search button is clicked -->
+{#if showFilterBuilder}
+    <div class="filter-builder-overlay">
+        <div class="filter-builder-container">
+            <FilterBuilder
+                on:apply={handleFilterApply}
+                on:clear={handleFilterClear}
+            />
+        </div>
+    </div>
+{/if}
 
 <!-- Main Content Area -->
 <div class="app-container" class:dark-theme={isDarkTheme}>
@@ -2750,13 +2811,12 @@
                 {#if searchTab.id === selectedTab}
                     <div class="search-results-view">
                         <div class="search-results-header">
-                            <h2>🔍 Search Results: "{searchTab.query}"</h2>
+                            <h2>🔍 {searchTab.label}</h2>
                             <button
                                 class="refresh-btn"
                                 on:click={() =>
                                     loadSearchResults(
                                         searchTab.id,
-                                        searchTab.query,
                                         true,
                                     )}
                                 disabled={searchResults.get(searchTab.id)
@@ -2765,6 +2825,13 @@
                                 🔄 Refresh
                             </button>
                         </div>
+                        
+                        <!-- FilterDisplay - show active filter -->
+                        <FilterDisplay
+                            filter={searchResults.get(searchTab.id)?.filter || {}}
+                            on:sweep={() => handleFilterSweep(searchTab.id)}
+                        />
+                        
                         <div
                             class="search-results-content"
                             on:scroll={(e) =>
@@ -2866,7 +2933,7 @@
                             {:else if !searchResults.get(searchTab.id)?.isLoading}
                                 <div class="no-search-results">
                                     <p>
-                                        No search results found for "{searchTab.query}".
+                                        No search results found.
                                     </p>
                                 </div>
                             {/if}
@@ -4066,5 +4133,43 @@
     :global(body.dark-theme) .event-item.old-version {
         background: var(--header-bg);
         border: none;
+    }
+
+    /* Filter Builder Overlay */
+    .filter-builder-overlay {
+        position: fixed;
+        top: 3.5em; /* Below the header */
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        overflow-y: auto;
+        padding: 1em;
+    }
+
+    .filter-builder-container {
+        width: 100%;
+        max-width: 900px;
+        background: var(--bg-color);
+        border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        margin-top: 2em;
+        max-height: calc(100vh - 7em);
+        overflow-y: auto;
+    }
+
+    @media (max-width: 768px) {
+        .filter-builder-overlay {
+            top: 3em;
+        }
+        
+        .filter-builder-container {
+            margin-top: 0;
+            max-height: calc(100vh - 5em);
+        }
     }
 </style>
