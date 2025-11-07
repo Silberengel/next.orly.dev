@@ -8,7 +8,7 @@ Decentralized Name Registry with Trust-Weighted Consensus
 
 ## Abstract
 
-This NIP defines a decentralized name registry protocol for human-readable resource naming with trustless title transfer. The protocol uses trust-weighted attestations from relay operators to achieve Byzantine fault tolerance without requiring centralized coordination or proof-of-work. Consensus is reached through social mechanisms of association and affinity, enabling the network to scale to thousands of participating relays while maintaining ~51% Byzantine fault tolerance against censorship.
+This NIP defines a decentralized name registry protocol for human-readable resource naming with trustless title transfer. The protocol is implemented as an independent service that uses Nostr relays for communication (via ephemeral events) and persistent storage (for name state records). The service uses trust-weighted attestations from registry service operators to achieve Byzantine fault tolerance without requiring centralized coordination or proof-of-work. Consensus is reached through social mechanisms of association and affinity, enabling the network to scale to thousands of participating registry services while maintaining ~51% Byzantine fault tolerance against censorship.
 
 ## Motivation
 
@@ -17,14 +17,52 @@ Many peer-to-peer applications require human-readable naming systems for locatin
 This proposal leverages Nostr's existing social graph and relay infrastructure to create a naming system that is:
 
 - **Trustless**: No single authority controls name registration
-- **Byzantine fault tolerant**: Resistant to malicious relays (up to ~51% by trust weight)
-- **Scalable**: Supports thousands of participating relays
+- **Byzantine fault tolerant**: Resistant to malicious registry services (up to ~51% by trust weight)
+- **Scalable**: Supports thousands of participating registry services
 - **Censorship resistant**: Diverse trust graphs make network-wide censorship difficult
-- **Permissionless**: Anyone can operate a relay and participate in consensus
+- **Permissionless**: Anyone can operate a registry service and participate in consensus
+- **Relay-agnostic**: Uses standard Nostr relays for communication and storage without requiring relay modifications
 
-The protocol achieves finality in 1-2 minutes, which is acceptable for DNS-like use cases while avoiding the complexity and resource requirements of traditional blockchain consensus.
+The protocol is implemented as an independent service (separate from relay software) that communicates via ephemeral Nostr events and stores persistent state as parameterized replaceable events. This achieves finality in 1-2 minutes, which is acceptable for DNS-like use cases while avoiding the complexity and resource requirements of traditional blockchain consensus.
 
 ## Specification
+
+### Architecture Overview
+
+The name registry protocol is implemented as an independent service that runs separately from Nostr relay software. The service architecture consists of:
+
+**Registry Service:**
+- A standalone daemon/process operated by registry service providers
+- Subscribes to registration proposals and attestations from Nostr relays
+- Computes consensus independently using trust-weighted voting
+- Publishes attestations (ephemeral) and name state (persistent) back to relays
+- Maintains local trust graph and consensus state
+
+**Communication Layer (Ephemeral Events):**
+- **Attestations (kind 20100)**: Service-to-service communication via ephemeral events
+- Posted to Nostr relays for propagation to other registry services
+- Short-lived (pruned after attestation window completes)
+- Enables decentralized coordination without direct peer connections
+
+**Storage Layer (Persistent Events):**
+- **Registration Proposals (kind 30100)**: User requests stored on relays
+- **Trust Graphs (kind 30101)**: Service trust relationships stored on relays
+- **Name State (kind 30102)**: Consensus results stored on relays
+- Parameterized replaceable events ensure only current state is maintained
+
+**Relay Role:**
+- Standard Nostr relays (no modifications required)
+- Store persistent events (kinds 30100, 30101, 30102)
+- Propagate ephemeral attestations (kind 20100) between services
+- Serve queries from clients and registry services
+- No consensus logic or special name registry support needed
+
+**Advantages of Independent Service Architecture:**
+- Relays remain simple event stores and routers
+- Service operators can upgrade consensus logic independently
+- Multiple competing registry implementations can coexist
+- Clear separation of concerns (relay = transport/storage, service = consensus)
+- Registry services can use multiple relays for redundancy
 
 ### Event Kinds
 
@@ -73,19 +111,19 @@ This prevents unauthorized transfers and ensures the current owner explicitly ap
 
 ### Attestation (Kind 20100)
 
-An ephemeral event where relay operators attest to their acceptance or rejection of a registration proposal:
+An ephemeral event where registry service operators attest to their acceptance or rejection of a registration proposal. This event is published to Nostr relays for propagation to other registry services:
 
 ```json
 {
   "kind": 20100,
-  "pubkey": "<relay_operator_pubkey>",
+  "pubkey": "<registry_service_pubkey>",
   "created_at": <unix_timestamp>,
   "tags": [
-    ["e", "<proposal_event_id>"],      // the registration proposal being attested
-    ["decision", "approve"],            // "approve", "reject", or "abstain"
-    ["weight", "100"],                  // optional stake/confidence weight
-    ["reason", "first_valid"],          // optional audit trail
-    ["relay", "wss://relay.example.com"] // the relay this operator controls
+    ["e", "<proposal_event_id>"],           // the registration proposal being attested
+    ["decision", "approve"],                 // "approve", "reject", or "abstain"
+    ["weight", "100"],                       // optional stake/confidence weight
+    ["reason", "first_valid"],               // optional audit trail
+    ["service", "wss://registry.example.com"] // optional: the registry service endpoint
   ],
   "content": "",
   "sig": "<signature>"
@@ -96,31 +134,31 @@ An ephemeral event where relay operators attest to their acceptance or rejection
 
 - `e` tag: References the registration proposal event ID
 - `decision` tag: One of:
-  - `approve`: Relay accepts this registration as valid
-  - `reject`: Relay rejects this registration (e.g., conflict detected)
-  - `abstain`: Relay acknowledges but doesn't vote
+  - `approve`: Registry service accepts this registration as valid
+  - `reject`: Registry service rejects this registration (e.g., conflict detected)
+  - `abstain`: Registry service acknowledges but doesn't vote
 - `weight` tag: Optional numeric weight (default: 100). Higher weights indicate stronger confidence or stake.
 - `reason` tag: Optional human-readable justification for audit trails
-- `relay` tag: WebSocket URL of the relay this operator controls
+- `service` tag: Optional identifier for the registry service (URL or other identifier)
 
 **Attestation Window:**
 
-Relays SHOULD publish attestations within 60-120 seconds of receiving a registration proposal. This allows sufficient time for gossip propagation while maintaining reasonable finality times.
+Registry services SHOULD publish attestations within 60-120 seconds of receiving a registration proposal. Attestations are posted to Nostr relays as ephemeral events, allowing them to propagate to other registry services via relay gossip. This allows sufficient time for event propagation while maintaining reasonable finality times.
 
 ### Trust Graph (Kind 30101)
 
-A parameterized replaceable event where relay operators declare their trust relationships:
+A parameterized replaceable event where registry service operators declare their trust relationships. This event is stored on Nostr relays and used by other registry services to build trust graphs:
 
 ```json
 {
   "kind": 30101,
-  "pubkey": "<relay_operator_pubkey>",
+  "pubkey": "<registry_service_pubkey>",
   "created_at": <unix_timestamp>,
   "tags": [
     ["d", "trust-graph"],  // identifier for replacement
-    ["p", "<trusted_relay1_pubkey>", "wss://relay1.com", "0.9"],
-    ["p", "<trusted_relay2_pubkey>", "wss://relay2.com", "0.7"],
-    ["p", "<trusted_relay3_pubkey>", "wss://relay3.com", "0.5"]
+    ["p", "<trusted_service1_pubkey>", "wss://service1.example.com", "0.9"],
+    ["p", "<trusted_service2_pubkey>", "wss://service2.example.com", "0.7"],
+    ["p", "<trusted_service3_pubkey>", "wss://service3.example.com", "0.5"]
   ],
   "content": "",
   "sig": "<signature>"
@@ -129,31 +167,31 @@ A parameterized replaceable event where relay operators declare their trust rela
 
 **Field Specifications:**
 
-- `p` tag: Defines trust in another relay operator
-  - First parameter: Trusted relay operator's pubkey
-  - Second parameter: Relay WebSocket URL
+- `p` tag: Defines trust in another registry service operator
+  - First parameter: Trusted registry service's pubkey
+  - Second parameter: Optional service identifier (URL or other identifier)
   - Third parameter: Trust score (0.0 to 1.0, where 1.0 = complete trust)
 
 **Trust Score Guidelines:**
 
-- `1.0`: Complete trust (e.g., operator's own other relays)
-- `0.7-0.9`: High trust (well-known, reputable operators)
-- `0.4-0.6`: Moderate trust (established but less familiar)
+- `1.0`: Complete trust (e.g., operator's own other registry services)
+- `0.7-0.9`: High trust (well-known, reputable service operators)
+- `0.4-0.6`: Moderate trust (established but less familiar operators)
 - `0.1-0.3`: Low trust (new or unknown operators)
 - `0.0`: No trust (excluded from consensus)
 
 **Trust Graph Updates:**
 
-Relay operators SHOULD update their trust graphs gradually. Rapid changes to trust relationships MAY be penalized in weighted consensus calculations to prevent manipulation.
+Registry service operators SHOULD update their trust graphs gradually. Rapid changes to trust relationships MAY be penalized in weighted consensus calculations to prevent manipulation. Trust graphs are stored as parameterized replaceable events on Nostr relays, making them publicly auditable.
 
 ### Name State (Kind 30102)
 
-A parameterized replaceable event representing the current ownership state of a name:
+A parameterized replaceable event representing the current ownership state of a name. This event is published by registry services after consensus is reached and stored on Nostr relays:
 
 ```json
 {
   "kind": 30102,
-  "pubkey": "<relay_operator_pubkey>",
+  "pubkey": "<registry_service_pubkey>",
   "created_at": <unix_timestamp>,
   "tags": [
     ["d", "<name>"],                    // the name
@@ -168,19 +206,19 @@ A parameterized replaceable event representing the current ownership state of a 
 }
 ```
 
-This event is published by relays after consensus is reached, allowing clients to quickly query current ownership state without recomputing consensus.
+This event is published by registry services after consensus is reached and stored on Nostr relays as a parameterized replaceable event. This allows clients to quickly query current ownership state from relays without recomputing consensus or running their own registry service.
 
 ### Consensus Algorithm
 
-Each relay independently computes consensus using the following algorithm:
+Each registry service independently computes consensus using the following algorithm. Registry services subscribe to events from Nostr relays to receive proposals and attestations:
 
 #### 1. Attestation Window
 
-When a relay receives a registration proposal for name `N`:
+When a registry service receives a registration proposal for name `N` (via subscription to kind 30100 events on relays):
 
 1. Start a timer for `T` seconds (recommended: 60-120s)
-2. Collect all attestations for this proposal
-3. Collect competing proposals for the same name `N`
+2. Collect all attestations for this proposal (kind 20100 events from relays)
+3. Collect competing proposals for the same name `N` (kind 30100 events from relays)
 
 #### 2. Trust-Weighted Scoring
 
@@ -201,15 +239,16 @@ Where:
 
 #### 3. Trust Distance Calculation
 
-Trust distance is computed using the relay's trust graph (kind 30101 events):
+Trust distance is computed using the registry service's trust graph (assembled from kind 30101 events retrieved from relays):
 
-1. Build a directed graph from all relay trust declarations
-2. Use Dijkstra's algorithm or breadth-first search to find shortest trust path
-3. Multiply trust scores along the path for effective trust weight
+1. Subscribe to kind 30101 events from relays to build a trust graph
+2. Build a directed graph from all registry service trust declarations
+3. Use Dijkstra's algorithm or breadth-first search to find shortest trust path
+4. Multiply trust scores along the path for effective trust weight
 
 **Example:**
 ```
-Relay A → Relay B (0.9) → Relay C (0.8)
+Service A → Service B (0.9) → Service C (0.8)
 Effective trust from A to C: 0.9 × 0.8 × 0.8 (1-hop decay) = 0.576
 ```
 
@@ -229,21 +268,21 @@ After the attestation window expires:
    - Multiple proposals exceed threshold with similar scores (within 5%)
    - Insufficient attestations received (coverage < 30% of trust graph)
 
-5. **Publish name state** (kind 30102) once consensus is reached
+5. **Publish name state** (kind 30102) to Nostr relays once consensus is reached
 
 ### Sparse Attestation Optimization
 
-To reduce network load, relays MAY use sparse attestation where they only attest when:
+To reduce network load, registry services MAY use sparse attestation where they only publish attestations when:
 
-1. **Local interest**: One of the relay's connected clients queries this name
-2. **Duty rotation**: `hash(proposal_event_id || relay_pubkey) % K == 0` (for sampling rate 1/K)
+1. **Local interest**: One of the service's clients queries this name
+2. **Duty rotation**: `hash(proposal_event_id || service_pubkey) % K == 0` (for sampling rate 1/K)
 3. **Conflict detected**: Multiple competing proposals received for the same name
 4. **Direct request**: Client explicitly requests attestation
 
 **Recommended sampling rates:**
-- Networks with <100 relays: K=1 (100% attestation)
-- Networks with 100-1000 relays: K=10 (10% attestation)
-- Networks with >1000 relays: K=20 (5% attestation)
+- Networks with <100 services: K=1 (100% attestation)
+- Networks with 100-1000 services: K=10 (10% attestation)
+- Networks with >1000 services: K=20 (5% attestation)
 
 This optimization reduces attestation volume by 80-95% while maintaining consensus reliability through randomized duty rotation.
 
@@ -255,7 +294,7 @@ When multiple proposals for the same name arrive at similar timestamps:
 
 1. **Primary resolution**: Weighted consensus (highest score wins)
 2. **Tiebreaker**: If scores are within 5%, use lexicographic ordering of proposal event IDs
-3. **Client notification**: Relays SHOULD publish notices about conflicts for transparency
+3. **Client notification**: Registry services SHOULD publish notices about conflicts for transparency
 
 #### Competing Transfers
 
@@ -267,25 +306,26 @@ When multiple transfer proposals claim to originate from the same owner:
 
 #### Trust Graph Divergence
 
-Different relays may reach different consensus due to divergent trust graphs. This is acceptable and provides censorship resistance:
+Different registry services may reach different consensus due to divergent trust graphs. This is acceptable and provides censorship resistance:
 
-- Clients SHOULD query multiple relays (recommended: 3-5)
-- Use majority consensus among queried relays
-- Display uncertainty warnings if relays disagree (similar to SSL certificate warnings)
+- Clients SHOULD query multiple registry services (recommended: 3-5) by fetching kind 30102 events from relays
+- Use majority consensus among responses
+- Display uncertainty warnings if services disagree (similar to SSL certificate warnings)
 
 ### Finality Timeline
 
 Expected timeline for name registration:
 
 ```
-T=0s:      Registration proposal published
-T=0-30s:   Proposal propagates via Nostr gossip
-T=30-90s:  Relays publish attestations
-T=90s:     Most relays compute weighted consensus
+T=0s:      Registration proposal published to relays (kind 30100)
+T=0-30s:   Proposal propagates via relay gossip to registry services
+T=30-90s:  Registry services publish attestations (kind 20100) to relays
+T=90s:     Most registry services compute weighted consensus
 T=120s:    High confidence threshold (2-minute finality)
+T=120s+:   Registry services publish name state (kind 30102) to relays
 ```
 
-**Early finality**: If >70% of expected attestations arrive within 30s and reach consensus threshold, relays MAY finalize earlier.
+**Early finality**: If >70% of expected attestations arrive within 30s and reach consensus threshold, registry services MAY finalize earlier.
 
 ## Implementation Guidelines
 
@@ -294,36 +334,41 @@ T=120s:    High confidence threshold (2-minute finality)
 Clients querying name ownership should:
 
 1. Subscribe to kind 30102 events for the name from multiple relays
-2. Use majority consensus among responses
-3. Warn users if relays disagree on ownership
+2. Use majority consensus among responses from different registry services
+3. Warn users if registry services disagree on ownership
 4. Cache results with TTL of 5-10 minutes
 5. Re-query on cache expiry or when name is used in critical operations
 
-### Relay Implementation
+Note: Clients do not need to run registry service software; they simply query kind 30102 events from standard Nostr relays.
 
-Relays participating in consensus should:
+### Registry Service Implementation
 
-1. Subscribe to kind 30100, 20100, and 30101 events from trusted relays
-2. Maintain local trust graph (derived from kind 30101 events)
+Registry services participating in consensus should:
+
+1. Subscribe to kind 30100, 20100, and 30101 events from configured Nostr relays
+2. Maintain local trust graph (derived from kind 30101 events fetched from relays)
 3. Implement the consensus algorithm described above
-4. Publish attestations (kind 20100) for proposals of interest
-5. Publish name state (kind 30102) after reaching consensus
-6. Prune expired ephemeral attestations (>7 days old)
+4. Publish attestations (kind 20100) as ephemeral events to relays for proposals of interest
+5. Publish name state (kind 30102) as parameterized replaceable events to relays after reaching consensus
+6. Maintain local cache of active proposals and attestations (ephemeral data can be pruned after consensus)
 
-**Storage requirements:**
-- Trust graph: ~100 KB per 1000 relays
-- Active proposals: ~1 MB per 1000 pending registrations
-- Attestations (7-day window): ~100 MB per 1000 relays at 1000 registrations/day
-- Name state: ~1 KB per name
+**Storage requirements (per registry service):**
+- Trust graph cache: ~100 KB per 1000 registry services
+- Active proposals cache: ~1 MB per 1000 pending registrations
+- Attestations cache (during attestation window): ~1-10 MB depending on network size
+- Name state cache: ~1 KB per name
 
-### Bootstrap Relay Discovery
+Note: Registry services can prune ephemeral attestations after consensus is reached. Persistent data (proposals, trust graphs, name state) is stored on Nostr relays, not in the registry service.
 
-New relays should bootstrap their trust graph by:
+### Bootstrap Service Discovery
 
-1. Connecting to well-known seed relays (similar to NIP-65 relay lists)
-2. Importing trust graphs from 3-5 reputable relays
+New registry services should bootstrap their trust graph by:
+
+1. Connecting to well-known Nostr relays to fetch kind 30101 events
+2. Importing trust graphs from 3-5 reputable registry services
 3. Using weighted average of imported trust scores as initial state
-4. Gradually adjusting trust based on observed relay behavior over 30 days
+4. Gradually adjusting trust based on observed service behavior over 30 days
+5. Publishing their own trust graph (kind 30101) to relays once established
 
 ## Security Considerations
 
@@ -331,31 +376,32 @@ New relays should bootstrap their trust graph by:
 
 #### 1. Sybil Attack
 
-**Attack**: Attacker creates thousands of relay identities to dominate attestations.
+**Attack**: Attacker creates thousands of registry service identities to dominate attestations.
 
 **Mitigation**:
-- Trust-weighted consensus prevents new relays from having immediate influence
-- Established relays must trust new relays before they gain weight
-- Age-weighted trust (new relays have reduced influence for 30 days)
+- Trust-weighted consensus prevents new services from having immediate influence
+- Established services must trust new services before they gain weight
+- Age-weighted trust (new services have reduced influence for 30 days)
+- Trust graphs stored on relays are publicly auditable
 
 #### 2. Trust Graph Manipulation
 
 **Attack**: Attacker gradually builds trust relationships then exploits them.
 
 **Mitigation**:
-- Audit trails (kind 30101 events are public and verifiable)
+- Audit trails (kind 30101 events stored on relays are public and verifiable)
 - Sudden trust changes are penalized in consensus calculations
-- Diverse trust graphs mean attacker must control different sets of relays for different victims
+- Diverse trust graphs mean attacker must control different sets of services for different victims
 
 #### 3. Censorship
 
-**Attack**: Powerful relays refuse to attest certain names (e.g., dissidents, competitors).
+**Attack**: Powerful registry services refuse to attest certain names (e.g., dissidents, competitors).
 
 **Mitigation**:
-- Subjective consensus means each relay has its own trust graph
-- Censoring a name requires controlling >51% of *each relay's* trust graph
+- Subjective consensus means each registry service has its own trust graph
+- Censoring a name requires controlling >51% of *each service's* trust graph
 - More difficult than controlling 51% of network-wide consensus
-- Users can choose relays aligned with their values
+- Users can query different registry services via different relays aligned with their values
 
 #### 4. Name Squatting
 
@@ -373,56 +419,58 @@ New relays should bootstrap their trust graph by:
 **Mitigation**:
 - Transfer requires cryptographic signature from previous owner (`prev_sig`)
 - Signature includes timestamp to prevent replay attacks
-- Invalid signatures cause immediate rejection by honest relays
+- Invalid signatures cause immediate rejection by honest registry services
 
 ### Privacy Considerations
 
-- Registration proposals are public (necessary for consensus)
-- Ownership history is permanently visible on relays
-- Trust relationships are public (required for verifiable consensus)
+- Registration proposals are public and stored on relays (necessary for consensus)
+- Ownership history is permanently visible on relays storing kind 30100/30102 events
+- Trust relationships are public on relays (required for verifiable consensus)
 - Clients leaking name queries to relays (similar to DNS privacy issues)
   - Mitigation: Use private relays or Tor for sensitive queries
+- Registry service attestations are ephemeral but visible during attestation window
+  - Attestations reveal which services are active and participating
 
 ## Discussion
 
 ### Trust Graph Bootstrapping
 
-The effectiveness of trust-weighted consensus depends on establishing a healthy trust graph. This presents a chicken-and-egg problem: new relays need trust to participate, but must participate to earn trust.
+The effectiveness of trust-weighted consensus depends on establishing a healthy trust graph. This presents a chicken-and-egg problem: new registry services need trust to participate, but must participate to earn trust.
 
 **Proposed bootstrapping strategies:**
 
-#### 1. Seed Relay Trust Inheritance
+#### 1. Seed Service Trust Inheritance
 
-New relays can inherit trust graphs from established "seed" relays:
+New registry services can inherit trust graphs from established "seed" services by fetching their kind 30101 events from relays:
 
 ```json
 {
   "kind": 30101,
   "tags": [
-    ["inherit", "<seed_relay_pubkey>", "0.8"],
-    ["inherit", "<seed_relay_pubkey2>", "0.6"]
+    ["inherit", "<seed_service_pubkey>", "0.8"],
+    ["inherit", "<seed_service_pubkey2>", "0.6"]
   ]
 }
 ```
 
-The new relay computes its initial trust graph as a weighted average of the seed relays' graphs. Over time (30-90 days), the relay adjusts trust based on observed behavior.
+The new service computes its initial trust graph as a weighted average of the seed services' graphs. Over time (30-90 days), the service adjusts trust based on observed behavior and publishes updated trust graphs to relays.
 
 **Trade-offs:**
 - ✅ Enables immediate participation
 - ✅ Leverages existing reputation
-- ❌ Creates trust concentrations around seed relays
-- ❌ Seed relay compromise affects many descendants
+- ❌ Creates trust concentrations around seed services
+- ❌ Seed service compromise affects many descendants
 
 #### 2. Web of Trust Endorsements
 
-Established relay operators can endorse new relays through signed endorsements:
+Established registry service operators can endorse new services through signed endorsements (stored on relays):
 
 ```json
 {
   "kind": 1100,
-  "pubkey": "<established_relay_pubkey>",
+  "pubkey": "<established_service_pubkey>",
   "tags": [
-    ["p", "<new_relay_pubkey>"],
+    ["p", "<new_service_pubkey>"],
     ["endorsement", "verified"],
     ["duration", "30d"],
     ["initial_trust", "0.3"]
@@ -430,23 +478,23 @@ Established relay operators can endorse new relays through signed endorsements:
 }
 ```
 
-Other relays consuming this endorsement automatically grant the new relay temporary trust (e.g., 0.3 for 30 days), after which it decays to 0 unless organically reinforced.
+Other services consuming this endorsement (from relays) automatically grant the new service temporary trust (e.g., 0.3 for 30 days), after which it decays to 0 unless organically reinforced.
 
 **Trade-offs:**
 - ✅ Decentralized trust building
 - ✅ Time-limited risk exposure
 - ✅ Organic network growth
-- ❌ Slower bootstrap for new relays
+- ❌ Slower bootstrap for new services
 - ❌ Endorsement spam risk
 
 #### 3. Proof-of-Stake Bootstrap
 
-New relays can stake economic value (e.g., lock tokens in a Bitcoin Lightning channel) to gain initial trust:
+New registry services can stake economic value (e.g., lock tokens in a Bitcoin Lightning channel) to gain initial trust. Stake proof events are published to relays:
 
 ```json
 {
   "kind": 30103,
-  "pubkey": "<new_relay_pubkey>",
+  "pubkey": "<new_service_pubkey>",
   "tags": [
     ["stake", "<lightning_invoice>", "1000000"],  // 1M sats
     ["stake_duration", "180d"],
@@ -455,7 +503,7 @@ New relays can stake economic value (e.g., lock tokens in a Bitcoin Lightning ch
 }
 ```
 
-Relays treat staked relays as having trust proportional to stake amount. Dishonest behavior results in slashing (stake destruction).
+Other services fetching these events from relays treat staked services as having trust proportional to stake amount. Dishonest behavior results in slashing (stake destruction).
 
 **Trade-offs:**
 - ✅ Sybil resistant (economic cost)
@@ -467,12 +515,12 @@ Relays treat staked relays as having trust proportional to stake amount. Dishone
 
 #### 4. Proof-of-Work Bootstrap
 
-New relays solve computational puzzles to earn temporary trust:
+New registry services solve computational puzzles to earn temporary trust. PoW proof events are published to relays:
 
 ```json
 {
   "kind": 30104,
-  "pubkey": "<new_relay_pubkey>",
+  "pubkey": "<new_service_pubkey>",
   "tags": [
     ["pow", "<nonce>", "24"],  // 24-bit difficulty
     ["pow_created", "<timestamp>"]
@@ -491,14 +539,14 @@ Higher difficulty equals higher initial trust. PoW expires after 90 days unless 
 - ❌ Difficulty calibration challenges
 
 **Recommendation**: Implement **hybrid approach**:
-- Start with seed relay inheritance (#1) for immediate participation
+- Start with seed service inheritance (#1) for immediate participation
 - Layer WoT endorsements (#2) for organic trust growth
 - Optional PoW (#4) for permissionless entry without social connections
 - Reserve PoS (#3) for future upgrade if economic attacks become problematic
 
 ### Economic Incentives
 
-Why would relay operators honestly attest to name registrations? Without proper incentives, rational operators might:
+Why would registry service operators honestly attest to name registrations? Without proper incentives, rational operators might:
 - Refuse to attest (freeloading)
 - Attest dishonestly (e.g., favoring paying customers)
 - Collude to manipulate consensus
@@ -507,7 +555,7 @@ Why would relay operators honestly attest to name registrations? Without proper 
 
 #### 1. Registration Fees
 
-Name registration proposals include optional tips to relays that attest:
+Name registration proposals include optional tips to registry services that attest. Proposals are published to relays with fee information:
 
 ```json
 {
@@ -521,26 +569,26 @@ Name registration proposals include optional tips to relays that attest:
 ```
 
 **Distribution strategies:**
-- **Attestors**: Split among all relays that attested (encourages broad participation)
-- **Weighted**: Proportional to trust weight (rewards influential relays)
+- **Attestors**: Split among all services that attested (encourages broad participation)
+- **Weighted**: Proportional to trust weight (rewards influential services)
 - **Threshold**: All-or-nothing (only if consensus reached)
 
 **Trade-offs:**
 - ✅ Direct incentive for honest attestation
 - ✅ Market-driven fee discovery
-- ✅ Revenue for relay operators
+- ✅ Revenue for registry service operators
 - ❌ Plutocracy risk (wealthy users get priority)
 - ❌ Creates spam incentive (register garbage for fees)
 
 #### 2. Reputation Markets
 
-Relay operators earn reputation scores based on attestation quality:
+Registry service operators earn reputation scores based on attestation quality. Reputation events are published to relays:
 
 ```json
 {
   "kind": 30105,
   "tags": [
-    ["p", "<relay_pubkey>"],
+    ["p", "<service_pubkey>"],
     ["metric", "accuracy", "0.97"],      // % of attestations matching consensus
     ["metric", "uptime", "0.99"],        // % of proposals attested
     ["metric", "latency", "15"],         // avg attestation time (seconds)
@@ -549,10 +597,10 @@ Relay operators earn reputation scores based on attestation quality:
 }
 ```
 
-High-reputation relays gain:
-- Greater trust from other relays
-- Priority in client queries
-- Higher economic value (e.g., relay subscription fees)
+High-reputation services gain:
+- Greater trust from other services
+- Priority in client queries (clients prefer high-reputation services)
+- Higher economic value (e.g., subscription fees, tips)
 
 **Trade-offs:**
 - ✅ Long-term incentive alignment
@@ -563,46 +611,48 @@ High-reputation relays gain:
 
 #### 3. Mutual Benefit Networks
 
-Relays form explicit cooperation agreements:
+Registry services form explicit cooperation agreements (published to relays):
 
 ```json
 {
   "kind": 30106,
   "tags": [
-    ["p", "<partner_relay1>", "wss://relay1.com"],
-    ["p", "<partner_relay2>", "wss://relay2.com"],
+    ["p", "<partner_service1>", "wss://service1.example.com"],
+    ["p", "<partner_service2>", "wss://service2.example.com"],
     ["agreement", "reciprocal_attestation"],
     ["sla", "95_percent_uptime"]
   ]
 }
 ```
 
-Relays attest to partners' proposals in exchange for reciprocal service. Violating agreements results in removal from the network.
+Services attest to partners' proposals in exchange for reciprocal service. Violating agreements results in removal from the network.
 
 **Trade-offs:**
 - ✅ No economic transactions needed
 - ✅ Builds social cohesion
 - ✅ Flexible SLA definitions
-- ❌ Creates relay cartels
+- ❌ Creates service cartels
 - ❌ Excludes new entrants
 - ❌ May lead to consensus fragmentation
 
 #### 4. Altruism + Low Operational Cost
 
-If attestation cost is sufficiently low, relay operators may participate altruistically:
+If attestation cost is sufficiently low, registry service operators may participate altruistically:
 
-- Storage: ~100 MB for 7-day attestation window
-- Bandwidth: ~1 KB per attestation
+- Storage: ~1-10 MB for active proposals and attestations (ephemeral data, pruned after consensus)
+- Bandwidth: ~1 KB per attestation published to relays
 - Computation: Simple signature verification and weighted sum
+- Network: WebSocket connections to a few Nostr relays
 
 At 1000 registrations/day with 10% sparse attestation:
-- **Cost per relay**: <$1/month in infrastructure
-- **Comparable to**: Running a Bitcoin full node or Nostr relay
+- **Cost per service**: <$1/month in infrastructure (plus relay costs if self-hosting)
+- **Comparable to**: Running a lightweight daemon alongside a Nostr relay
 
-Many operators already run relays without direct compensation, motivated by:
+Many operators already run services without direct compensation, motivated by:
 - Ideological alignment (decentralization, censorship resistance)
 - Supporting applications they use
 - Technical interest and experimentation
+- Using existing Nostr relays means no additional infrastructure
 
 **Trade-offs:**
 - ✅ No economic complexity
@@ -612,30 +662,34 @@ Many operators already run relays without direct compensation, motivated by:
 - ❌ Vulnerable to tragedy of the commons
 
 **Recommendation**: Start with **altruism (#4)** supplemented by **reputation (#2)**:
-- Most relay operators will participate without direct payment (proven by existing Nostr network)
+- Most service operators will participate without direct payment (proven by existing Nostr network)
 - Implement transparent reputation metrics to reward high-quality attestors
-- Enable optional tipping (#1) for users who want priority or to support relays
+- Enable optional tipping (#1) for users who want priority or to support services
 - Reserve mutual benefit networks (#3) for enterprise deployments
 
 ### Client Conflict Resolution
 
-Clients querying name ownership may receive conflicting responses from different relays due to:
-1. Trust graph divergence (different relays trust different attestors)
-2. Network partitions (some relays missed attestations)
-3. Byzantine relays (malicious responses)
+Clients querying name ownership may receive conflicting responses from different registry services due to:
+1. Trust graph divergence (different services trust different attestors)
+2. Network partitions (some services missed attestations from relays)
+3. Byzantine services (malicious responses)
 
 **Conflict resolution strategies:**
 
 #### 1. Majority Consensus
 
-Client queries N relays (recommended N=5) and accepts the majority response:
+Client queries kind 30102 events from N relays (recommended N=5) to get name state from different registry services, then accepts the majority response:
 
 ```python
 def resolve_name(name, relays):
     responses = []
     for relay in relays:
-        owner = query_relay(relay, name)
-        responses.append(owner)
+        # Query kind 30102 events with d tag = name
+        # Each event is from a different registry service
+        name_states = query_relay(relay, kind=30102, filter={"#d": [name]})
+        for state in name_states:
+            owner = state.tags["owner"]
+            responses.append(owner)
 
     # Count occurrences
     counts = {}
@@ -644,7 +698,7 @@ def resolve_name(name, relays):
 
     # Return majority (>50%)
     for owner, count in counts.items():
-        if count > len(relays) / 2:
+        if count > len(responses) / 2:
             return owner
 
     return None  # No majority
@@ -652,29 +706,33 @@ def resolve_name(name, relays):
 
 **Trade-offs:**
 - ✅ Simple and intuitive
-- ✅ Byzantine fault tolerant (up to N/2 malicious relays)
+- ✅ Byzantine fault tolerant (up to N/2 malicious services)
 - ✅ Works with any relay set
 - ❌ Requires querying multiple relays (latency)
-- ❌ No nuance for different relay qualities
+- ❌ No nuance for different service qualities
 
 #### 2. Trust-Weighted Voting
 
-Client maintains its own trust graph and weights relay responses:
+Client maintains its own trust graph and weights responses by registry service pubkey:
 
 ```python
 def resolve_name_weighted(name, relays, trust_scores):
     responses = {}
     for relay in relays:
-        owner = query_relay(relay, name)
-        weight = trust_scores.get(relay, 0.5)  # default 0.5
-        responses[owner] = responses.get(owner, 0) + weight
+        # Query kind 30102 events
+        name_states = query_relay(relay, kind=30102, filter={"#d": [name]})
+        for state in name_states:
+            service_pubkey = state.pubkey
+            owner = state.tags["owner"]
+            weight = trust_scores.get(service_pubkey, 0.5)  # default 0.5
+            responses[owner] = responses.get(owner, 0) + weight
 
     # Return highest weighted response
     return max(responses, key=responses.get)
 ```
 
 **Trade-offs:**
-- ✅ Rewards high-quality relays
+- ✅ Rewards high-quality services
 - ✅ Resilient to Sybil attacks
 - ✅ Customizable trust model
 - ❌ Client must maintain trust graph
@@ -682,21 +740,22 @@ def resolve_name_weighted(name, relays, trust_scores):
 
 #### 3. Consensus Confidence Scoring
 
-Relays include confidence scores in name state events (kind 30102):
+Registry services include confidence scores in name state events (kind 30102):
 
 ```json
 {
   "kind": 30102,
+  "pubkey": "<registry_service_pubkey>",
   "tags": [
     ["d", "foo.n"],
     ["owner", "<pubkey>"],
     ["confidence", "0.87"],  // 87% of trust weight agreed
-    ["attestations", "42"]   // 42 relays attested
+    ["attestations", "42"]   // 42 services attested
   ]
 }
 ```
 
-Client queries multiple relays and uses the response with highest confidence:
+Client queries kind 30102 events from multiple relays and uses the response with highest confidence:
 
 ```python
 def resolve_name_confidence(name, relays):
@@ -704,12 +763,14 @@ def resolve_name_confidence(name, relays):
     best_confidence = 0
 
     for relay in relays:
-        state = query_relay(relay, name)  # returns kind 30102
-        confidence = float(state.tags["confidence"])
+        # Query kind 30102 events
+        name_states = query_relay(relay, kind=30102, filter={"#d": [name]})
+        for state in name_states:
+            confidence = float(state.tags["confidence"])
 
-        if confidence > best_confidence:
-            best_confidence = confidence
-            best_response = state.tags["owner"]
+            if confidence > best_confidence:
+                best_confidence = confidence
+                best_response = state.tags["owner"]
 
     # Warn if low confidence
     if best_confidence < 0.6:
@@ -722,8 +783,8 @@ def resolve_name_confidence(name, relays):
 - ✅ Transparent consensus strength
 - ✅ User warnings for disputed names
 - ✅ Minimal client complexity
-- ❌ Trusts relay's confidence calculation
-- ❌ Relays could lie about confidence
+- ❌ Trusts registry service's confidence calculation
+- ❌ Services could lie about confidence
 
 #### 4. Recursive Attestation Verification
 
@@ -756,10 +817,11 @@ def resolve_name_verify(name, relays):
 **Trade-offs:**
 - ✅ Maximum trustlessness
 - ✅ Client verifies everything
-- ✅ Can audit relay dishonesty
+- ✅ Can audit registry service dishonesty
 - ❌ Significant bandwidth and computation
 - ❌ Complex client implementation
 - ❌ May timeout on large registries
+- ❌ Ephemeral attestations may be pruned from relays
 
 #### 5. Hybrid: Quick Query with Dispute Resolution
 
