@@ -76,7 +76,6 @@ cmd/benchmark/data
 !*.css
 !*.ts
 !*.html
-!contrib/stella/Dockerfile
 !*.lock
 !*.nix
 !license
@@ -88,10 +87,8 @@ cmd/benchmark/data
 !.gitignore
 !version
 !out.jsonl
-!contrib/stella/Dockerfile
 !strfry.conf
 !config.toml
-!contrib/stella/.dockerignore
 !*.jsx
 !*.tsx
 !bun.lock
