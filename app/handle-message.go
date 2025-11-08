@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode"
+	"unicode/utf8"
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
@@ -18,36 +18,22 @@ import (
 )
 
 // validateJSONMessage checks if a message contains invalid control characters
-// that would cause JSON parsing to fail
+// that would cause JSON parsing to fail. It also validates UTF-8 encoding.
 func validateJSONMessage(msg []byte) (err error) {
-	for i, b := range msg {
-		// Check for invalid control characters in JSON strings
+	// First, validate that the message is valid UTF-8
+	if !utf8.Valid(msg) {
+		return fmt.Errorf("invalid UTF-8 encoding")
+	}
+
+	// Check for invalid control characters in JSON strings
+	for i := 0; i < len(msg); i++ {
+		b := msg[i]
+
+		// Check for invalid control characters (< 32) except tab, newline, carriage return
 		if b < 32 && b != '\t' && b != '\n' && b != '\r' {
-			// Allow some control characters that might be valid in certain contexts
-			// but reject form feed (\f), backspace (\b), and other problematic ones
-			switch b {
-			case '\b', '\f', 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-				0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-				0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F:
-				return fmt.Errorf("invalid control character 0x%02X at position %d", b, i)
-			}
-		}
-		// Check for non-printable characters that might indicate binary data
-		if b > 127 && !unicode.IsPrint(rune(b)) {
-			// Allow valid UTF-8 sequences, but be suspicious of random binary data
-			if i < len(msg)-1 {
-				// Quick check: if we see a lot of high-bit characters in sequence,
-				// it might be binary data masquerading as text
-				highBitCount := 0
-				for j := i; j < len(msg) && j < i+10; j++ {
-					if msg[j] > 127 {
-						highBitCount++
-					}
-				}
-				if highBitCount > 7 { // More than 70% high-bit chars in a 10-byte window
-					return fmt.Errorf("suspicious binary data detected at position %d", i)
-				}
-			}
+			return fmt.Errorf(
+				"invalid control character 0x%02X at position %d", b, i,
+			)
 		}
 	}
 	return
@@ -58,12 +44,17 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	if l.isBlacklisted {
 		// Check if timeout has been reached
 		if time.Now().After(l.blacklistTimeout) {
-			log.W.F("blacklisted IP %s timeout reached, closing connection", remote)
+			log.W.F(
+				"blacklisted IP %s timeout reached, closing connection", remote,
+			)
 			// Close the connection by cancelling the context
 			// The websocket handler will detect this and close the connection
 			return
 		}
-		log.D.F("discarding message from blacklisted IP %s (timeout in %v)", remote, time.Until(l.blacklistTimeout))
+		log.D.F(
+			"discarding message from blacklisted IP %s (timeout in %v)", remote,
+			time.Until(l.blacklistTimeout),
+		)
 		return
 	}
 
@@ -71,13 +62,22 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	if len(msgPreview) > 150 {
 		msgPreview = msgPreview[:150] + "..."
 	}
-	// log.D.F("%s processing message (len=%d): %s", remote, len(msg), msgPreview)
+	log.D.F("%s processing message (len=%d): %s", remote, len(msg), msgPreview)
 
 	// Validate message for invalid characters before processing
 	if err := validateJSONMessage(msg); err != nil {
-		log.E.F("%s message validation FAILED (len=%d): %v", remote, len(msg), err)
-		if noticeErr := noticeenvelope.NewFrom(fmt.Sprintf("invalid message format: contains invalid characters: %s", msg)).Write(l); noticeErr != nil {
-			log.E.F("%s failed to send validation error notice: %v", remote, noticeErr)
+		log.E.F(
+			"%s message validation FAILED (len=%d): %v", remote, len(msg), err,
+		)
+		if noticeErr := noticeenvelope.NewFrom(
+			fmt.Sprintf(
+				"invalid message format: contains invalid characters: %s", msg,
+			),
+		).Write(l); noticeErr != nil {
+			log.E.F(
+				"%s failed to send validation error notice: %v", remote,
+				noticeErr,
+			)
 		}
 		return
 	}
@@ -140,9 +140,11 @@ func (l *Listener) HandleMessage(msg []byte, remote string) {
 	if err != nil {
 		// Don't log context cancellation errors as they're expected during shutdown
 		if !strings.Contains(err.Error(), "context canceled") {
-			log.E.F("%s message processing FAILED (type=%s): %v", remote, t, err)
+			log.E.F(
+				"%s message processing FAILED (type=%s): %v", remote, t, err,
+			)
 			// Don't log message preview as it may contain binary data
- 			// Send error notice to client (use generic message to avoid control chars in errors)
+			// Send error notice to client (use generic message to avoid control chars in errors)
 			noticeMsg := fmt.Sprintf("%s processing failed", t)
 			if noticeErr := noticeenvelope.NewFrom(noticeMsg).Write(l); noticeErr != nil {
 				log.E.F(
