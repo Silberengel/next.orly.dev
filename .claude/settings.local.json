@@ -17,7 +17,15 @@
       "Bash(printf:*)",
       "Bash(websocat:*)",
       "Bash(go test:*)",
-      "Bash(timeout 180 go test:*)"
+      "Bash(timeout 180 go test:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(/tmp/find help)",
+      "Bash(/tmp/find verify-name example.com)",
+      "Skill(golang)",
+      "Bash(/tmp/find verify-name Bitcoin.Nostr)",
+      "Bash(/tmp/find generate-key)",
+      "Bash(git ls-tree:*)"
     ],
     "deny": [],
     "ask": []
