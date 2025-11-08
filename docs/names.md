@@ -12,6 +12,8 @@ This NIP defines a decentralized name registry protocol for human-readable resou
 
 All name registrations last exactly 1 year by network consensus. During the final 30 days before expiration, only the current owner can renew the name (preferential renewal window), preventing last-minute sniping while requiring active maintenance to prevent squatting.
 
+Names follow standard Internet DNS conventions (lowercase, dot-separated hierarchical structure). **TLDs are registerable by anyone** - there is no ICANN equivalent, meaning valuable TLDs like `com`, `org`, `net` will see intense competition in a first-come-first-served race at network launch.
+
 Name owners can publish DNS-style resource records (A, AAAA, CNAME, MX, TXT, NS, SRV) to define what their names resolve to, enabling use cases from IP address mapping to mail servers to service discovery.
 
 To complete the replacement of traditional DNS and TLS infrastructure, the protocol includes a decentralized certificate system using Let's Encrypt-style challenge-response verification and threshold witnessing, combined with a Noise protocol variant (Nostr Noise) for establishing secure authenticated connections without certificate authorities.
@@ -46,11 +48,13 @@ The protocol is implemented as an independent service (separate from relay softw
 
 **Key Innovations:**
 
-1. **Preferential Renewal Window:** All names expire after exactly 1 year by network consensus. During the final 30 days before expiration, only the current owner can renew the name, preventing last-minute sniping while ensuring names don't remain claimed indefinitely without active maintenance. After expiration, names become available to anyone on a first-come, first-served basis.
+1. **No Central Naming Authority:** Unlike traditional DNS with ICANN controlling TLDs, this protocol allows anyone to register TLDs. Names follow standard DNS conventions (lowercase, dot-separated) ensuring compatibility, but TLDs are first-come-first-served. Subdomain authority is enforced (must own parent domain), creating a hierarchical ownership model without centralized gatekeepers.
 
-2. **DNS-Compatible Records:** Owners publish standard DNS-style resource records (A, AAAA, CNAME, MX, TXT, NS, SRV) as Nostr events, enabling drop-in replacement for traditional DNS in many applications. Per-type limits prevent spam while supporting real-world use cases.
+2. **Preferential Renewal Window:** All names expire after exactly 1 year by network consensus. During the final 30 days before expiration, only the current owner can renew the name, preventing last-minute sniping while ensuring names don't remain claimed indefinitely without active maintenance. After expiration, names become available to anyone on a first-come, first-served basis.
 
-3. **Decentralized Certificates & TLS Replacement:** Challenge-response verification (similar to Let's Encrypt) proves name ownership, threshold witnessing (3+ trusted parties) replaces certificate authorities, and a Noise protocol variant using Nostr's secp256k1 primitives provides secure authenticated transport with perfect forward secrecy.
+3. **DNS-Compatible Records:** Owners publish standard DNS-style resource records (A, AAAA, CNAME, MX, TXT, NS, SRV) as Nostr events, enabling drop-in replacement for traditional DNS in many applications. Per-type limits prevent spam while supporting real-world use cases.
+
+4. **Decentralized Certificates & TLS Replacement:** Challenge-response verification (similar to Let's Encrypt) proves name ownership, threshold witnessing (3+ trusted parties) replaces certificate authorities, and a Noise protocol variant using Nostr's secp256k1 primitives provides secure authenticated transport with perfect forward secrecy.
 
 The protocol achieves registration finality in 1-2 minutes, record updates are instant (limited only by relay propagation), and certificate issuance takes minutes, making it suitable for replacing DNS and TLS infrastructure while avoiding the complexity and resource requirements of traditional blockchain consensus.
 
@@ -131,6 +135,101 @@ Expiration ensures that:
 | 30104 | Certificate | `valid_until` timestamp | Certificates expire per their validity period (recommended: 90 days) |
 | 30105 | Witness Service | `created_at + 15552000` (180 days) | Witness service info should be updated semi-annually |
 
+### Name Format and Syntax
+
+Names in this protocol MUST follow standard Internet domain name conventions to ensure compatibility with existing tools and mental models.
+
+**Name Format Rules:**
+
+1. **Case Normalization**: All names MUST be lowercase ASCII only
+   - `Example.Com` → normalized to `example.com`
+   - Names are case-insensitive for registration but stored in lowercase
+   - Uppercase letters in proposals are automatically converted to lowercase
+
+2. **Character Set**: Names MUST only contain:
+   - Lowercase letters: `a-z`
+   - Digits: `0-9`
+   - Hyphens: `-` (not at start or end of labels)
+   - Dots: `.` (label separator)
+
+3. **Label Structure**: Names are composed of dot-separated labels
+   - Each label: 1-63 characters
+   - Total name: maximum 253 characters
+   - Labels cannot start or end with hyphens
+   - Labels cannot be all numeric
+
+4. **Hierarchical Structure**: Standard DNS hierarchy applies
+   - `com` - top-level domain (TLD)
+   - `example.com` - second-level domain under `com`
+   - `www.example.com` - third-level domain (subdomain) under `example.com`
+   - `api.services.example.com` - fourth-level domain
+
+**Top-Level Domains (TLDs):**
+
+In this protocol, **TLDs are just names like any other** and can be registered by anyone. There is no reserved set of TLDs (no ICANN equivalent).
+
+```json
+// Anyone can register a TLD
+{"kind": 30100, "tags": [["d", "com"], ["action", "register"]]}
+{"kind": 30100, "tags": [["d", "nostr"], ["action", "register"]]}
+{"kind": 30100, "tags": [["d", "bitcoin"], ["action", "register"]]}
+```
+
+**TLD Registration Race:**
+
+Since TLDs are registerable by anyone, valuable/generic TLDs will likely see intense competition:
+- Popular extensions: `com`, `org`, `net`, `io`, `dev`, etc.
+- Geographic: `us`, `uk`, `jp`, `eu`, etc.
+- Generic terms: `shop`, `mail`, `web`, `app`, etc.
+- Cryptocurrency: `bitcoin`, `nostr`, `lightning`, etc.
+
+The first proposal to achieve consensus wins the TLD. Expect significant competition for short, memorable TLDs in the early network.
+
+**Subdomain Authority:**
+
+Only the owner of a domain can register its direct subdomains:
+- Owner of `com` can register `example.com`, `google.com`, etc.
+- Owner of `example.com` can register `www.example.com`, `api.example.com`, etc.
+- Owner of `example.com` CANNOT register `other.com` (different parent)
+
+This is enforced by the protocol: Registry services MUST verify that the registrant of `sub.parent.tld` also owns `parent.tld`.
+
+**Examples:**
+
+Valid names:
+```
+com
+example.com
+www.example.com
+api-v2.services.example.com
+my-site.nostr
+user123.bitcoin
+```
+
+Invalid names:
+```
+Example.Com          # Not lowercase (will be normalized)
+exam ple.com         # Contains space
+-example.com         # Label starts with hyphen
+example-.com         # Label ends with hyphen
+exam_ple.com         # Contains underscore
+123.456              # All-numeric labels
+a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z.a.b.c.d.e.f  # > 253 chars
+```
+
+**Name Validation:**
+
+Registry services and clients MUST validate names against these rules:
+1. Convert to lowercase (normalization)
+2. Check character set (a-z, 0-9, hyphen, dot only)
+3. Validate label lengths (1-63 chars per label)
+4. Validate total length (≤253 chars)
+5. Check hyphen placement (not at label start/end)
+6. Verify label is not all-numeric
+7. For subdomains: Verify parent domain ownership
+
+Invalid names MUST be rejected before attestation.
+
 ### Registration Proposal (Kind 30100)
 
 A parameterized replaceable event where users propose to register or transfer a name:
@@ -154,11 +253,21 @@ A parameterized replaceable event where users propose to register or transfer a 
 
 **Field Specifications:**
 
-- `d` tag: The name being registered. MUST be unique within the namespace.
+- `d` tag: The name being registered. MUST be lowercase, follow DNS naming rules (see Name Format section), and be unique within the namespace.
 - `action` tag: Either `register` (initial claim) or `transfer` (ownership change)
 - `prev_owner` tag: Required for `transfer` actions. The pubkey of the current owner.
 - `prev_sig` tag: Required for `transfer` actions. Signature proving authorization from previous owner.
 - `expiration` tag: Optional Unix timestamp when this proposal expires. Registry services MUST ignore proposals after expiration. Relays MAY delete expired proposals for housekeeping. Recommended: `created_at + 300` (5 minutes).
+
+**Subdomain Registration:**
+
+To register a subdomain (e.g., `www.example.com`), the proposer MUST own the parent domain (`example.com`). Registry services validate this during proposal processing:
+
+1. Proposer owns `com` TLD
+2. Proposer registers `example.com` (requires owning `com`)
+3. Proposer registers `www.example.com` (requires owning `example.com`)
+
+This hierarchical ownership ensures that only domain owners can create subdomains, preventing unauthorized subdomain squatting.
 
 **Transfer Authorization:**
 
@@ -594,11 +703,27 @@ When a registry service receives a registration proposal for name `N` (via subsc
 
 1. **Check proposal expiration** - if expired, ignore the proposal
 
-2. **Query current name state** - fetch kind 30102 events for name `N` from relays
+2. **Validate name format:**
+   - Convert name to lowercase (normalization)
+   - Verify character set (a-z, 0-9, hyphen, dot only)
+   - Validate label lengths (1-63 chars per label)
+   - Validate total length (≤253 chars)
+   - Check hyphen placement (not at label start/end)
+   - Verify labels are not all-numeric
+   - REJECT if validation fails
 
-3. **Validate against name state:**
+3. **Verify subdomain authority** (if name contains dots):
+   - Extract parent domain (e.g., `www.example.com` → parent is `example.com`)
+   - Query kind 30102 for parent domain name state
+   - Verify `proposal.pubkey == parent_name_state.owner`
+   - REJECT if proposer doesn't own parent domain
+   - Note: TLDs (single labels like `com`) have no parent, always allowed
+
+4. **Query current name state** - fetch kind 30102 events for name `N` from relays
+
+5. **Validate against name state:**
    - If name is NOT registered (no valid name state):
-     - Accept proposal from any pubkey
+     - Accept proposal from any pubkey (or from parent owner for subdomains)
    - If name IS registered and NOT expired:
      - Calculate: `current_time` vs `name_state.expiration`
      - If `current_time < (expiration - 2592000)` (before renewal window):
@@ -607,13 +732,13 @@ When a registry service receives a registration proposal for name `N` (via subsc
        - ACCEPT only if `proposal.pubkey == name_state.owner`
        - REJECT if `proposal.pubkey != name_state.owner`
      - If `current_time >= expiration` (after expiration):
-       - ACCEPT proposal from any pubkey
+       - ACCEPT proposal from any pubkey (or from parent owner for subdomains)
 
-4. **Start attestation timer** for `T` seconds (recommended: 60-120s)
+6. **Start attestation timer** for `T` seconds (recommended: 60-120s)
 
-5. **Collect attestations** (kind 20100 events from relays), filtering out expired ones
+7. **Collect attestations** (kind 20100 events from relays), filtering out expired ones
 
-6. **Collect competing proposals** for the same name `N`, validating each against the rules above
+8. **Collect competing proposals** for the same name `N`, validating each against the rules above
 
 #### 2. Trust-Weighted Scoring
 
@@ -932,6 +1057,28 @@ The mandatory expiration and renewal window mechanism ensures that:
 - Snipers cannot steal names during the renewal window
 - The protocol automatically handles inactive name holders
 - Network consensus on registration duration prevents gaming the system
+
+**TLD Squatting:**
+
+Since TLDs are registerable by anyone (no reserved set), expect immediate competition for valuable TLDs at network launch:
+- Generic TLDs (`com`, `org`, `net`, `io`, `app`, etc.) will see intense competition
+- Geographic TLDs (`us`, `uk`, `jp`, `de`, etc.) may be contested
+- Cryptocurrency TLDs (`bitcoin`, `nostr`, `lightning`) will be highly sought after
+- Short TLDs (single letter: `x`, `a`, `z`) will be extremely competitive
+
+The first proposal to achieve consensus wins the TLD. Early adopters who successfully claim popular TLDs control all second-level registrations under those TLDs (e.g., owner of `com` controls `*.com` registrations).
+
+**Subdomain Squatting Prevention:**
+
+Subdomain authority (parent domain ownership requirement) prevents unauthorized subdomain squatting, but TLD owners could potentially:
+- Squat on valuable second-level domains (e.g., `google.com`, `bitcoin.com`)
+- Charge fees for second-level registrations
+- Refuse to register certain names (censorship)
+
+This is mitigated by:
+- Alternative TLDs (if `com` owner censors, use `org`, `net`, `nostr`, etc.)
+- Community pressure and reputation for fair TLD operation
+- Ability to create unlimited new TLDs as alternatives
 
 #### 5. Renewal Window Denial of Service
 
@@ -1760,6 +1907,9 @@ This provides good UX for most users while maintaining trustless properties for 
 - 2025-01-XX: Initial draft
   - Independent service architecture (services separate from relays)
   - Trust-weighted consensus with Byzantine fault tolerance
+  - Standard DNS naming conventions (lowercase, dot-separated, hierarchical)
+  - TLDs registerable by anyone (no ICANN) - expect TLD registration race
+  - Subdomain authority enforced (must own parent domain)
   - Expiration tags for protocol boundaries and relay housekeeping
   - Mandatory 1-year registration period by network consensus
   - Preferential 30-day renewal window (days 335-365) for current owners
