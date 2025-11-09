@@ -33,7 +33,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set("Content-Type", "application/json")
 	log.D.Ln("handling relay information document")
 	var info *relayinfo.T
-	supportedNIPs := relayinfo.GetList(
+	nips := []relayinfo.NIP{
 		relayinfo.BasicProtocol,
 		relayinfo.Authentication,
 		relayinfo.EncryptedDirectMessage,
@@ -49,9 +49,14 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 		relayinfo.ProtectedEvents,
 		relayinfo.RelayListMetadata,
 		relayinfo.SearchCapability,
-	)
+	}
+	// Add NIP-43 if enabled
+	if s.Config.NIP43Enabled {
+		nips = append(nips, relayinfo.RelayAccessMetadata)
+	}
+	supportedNIPs := relayinfo.GetList(nips...)
 	if s.Config.ACLMode != "none" {
-		supportedNIPs = relayinfo.GetList(
+		nipsACL := []relayinfo.NIP{
 			relayinfo.BasicProtocol,
 			relayinfo.Authentication,
 			relayinfo.EncryptedDirectMessage,
@@ -67,7 +72,12 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 			relayinfo.ProtectedEvents,
 			relayinfo.RelayListMetadata,
 			relayinfo.SearchCapability,
-		)
+		}
+		// Add NIP-43 if enabled
+		if s.Config.NIP43Enabled {
+			nipsACL = append(nipsACL, relayinfo.RelayAccessMetadata)
+		}
+		supportedNIPs = relayinfo.GetList(nipsACL...)
 	}
 	sort.Sort(supportedNIPs)
 	log.I.Ln("supported NIPs", supportedNIPs)

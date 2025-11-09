@@ -25,6 +25,7 @@ import (
 	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/protocol/httpauth"
+	"next.orly.dev/pkg/protocol/nip43"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/spider"
 	dsync "next.orly.dev/pkg/sync"
@@ -55,6 +56,9 @@ type Server struct {
 	relayGroupMgr    *dsync.RelayGroupManager
 	clusterManager   *dsync.ClusterManager
 	blossomServer    *blossom.Server
+	InviteManager    *nip43.InviteManager
+	cfg              *config.C
+	db               *database.D
 }
 
 // isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system

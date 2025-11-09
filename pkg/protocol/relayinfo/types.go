@@ -124,6 +124,8 @@ var (
 	NIP40                          = ExpirationTimestamp
 	Authentication                 = NIP{"Authentication of clients to relays", 42}
 	NIP42                          = Authentication
+	RelayAccessMetadata            = NIP{"Relay Access Metadata and Requests", 43}
+	NIP43                          = RelayAccessMetadata
 	VersionedEncryption            = NIP{"Encrypted Payloads (Versioned)", 44}
 	NIP44                          = VersionedEncryption
 	CountingResults                = NIP{"Counting results", 45}

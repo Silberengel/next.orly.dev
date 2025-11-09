@@ -24,6 +24,7 @@ import (
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/reason"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/protocol/nip43"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/normalize"
 	"next.orly.dev/pkg/utils/pointers"
@@ -107,6 +108,40 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 			// user has read access or better, continue
 		}
 	}
+
+	// Handle NIP-43 invite request (kind 28935) - ephemeral event
+	// Check if any filter requests kind 28935
+	for _, f := range *env.Filters {
+		if f != nil && f.Kinds != nil {
+			if f.Kinds.Contains(nip43.KindInviteReq) {
+				// Generate and send invite event
+				inviteEvent, err := l.Server.HandleNIP43InviteRequest(l.authedPubkey.Load())
+				if err != nil {
+					log.W.F("failed to generate NIP-43 invite: %v", err)
+					// Send EOSE and return
+					if err = eoseenvelope.NewFrom(env.Subscription).Write(l); chk.E(err) {
+						return err
+					}
+					return nil
+				}
+
+				// Send the invite event
+				evEnv, _ := eventenvelope.NewResultWith(env.Subscription, inviteEvent)
+				if err = evEnv.Write(l); chk.E(err) {
+					return err
+				}
+
+				// Send EOSE
+				if err = eoseenvelope.NewFrom(env.Subscription).Write(l); chk.E(err) {
+					return err
+				}
+
+				log.I.F("sent NIP-43 invite event to %s", l.remote)
+				return nil
+			}
+		}
+	}
+
 	var events event.S
 	// Create a single context for all filter queries, isolated from the connection context
 	// to prevent query timeouts from affecting the long-lived websocket connection

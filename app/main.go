@@ -18,6 +18,7 @@ import (
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/bech32encoding"
 	"next.orly.dev/pkg/policy"
+	"next.orly.dev/pkg/protocol/nip43"
 	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/spider"
 	dsync "next.orly.dev/pkg/sync"
@@ -68,6 +69,14 @@ func Run(
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
 		Owners:     ownerKeys,
+		cfg:        cfg,
+		db:         db,
+	}
+
+	// Initialize NIP-43 invite manager if enabled
+	if cfg.NIP43Enabled {
+		l.InviteManager = nip43.NewInviteManager(cfg.NIP43InviteExpiry)
+		log.I.F("NIP-43 invite system enabled with %v expiry", cfg.NIP43InviteExpiry)
 	}
 
 	// Initialize sprocket manager

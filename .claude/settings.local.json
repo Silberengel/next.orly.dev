@@ -25,7 +25,11 @@
       "Skill(golang)",
       "Bash(/tmp/find verify-name Bitcoin.Nostr)",
       "Bash(/tmp/find generate-key)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "Bash(CGO_ENABLED=0 go build:*)",
+      "Bash(CGO_ENABLED=0 go test:*)",
+      "Bash(app/web/dist/index.html)",
+      "Bash(export CGO_ENABLED=0)"
     ],
     "deny": [],
     "ask": []

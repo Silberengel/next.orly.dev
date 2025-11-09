@@ -70,6 +70,12 @@ type C struct {
 
 	PolicyEnabled bool `env:"ORLY_POLICY_ENABLED" default:"false" usage:"enable policy-based event processing (configuration found in $HOME/.config/ORLY/policy.json)"`
 
+	// NIP-43 Relay Access Metadata and Requests
+	NIP43Enabled          bool          `env:"ORLY_NIP43_ENABLED" default:"false" usage:"enable NIP-43 relay access metadata and invite system"`
+	NIP43PublishEvents    bool          `env:"ORLY_NIP43_PUBLISH_EVENTS" default:"true" usage:"publish kind 8000/8001 events when members are added/removed"`
+	NIP43PublishMemberList bool         `env:"ORLY_NIP43_PUBLISH_MEMBER_LIST" default:"true" usage:"publish kind 13534 membership list events"`
+	NIP43InviteExpiry     time.Duration `env:"ORLY_NIP43_INVITE_EXPIRY" default:"24h" usage:"how long invite codes remain valid"`
+
 	// TLS configuration
 	TLSDomains []string `env:"ORLY_TLS_DOMAINS" usage:"comma-separated list of domains to respond to for TLS"`
 	Certs      []string `env:"ORLY_CERTS" usage:"comma-separated list of paths to certificate root names (e.g., /path/to/cert will load /path/to/cert.pem and /path/to/cert.key)"`

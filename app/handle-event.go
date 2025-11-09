@@ -15,6 +15,7 @@ import (
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/reason"
+	"next.orly.dev/pkg/protocol/nip43"
 	"next.orly.dev/pkg/utils"
 )
 
@@ -207,6 +208,23 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		}
 		return
 	}
+
+	// Handle NIP-43 special events before ACL checks
+	switch env.E.Kind {
+	case nip43.KindJoinRequest:
+		// Process join request and return early
+		if err = l.HandleNIP43JoinRequest(env.E); chk.E(err) {
+			log.E.F("failed to process NIP-43 join request: %v", err)
+		}
+		return
+	case nip43.KindLeaveRequest:
+		// Process leave request and return early
+		if err = l.HandleNIP43LeaveRequest(env.E); chk.E(err) {
+			log.E.F("failed to process NIP-43 leave request: %v", err)
+		}
+		return
+	}
+
 	// check permissions of user
 	log.I.F(
 		"HandleEvent: checking ACL permissions for pubkey: %s",
