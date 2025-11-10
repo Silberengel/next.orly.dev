@@ -715,12 +715,12 @@ func TestPolicyManagerLifecycle(t *testing.T) {
 	defer cancel()
 
 	manager := &PolicyManager{
-		ctx:          ctx,
-		cancel:       cancel,
-		configDir:    "/tmp",
-		scriptPath:   "/tmp/policy.sh",
-		enabled:      true,
-		responseChan: make(chan PolicyResponse, 100),
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  "/tmp",
+		scriptPath: "/tmp/policy.sh",
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
 	}
 
 	// Test manager state
@@ -732,31 +732,37 @@ func TestPolicyManagerLifecycle(t *testing.T) {
 		t.Error("Expected policy manager to not be running initially")
 	}
 
+	// Test getting or creating a runner for a non-existent script
+	runner := manager.getOrCreateRunner("/tmp/policy.sh")
+	if runner == nil {
+		t.Fatal("Expected runner to be created")
+	}
+
 	// Test starting with non-existent script (should fail gracefully)
-	err := manager.StartPolicy()
+	err := runner.Start()
 	if err == nil {
-		t.Error("Expected error when starting policy with non-existent script")
+		t.Error("Expected error when starting script with non-existent file")
 	}
 
 	// Test stopping when not running (should fail gracefully)
-	err = manager.StopPolicy()
+	err = runner.Stop()
 	if err == nil {
-		t.Error("Expected error when stopping policy that's not running")
+		t.Error("Expected error when stopping script that's not running")
 	}
 }
 
 func TestPolicyManagerProcessEvent(t *testing.T) {
-	// Test processing event when manager is not running (should fail gracefully)
+	// Test processing event when runner is not running (should fail gracefully)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	manager := &PolicyManager{
-		ctx:          ctx,
-		cancel:       cancel,
-		configDir:    "/tmp",
-		scriptPath:   "/tmp/policy.sh",
-		enabled:      true,
-		responseChan: make(chan PolicyResponse, 100),
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  "/tmp",
+		scriptPath: "/tmp/policy.sh",
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
 	}
 
 	// Generate real keypair for testing
@@ -772,10 +778,13 @@ func TestPolicyManagerProcessEvent(t *testing.T) {
 		IPAddress:      "127.0.0.1",
 	}
 
+	// Get or create a runner
+	runner := manager.getOrCreateRunner("/tmp/policy.sh")
+
 	// Process event when not running (should fail gracefully)
-	_, err := manager.ProcessEvent(policyEvent)
+	_, err := runner.ProcessEvent(policyEvent)
 	if err == nil {
-		t.Error("Expected error when processing event with non-running policy manager")
+		t.Error("Expected error when processing event with non-running script")
 	}
 }
 
@@ -886,43 +895,53 @@ func TestEdgeCasesManagerWithInvalidScript(t *testing.T) {
 		t.Fatalf("Failed to create invalid script: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	manager := &PolicyManager{
-		ctx:          ctx,
-		configDir:    tempDir,
-		scriptPath:   scriptPath,
-		enabled:      true,
-		responseChan: make(chan PolicyResponse, 100),
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  tempDir,
+		scriptPath: scriptPath,
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
 	}
 
-	// Should fail to start with invalid script
-	err = manager.StartPolicy()
+	// Get runner and try to start with invalid script
+	runner := manager.getOrCreateRunner(scriptPath)
+	err = runner.Start()
 	if err == nil {
-		t.Error("Expected error when starting policy with invalid script")
+		t.Error("Expected error when starting invalid script")
 	}
 }
 
 func TestEdgeCasesManagerDoubleStart(t *testing.T) {
 	// Test double start without actually starting (simpler test)
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	manager := &PolicyManager{
-		ctx:          ctx,
-		configDir:    "/tmp",
-		scriptPath:   "/tmp/policy.sh",
-		enabled:      true,
-		responseChan: make(chan PolicyResponse, 100),
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  "/tmp",
+		scriptPath: "/tmp/policy.sh",
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
 	}
 
+	// Get runner
+	runner := manager.getOrCreateRunner("/tmp/policy.sh")
+
 	// Try to start with non-existent script - should fail
-	err := manager.StartPolicy()
+	err := runner.Start()
 	if err == nil {
-		t.Error("Expected error when starting policy manager with non-existent script")
+		t.Error("Expected error when starting script with non-existent file")
 	}
 
 	// Try to start again - should still fail
-	err = manager.StartPolicy()
+	err = runner.Start()
 	if err == nil {
-		t.Error("Expected error when starting policy manager twice")
+		t.Error("Expected error when starting script twice")
 	}
 }
 
@@ -1150,8 +1169,8 @@ func TestScriptPolicyDisabledFallsBackToDefault(t *testing.T) {
 			},
 		},
 		Manager: &PolicyManager{
-			enabled:   false, // Policy is disabled
-			isRunning: false,
+			enabled: false, // Policy is disabled
+			runners: make(map[string]*ScriptRunner),
 		},
 	}
 
@@ -1354,8 +1373,8 @@ func TestScriptProcessingDisabledFallsBackToDefault(t *testing.T) {
 			},
 		},
 		Manager: &PolicyManager{
-			enabled:   false, // Policy is disabled
-			isRunning: false,
+			enabled: false, // Policy is disabled
+			runners: make(map[string]*ScriptRunner),
 		},
 	}
 

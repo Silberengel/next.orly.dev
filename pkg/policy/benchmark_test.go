@@ -104,21 +104,25 @@ done
 		b.Fatalf("Failed to create test script: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	manager := &PolicyManager{
-		ctx:          ctx,
-		configDir:    tempDir,
-		scriptPath:   scriptPath,
-		enabled:      true,
-		responseChan: make(chan PolicyResponse, 100),
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  tempDir,
+		scriptPath: scriptPath,
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
 	}
 
-	// Start the policy manager
-	err = manager.StartPolicy()
+	// Get or create runner and start it
+	runner := manager.getOrCreateRunner(scriptPath)
+	err = runner.Start()
 	if err != nil {
-		b.Fatalf("Failed to start policy: %v", err)
+		b.Fatalf("Failed to start policy script: %v", err)
 	}
-	defer manager.StopPolicy()
+	defer runner.Stop()
 
 	// Give the script time to start
 	time.Sleep(100 * time.Millisecond)
