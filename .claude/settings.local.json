@@ -30,7 +30,9 @@
       "Bash(CGO_ENABLED=0 go test:*)",
       "Bash(app/web/dist/index.html)",
       "Bash(export CGO_ENABLED=0)",
-      "Bash(bash:*)"
+      "Bash(bash:*)",
+      "Bash(CGO_ENABLED=0 ORLY_LOG_LEVEL=debug go test:*)",
+      "Bash(/tmp/test-policy-script.sh)"
     ],
     "deny": [],
     "ask": []

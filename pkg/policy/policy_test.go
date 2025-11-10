@@ -1514,6 +1514,213 @@ func TestDefaultPolicyLogicWithRules(t *testing.T) {
 	}
 }
 
+func TestRuleScriptLoading(t *testing.T) {
+	// This test validates that a policy script loads for a specific Rule
+	// and properly processes events
+
+	// Create temporary directory for test files
+	tempDir := t.TempDir()
+	scriptPath := filepath.Join(tempDir, "test-rule-script.sh")
+
+	// Create a test script that accepts events with "allowed" in content
+	scriptContent := `#!/bin/bash
+while IFS= read -r line; do
+    if echo "$line" | grep -q 'allowed'; then
+        echo '{"action":"accept","msg":"Content approved"}'
+    else
+        echo '{"action":"reject","msg":"Content not allowed"}'
+    fi
+done
+`
+	err := os.WriteFile(scriptPath, []byte(scriptContent), 0755)
+	if err != nil {
+		t.Fatalf("Failed to create test script: %v", err)
+	}
+
+	// Create policy manager with script support
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager := &PolicyManager{
+		ctx:        ctx,
+		cancel:     cancel,
+		configDir:  tempDir,
+		scriptPath: filepath.Join(tempDir, "default-policy.sh"), // Different from rule script
+		enabled:    true,
+		runners:    make(map[string]*ScriptRunner),
+	}
+
+	// Create policy with a rule that uses the script
+	policy := &P{
+		DefaultPolicy: "deny",
+		Manager:       manager,
+		Rules: map[int]Rule{
+			4678: {
+				Description: "Test rule with custom script",
+				Script:      scriptPath, // Rule-specific script path
+			},
+		},
+	}
+
+	// Generate test keypairs
+	eventSigner, eventPubkey := generateTestKeypair(t)
+
+	// Pre-start the script before running tests
+	runner := manager.getOrCreateRunner(scriptPath)
+	err = runner.Start()
+	if err != nil {
+		t.Fatalf("Failed to start script: %v", err)
+	}
+
+	// Wait for script to be ready
+	time.Sleep(200 * time.Millisecond)
+
+	if !runner.IsRunning() {
+		t.Fatal("Script should be running after Start()")
+	}
+
+	// Test sending a warmup event to ensure script is responsive
+	signer := p8k.MustNew()
+	signer.Generate()
+	warmupEv := event.New()
+	warmupEv.CreatedAt = time.Now().Unix()
+	warmupEv.Kind = 4678
+	warmupEv.Content = []byte("warmup")
+	warmupEv.Tags = tag.NewS()
+	warmupEv.Sign(signer)
+
+	warmupEvent := &PolicyEvent{
+		E:         warmupEv,
+		IPAddress: "127.0.0.1",
+	}
+
+	// Send warmup event to verify script is responding
+	_, err = runner.ProcessEvent(warmupEvent)
+	if err != nil {
+		t.Fatalf("Script not responding to warmup event: %v", err)
+	}
+
+	t.Log("Script is ready and responding")
+
+	// Test 1: Event with "allowed" content should be accepted
+	t.Run("script_accepts_allowed_content", func(t *testing.T) {
+		testEvent := createTestEvent(t, eventSigner, "this is allowed content", 4678)
+
+		allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
+		if err != nil {
+			t.Logf("Policy check failed: %v", err)
+			// Check if script exists
+			if _, statErr := os.Stat(scriptPath); statErr != nil {
+				t.Errorf("Script file error: %v", statErr)
+			}
+			t.Fatalf("Unexpected error during policy check: %v", err)
+		}
+		if !allowed {
+			t.Error("Expected event with 'allowed' content to be accepted by script")
+			t.Logf("Event content: %s", string(testEvent.Content))
+		}
+
+		// Verify the script runner was created and is running
+		manager.mutex.RLock()
+		runner, exists := manager.runners[scriptPath]
+		manager.mutex.RUnlock()
+
+		if !exists {
+			t.Fatal("Expected script runner to be created for rule script path")
+		}
+		if !runner.IsRunning() {
+			t.Error("Expected script runner to be running after processing event")
+		}
+	})
+
+	// Test 2: Event without "allowed" content should be rejected
+	t.Run("script_rejects_disallowed_content", func(t *testing.T) {
+		testEvent := createTestEvent(t, eventSigner, "this is not permitted", 4678)
+
+		allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if allowed {
+			t.Error("Expected event without 'allowed' content to be rejected by script")
+		}
+	})
+
+	// Test 3: Verify script path is correct (rule-specific, not default)
+	t.Run("script_path_is_rule_specific", func(t *testing.T) {
+		manager.mutex.RLock()
+		runner, exists := manager.runners[scriptPath]
+		_, defaultExists := manager.runners[manager.scriptPath]
+		manager.mutex.RUnlock()
+
+		if !exists {
+			t.Fatal("Expected rule-specific script runner to exist")
+		}
+		if defaultExists {
+			t.Error("Default script runner should not be created when only rule-specific scripts are used")
+		}
+
+		// Verify the runner is using the correct script path
+		if runner.scriptPath != scriptPath {
+			t.Errorf("Expected runner to use script path %s, got %s", scriptPath, runner.scriptPath)
+		}
+	})
+
+	// Test 4: Multiple events should use the same script instance
+	t.Run("script_reused_for_multiple_events", func(t *testing.T) {
+		// Get initial runner
+		manager.mutex.RLock()
+		initialRunner, _ := manager.runners[scriptPath]
+		initialRunnerCount := len(manager.runners)
+		manager.mutex.RUnlock()
+
+		// Process multiple events
+		for i := 0; i < 5; i++ {
+			content := "this is allowed message " + string(rune('0'+i))
+			testEvent := createTestEvent(t, eventSigner, content, 4678)
+			_, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
+			if err != nil {
+				t.Errorf("Unexpected error on event %d: %v", i, err)
+			}
+		}
+
+		// Verify same runner is used
+		manager.mutex.RLock()
+		currentRunner, _ := manager.runners[scriptPath]
+		currentRunnerCount := len(manager.runners)
+		manager.mutex.RUnlock()
+
+		if currentRunner != initialRunner {
+			t.Error("Expected same runner instance to be reused for multiple events")
+		}
+		if currentRunnerCount != initialRunnerCount {
+			t.Errorf("Expected runner count to stay at %d, got %d", initialRunnerCount, currentRunnerCount)
+		}
+	})
+
+	// Test 5: Different kind without script should use default policy
+	t.Run("different_kind_uses_default_policy", func(t *testing.T) {
+		testEvent := createTestEvent(t, eventSigner, "any content", 1) // Kind 1 has no rule
+
+		allowed, err := policy.CheckPolicy("write", testEvent, eventPubkey, "127.0.0.1")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		// Should be denied by default policy (deny)
+		if allowed {
+			t.Error("Expected event of kind without rule to be denied by default policy")
+		}
+	})
+
+	// Cleanup: Stop the script
+	manager.mutex.RLock()
+	runner, exists := manager.runners[scriptPath]
+	manager.mutex.RUnlock()
+	if exists && runner.IsRunning() {
+		runner.Stop()
+	}
+}
+
 func TestPolicyFilterProcessing(t *testing.T) {
 	// Test policy filter processing using the provided filter JSON specification
 	filterJSON := []byte(`{

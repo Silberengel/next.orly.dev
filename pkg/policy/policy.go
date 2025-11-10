@@ -83,10 +83,12 @@ type PolicyEvent struct {
 // It safely serializes the embedded event and additional context fields.
 func (pe *PolicyEvent) MarshalJSON() ([]byte, error) {
 	if pe.E == nil {
-		return json.Marshal(map[string]interface{}{
-			"logged_in_pubkey": pe.LoggedInPubkey,
-			"ip_address":       pe.IPAddress,
-		})
+		return json.Marshal(
+			map[string]interface{}{
+				"logged_in_pubkey": pe.LoggedInPubkey,
+				"ip_address":       pe.IPAddress,
+			},
+		)
 	}
 
 	// Create a safe copy of the event for JSON marshaling
@@ -227,7 +229,10 @@ func NewWithManager(ctx context.Context, appName string, enabled bool) *P {
 
 	if enabled {
 		if err := policy.LoadFromFile(configPath); err != nil {
-			log.W.F("failed to load policy configuration from %s: %v", configPath, err)
+			log.W.F(
+				"failed to load policy configuration from %s: %v", configPath,
+				err,
+			)
 			log.I.F("using default policy configuration")
 		} else {
 			log.I.F("loaded policy configuration from %s", configPath)
@@ -438,7 +443,9 @@ func (sr *ScriptRunner) Start() error {
 	// Monitor the process
 	go sr.monitorProcess()
 
-	log.I.F("policy script started: %s (pid=%d)", sr.scriptPath, cmd.Process.Pid)
+	log.I.F(
+		"policy script started: %s (pid=%d)", sr.scriptPath, cmd.Process.Pid,
+	)
 	return nil
 }
 
@@ -473,7 +480,10 @@ func (sr *ScriptRunner) Stop() error {
 		log.I.F("policy script stopped: %s", sr.scriptPath)
 	case <-time.After(5 * time.Second):
 		// Force kill after 5 seconds
-		log.W.F("policy script did not stop gracefully, sending SIGKILL: %s", sr.scriptPath)
+		log.W.F(
+			"policy script did not stop gracefully, sending SIGKILL: %s",
+			sr.scriptPath,
+		)
 		if err := sr.currentCmd.Process.Kill(); chk.E(err) {
 			log.E.F("failed to kill script process: %v", err)
 		}
@@ -502,7 +512,10 @@ func (sr *ScriptRunner) Stop() error {
 }
 
 // ProcessEvent sends an event to the script and waits for a response.
-func (sr *ScriptRunner) ProcessEvent(evt *PolicyEvent) (*PolicyResponse, error) {
+func (sr *ScriptRunner) ProcessEvent(evt *PolicyEvent) (
+	*PolicyResponse, error,
+) {
+	log.D.F("processing event: %s", evt.Serialize())
 	sr.mutex.RLock()
 	if !sr.isRunning || sr.stdin == nil {
 		sr.mutex.RUnlock()
@@ -525,6 +538,7 @@ func (sr *ScriptRunner) ProcessEvent(evt *PolicyEvent) (*PolicyResponse, error) 
 	// Wait for response with timeout
 	select {
 	case response := <-sr.responseChan:
+		log.D.S("response", response)
 		return &response, nil
 	case <-time.After(5 * time.Second):
 		return nil, fmt.Errorf("script response timeout")
@@ -545,10 +559,13 @@ func (sr *ScriptRunner) readResponses() {
 		if line == "" {
 			continue
 		}
-
+		log.D.F("policy response: %s", line)
 		var response PolicyResponse
 		if err := json.Unmarshal([]byte(line), &response); chk.E(err) {
-			log.E.F("failed to parse policy response from %s: %v", sr.scriptPath, err)
+			log.E.F(
+				"failed to parse policy response from %s: %v", sr.scriptPath,
+				err,
+			)
 			continue
 		}
 
@@ -556,12 +573,17 @@ func (sr *ScriptRunner) readResponses() {
 		select {
 		case sr.responseChan <- response:
 		default:
-			log.W.F("policy response channel full for %s, dropping response", sr.scriptPath)
+			log.W.F(
+				"policy response channel full for %s, dropping response",
+				sr.scriptPath,
+			)
 		}
 	}
 
 	if err := scanner.Err(); chk.E(err) {
-		log.E.F("error reading policy responses from %s: %v", sr.scriptPath, err)
+		log.E.F(
+			"error reading policy responses from %s: %v", sr.scriptPath, err,
+		)
 	}
 }
 
@@ -605,7 +627,10 @@ func (sr *ScriptRunner) monitorProcess() {
 	sr.currentCancel = nil
 
 	if err != nil {
-		log.E.F("policy script exited with error: %s: %v, will retry periodically", sr.scriptPath, err)
+		log.E.F(
+			"policy script exited with error: %s: %v, will retry periodically",
+			sr.scriptPath, err,
+		)
 	} else {
 		log.I.F("policy script exited normally: %s", sr.scriptPath)
 	}
@@ -631,9 +656,15 @@ func (sr *ScriptRunner) periodicCheck() {
 					// Script exists but not running, try to start
 					go func() {
 						if err := sr.Start(); err != nil {
-							log.E.F("failed to restart policy script %s: %v, will retry in next cycle", sr.scriptPath, err)
+							log.E.F(
+								"failed to restart policy script %s: %v, will retry in next cycle",
+								sr.scriptPath, err,
+							)
 						} else {
-							log.I.F("policy script restarted successfully: %s", sr.scriptPath)
+							log.I.F(
+								"policy script restarted successfully: %s",
+								sr.scriptPath,
+							)
 						}
 					}()
 				}
@@ -646,7 +677,9 @@ func (sr *ScriptRunner) periodicCheck() {
 // Returns an error if the file doesn't exist, can't be read, or contains invalid JSON.
 func (p *P) LoadFromFile(configPath string) error {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("policy configuration file does not exist: %s", configPath)
+		return fmt.Errorf(
+			"policy configuration file does not exist: %s", configPath,
+		)
 	}
 
 	configData, err := os.ReadFile(configPath)
@@ -669,7 +702,9 @@ func (p *P) LoadFromFile(configPath string) error {
 // The access parameter should be "write" for accepting events or "read" for filtering events.
 // Returns true if the event is allowed, false if denied, and an error if validation fails.
 // Policy evaluation order: global rules → kind filtering → specific rules → default policy.
-func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAddress string) (allowed bool, err error) {
+func (p *P) CheckPolicy(
+	access string, ev *event.E, loggedInPubkey []byte, ipAddress string,
+) (allowed bool, err error) {
 	// Handle nil event
 	if ev == nil {
 		return false, fmt.Errorf("event cannot be nil")
@@ -698,22 +733,35 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 			// Check if script file exists before trying to use it
 			if _, err := os.Stat(rule.Script); err == nil {
 				// Script exists, try to use it
-				log.D.F("using policy script for kind %d: %s", ev.Kind, rule.Script)
-				allowed, err := p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
+				log.D.F(
+					"using policy script for kind %d: %s", ev.Kind, rule.Script,
+				)
+				allowed, err := p.checkScriptPolicy(
+					access, ev, rule.Script, loggedInPubkey, ipAddress,
+				)
 				if err == nil {
 					// Script ran successfully, return its decision
 					return allowed, nil
 				}
 				// Script failed, fall through to apply other criteria
-				log.W.F("policy script check failed for kind %d: %v, applying other criteria", ev.Kind, err)
+				log.W.F(
+					"policy script check failed for kind %d: %v, applying other criteria",
+					ev.Kind, err,
+				)
 			} else {
 				// Script configured but doesn't exist
-				log.W.F("policy script configured for kind %d but not found at %s: %v, applying other criteria", ev.Kind, rule.Script, err)
+				log.W.F(
+					"policy script configured for kind %d but not found at %s: %v, applying other criteria",
+					ev.Kind, rule.Script, err,
+				)
 			}
 			// Script doesn't exist or failed, fall through to apply other criteria
 		} else {
 			// Policy manager is disabled, fall back to default policy
-			log.D.F("policy manager is disabled for kind %d, falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
+			log.D.F(
+				"policy manager is disabled for kind %d, falling back to default policy (%s)",
+				ev.Kind, p.DefaultPolicy,
+			)
 			return p.getDefaultPolicyAction(), nil
 		}
 	}
@@ -747,7 +795,9 @@ func (p *P) checkKindsPolicy(kind uint16) bool {
 }
 
 // checkGlobalRulePolicy checks if the event passes the global rule filter
-func (p *P) checkGlobalRulePolicy(access string, ev *event.E, loggedInPubkey []byte) bool {
+func (p *P) checkGlobalRulePolicy(
+	access string, ev *event.E, loggedInPubkey []byte,
+) bool {
 	// Apply global rule filtering
 	allowed, err := p.checkRulePolicy(access, ev, p.Global, loggedInPubkey)
 	if err != nil {
@@ -758,7 +808,9 @@ func (p *P) checkGlobalRulePolicy(access string, ev *event.E, loggedInPubkey []b
 }
 
 // checkRulePolicy applies rule-based filtering (pubkey lists, size limits, etc.)
-func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubkey []byte) (allowed bool, err error) {
+func (p *P) checkRulePolicy(
+	access string, ev *event.E, rule Rule, loggedInPubkey []byte,
+) (allowed bool, err error) {
 	pubkeyHex := hex.Enc(ev.Pubkey)
 
 	// Check pubkey-based access control
@@ -886,21 +938,29 @@ func (p *P) checkRulePolicy(access string, ev *event.E, rule Rule, loggedInPubke
 }
 
 // checkScriptPolicy runs the policy script to determine if event should be allowed
-func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, loggedInPubkey []byte, ipAddress string) (allowed bool, err error) {
+func (p *P) checkScriptPolicy(
+	access string, ev *event.E, scriptPath string, loggedInPubkey []byte,
+	ipAddress string,
+) (allowed bool, err error) {
 	if p.Manager == nil {
 		return false, fmt.Errorf("policy manager is not initialized")
 	}
 
 	// If policy is disabled, fall back to default policy immediately
 	if !p.Manager.IsEnabled() {
-		log.W.F("policy rule for kind %d is inactive (policy disabled), falling back to default policy (%s)", ev.Kind, p.DefaultPolicy)
+		log.W.F(
+			"policy rule for kind %d is inactive (policy disabled), falling back to default policy (%s)",
+			ev.Kind, p.DefaultPolicy,
+		)
 		return p.getDefaultPolicyAction(), nil
 	}
 
 	// Check if script file exists
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
 		// Script doesn't exist, return error so caller can fall back to other criteria
-		return false, fmt.Errorf("policy script does not exist at %s", scriptPath)
+		return false, fmt.Errorf(
+			"policy script does not exist at %s", scriptPath,
+		)
 	}
 
 	// Get or create a runner for this specific script path
@@ -912,7 +972,9 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 		log.D.F("starting policy script for kind %d: %s", ev.Kind, scriptPath)
 		if err := runner.ensureRunning(); err != nil {
 			// Startup failed, return error so caller can fall back to other criteria
-			return false, fmt.Errorf("failed to start policy script %s: %v", scriptPath, err)
+			return false, fmt.Errorf(
+				"failed to start policy script %s: %v", scriptPath, err,
+			)
 		}
 		log.I.F("policy script started for kind %d: %s", ev.Kind, scriptPath)
 	}
@@ -927,7 +989,10 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	// Process event through policy script
 	response, scriptErr := runner.ProcessEvent(policyEvent)
 	if chk.E(scriptErr) {
-		log.E.F("policy rule for kind %d failed (script processing error: %v), falling back to default policy (%s)", ev.Kind, scriptErr, p.DefaultPolicy)
+		log.E.F(
+			"policy rule for kind %d failed (script processing error: %v), falling back to default policy (%s)",
+			ev.Kind, scriptErr, p.DefaultPolicy,
+		)
 		// Fall back to default policy on script failure
 		return p.getDefaultPolicyAction(), nil
 	}
@@ -941,7 +1006,10 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	case "shadowReject":
 		return false, nil // Treat as reject for policy purposes
 	default:
-		log.W.F("policy rule for kind %d returned unknown action '%s', falling back to default policy (%s)", ev.Kind, response.Action, p.DefaultPolicy)
+		log.W.F(
+			"policy rule for kind %d returned unknown action '%s', falling back to default policy (%s)",
+			ev.Kind, response.Action, p.DefaultPolicy,
+		)
 		// Fall back to default policy for unknown actions
 		return p.getDefaultPolicyAction(), nil
 	}
@@ -967,7 +1035,10 @@ func (pm *PolicyManager) startPolicyIfExists() {
 		log.I.F("found default policy script at %s, starting...", pm.scriptPath)
 		runner := pm.getOrCreateRunner(pm.scriptPath)
 		if err := runner.Start(); err != nil {
-			log.E.F("failed to start default policy script: %v, will retry periodically", err)
+			log.E.F(
+				"failed to start default policy script: %v, will retry periodically",
+				err,
+			)
 		}
 	}
 	// Silently ignore if default script doesn't exist - it's fine if rules use custom scripts
