@@ -698,6 +698,7 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 			// Check if script file exists before trying to use it
 			if _, err := os.Stat(rule.Script); err == nil {
 				// Script exists, try to use it
+				log.D.F("using policy script for kind %d: %s", ev.Kind, rule.Script)
 				allowed, err := p.checkScriptPolicy(access, ev, rule.Script, loggedInPubkey, ipAddress)
 				if err == nil {
 					// Script ran successfully, return its decision
@@ -705,6 +706,9 @@ func (p *P) CheckPolicy(access string, ev *event.E, loggedInPubkey []byte, ipAdd
 				}
 				// Script failed, fall through to apply other criteria
 				log.W.F("policy script check failed for kind %d: %v, applying other criteria", ev.Kind, err)
+			} else {
+				// Script configured but doesn't exist
+				log.W.F("policy script configured for kind %d but not found at %s: %v, applying other criteria", ev.Kind, rule.Script, err)
 			}
 			// Script doesn't exist or failed, fall through to apply other criteria
 		} else {
@@ -905,10 +909,12 @@ func (p *P) checkScriptPolicy(access string, ev *event.E, scriptPath string, log
 	// Policy is enabled, check if this runner is running
 	if !runner.IsRunning() {
 		// Try to start this runner and wait for it
+		log.D.F("starting policy script for kind %d: %s", ev.Kind, scriptPath)
 		if err := runner.ensureRunning(); err != nil {
 			// Startup failed, return error so caller can fall back to other criteria
-			return false, fmt.Errorf("failed to start policy script: %v", err)
+			return false, fmt.Errorf("failed to start policy script %s: %v", scriptPath, err)
 		}
+		log.I.F("policy script started for kind %d: %s", ev.Kind, scriptPath)
 	}
 
 	// Create policy event with additional context
@@ -953,16 +959,18 @@ func (pm *PolicyManager) periodicCheck() {
 
 // startPolicyIfExists starts the default policy script if the file exists.
 // This is for backward compatibility with the default script path.
+// Only logs if the default script actually exists - missing default scripts are normal
+// when users configure rule-specific scripts.
 func (pm *PolicyManager) startPolicyIfExists() {
 	if _, err := os.Stat(pm.scriptPath); err == nil {
-		// Get or create runner for the default script, which will start it
+		// Default script exists, try to start it
+		log.I.F("found default policy script at %s, starting...", pm.scriptPath)
 		runner := pm.getOrCreateRunner(pm.scriptPath)
 		if err := runner.Start(); err != nil {
 			log.E.F("failed to start default policy script: %v, will retry periodically", err)
 		}
-	} else {
-		log.W.F("default policy script not found at %s, will be started if it appears", pm.scriptPath)
 	}
+	// Silently ignore if default script doesn't exist - it's fine if rules use custom scripts
 }
 
 // IsEnabled returns whether the policy manager is enabled.

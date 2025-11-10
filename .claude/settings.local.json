@@ -29,7 +29,8 @@
       "Bash(CGO_ENABLED=0 go build:*)",
       "Bash(CGO_ENABLED=0 go test:*)",
       "Bash(app/web/dist/index.html)",
-      "Bash(export CGO_ENABLED=0)"
+      "Bash(export CGO_ENABLED=0)",
+      "Bash(bash:*)"
     ],
     "deny": [],
     "ask": []
