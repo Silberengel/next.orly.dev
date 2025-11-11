@@ -32,7 +32,21 @@
       "Bash(export CGO_ENABLED=0)",
       "Bash(bash:*)",
       "Bash(CGO_ENABLED=0 ORLY_LOG_LEVEL=debug go test:*)",
-      "Bash(/tmp/test-policy-script.sh)"
+      "Bash(/tmp/test-policy-script.sh)",
+      "Bash(docker --version:*)",
+      "Bash(mkdir:*)",
+      "Bash(./test-docker-policy/test-policy.sh:*)",
+      "Bash(docker-compose:*)",
+      "Bash(tee:*)",
+      "Bash(docker logs:*)",
+      "Bash(timeout 5 websocat:*)",
+      "Bash(docker exec:*)",
+      "Bash(TESTSIG=\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\":*)",
+      "Bash(echo:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(./test-policy.sh:*)",
+      "Bash(docker rm:*)"
     ],
     "deny": [],
     "ask": []

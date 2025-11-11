@@ -103,6 +103,9 @@ cmd/benchmark/data
 !app/web/dist/*.ico
 !app/web/dist/*.png
 !app/web/dist/*.svg
+!Dockerfile
+!.dockerignore
+!libsecp256k1.so
 # ...even if they are in subdirectories
 !*/
 /blocklist.json

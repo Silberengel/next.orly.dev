@@ -1,0 +1,9 @@
+{
+  "script": "/home/orly/cs-policy-daemon.js",
+  "rules": {
+    "1": {
+      "script": "/home/orly/cs-policy-daemon.js",
+      "description": "Test policy for kind 1 events"
+    }
+  }
+}

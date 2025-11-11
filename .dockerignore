@@ -1,0 +1,87 @@
+# Build artifacts
+orly
+test-build
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker files (except the one we're using)
+Dockerfile*
+!scripts/Dockerfile.deploy-test
+docker-compose.yml
+.dockerignore
+
+# Node modules (will be installed during build)
+app/web/node_modules/
+app/web/dist/
+app/web/bun.lockb
+
+# Go modules cache
+go.sum
+
+# Logs and temp files
+*.log
+tmp/
+temp/
+
+# Database files
+*.db
+*.badger
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Documentation that's not needed for deployment test
+docs/
+*.md
+*.adoc
+!README.adoc
+
+# Scripts we don't need for testing
+scripts/benchmark.sh
+scripts/reload.sh
+scripts/run-*.sh
+scripts/test.sh
+scripts/runtests.sh
+scripts/sprocket/
+
+# Benchmark and test data
+cmd/benchmark/
+reports/
+*.txt
+*.conf
+*.jsonl
+
+# Policy test files
+POLICY_*.md
+test_policy.sh
+test-*.sh
+
+# Other build artifacts
+tee
