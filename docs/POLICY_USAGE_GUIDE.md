@@ -361,6 +361,255 @@ Place scripts in a secure location and reference them in policy:
 
 Ensure scripts are executable and have appropriate permissions.
 
+### Script Requirements and Best Practices
+
+#### Critical Requirements
+
+**1. Output Only JSON to stdout**
+
+Scripts MUST write ONLY JSON responses to stdout. Any other output (debug messages, logs, etc.) will break the JSONL protocol and cause errors.
+
+```javascript
+// ❌ WRONG - This will cause "broken pipe" errors
+console.log("Policy script starting...");  // This goes to stdout!
+console.log(JSON.stringify(response));     // Correct
+
+// ✅ CORRECT - Use stderr or file for debug output
+console.error("Policy script starting...");  // This goes to stderr (OK)
+fs.appendFileSync('/tmp/policy.log', 'Starting...\n');  // This goes to file (OK)
+console.log(JSON.stringify(response));      // Stdout for JSON only
+```
+
+**2. Flush stdout After Each Response**
+
+Always flush stdout after writing a response to ensure immediate delivery:
+
+```python
+# Python
+print(json.dumps(response))
+sys.stdout.flush()  # Critical!
+```
+
+```javascript
+// Node.js (usually automatic, but can be forced)
+process.stdout.write(JSON.stringify(response) + '\n');
+```
+
+**3. Run as a Long-Lived Process**
+
+Scripts should run continuously, reading from stdin in a loop. They should NOT:
+- Exit after processing one event
+- Use batch processing
+- Close stdin/stdout prematurely
+
+```javascript
+// ✅ CORRECT - Long-lived process
+const readline = require('readline');
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  terminal: false
+});
+
+rl.on('line', (line) => {
+  const event = JSON.parse(line);
+  const response = processEvent(event);
+  console.log(JSON.stringify(response));
+});
+```
+
+**4. Handle Errors Gracefully**
+
+Always catch errors and return a valid JSON response:
+
+```javascript
+rl.on('line', (line) => {
+  try {
+    const event = JSON.parse(line);
+    const response = processEvent(event);
+    console.log(JSON.stringify(response));
+  } catch (err) {
+    // Log to stderr or file, not stdout!
+    console.error(`Error: ${err.message}`);
+
+    // Return reject response
+    console.log(JSON.stringify({
+      id: '',
+      action: 'reject',
+      msg: 'Policy script error'
+    }));
+  }
+});
+```
+
+**5. Response Format**
+
+Every response MUST include these fields:
+
+```json
+{
+  "id": "event_id",      // Must match input event ID
+  "action": "accept",    // Must be: accept, reject, or shadowReject
+  "msg": ""              // Required (can be empty string)
+}
+```
+
+#### Common Issues and Solutions
+
+**Broken Pipe Error**
+
+```
+ERROR: policy script /path/to/script.js stdin closed (broken pipe)
+```
+
+**Causes:**
+- Script exited prematurely
+- Script wrote non-JSON output to stdout
+- Script crashed or encountered an error
+- Script closed stdin/stdout incorrectly
+
+**Solutions:**
+1. Remove ALL `console.log()` statements except JSON responses
+2. Use `console.error()` or log files for debugging
+3. Add error handling to catch and log exceptions
+4. Ensure script runs continuously (doesn't exit)
+
+**Response Timeout**
+
+```
+WARN: policy script /path/to/script.js response timeout - script may not be responding correctly
+```
+
+**Causes:**
+- Script not flushing stdout
+- Script processing taking > 5 seconds
+- Script not responding to input
+- Non-JSON output consuming a response slot
+
+**Solutions:**
+1. Add `sys.stdout.flush()` (Python) after each response
+2. Optimize processing logic to be faster
+3. Check that script is reading from stdin correctly
+4. Remove debug output from stdout
+
+**Invalid JSON Response**
+
+```
+ERROR: failed to parse policy response from /path/to/script.js
+WARN: policy script produced non-JSON output on stdout: "Debug message"
+```
+
+**Solutions:**
+1. Validate JSON before outputting
+2. Use a JSON library, don't build strings manually
+3. Move debug output to stderr or files
+
+#### Testing Your Script
+
+Before deploying, test your script:
+
+```bash
+# 1. Test basic functionality
+echo '{"id":"test123","pubkey":"abc","kind":1,"content":"test","tags":[],"created_at":1234567890,"sig":"def"}' | node policy-script.js
+
+# 2. Check for non-JSON output
+echo '{"id":"test123","pubkey":"abc","kind":1,"content":"test","tags":[],"created_at":1234567890,"sig":"def"}' | node policy-script.js 2>/dev/null | jq .
+
+# 3. Test error handling
+echo 'invalid json' | node policy-script.js
+```
+
+Expected output (valid JSON only):
+```json
+{"id":"test123","action":"accept","msg":""}
+```
+
+#### Node.js Example (Complete)
+
+```javascript
+#!/usr/bin/env node
+
+const fs = require('fs');
+const readline = require('readline');
+
+// Use stderr or file for debug logging
+const logFile = '/tmp/policy-debug.log';
+function debug(msg) {
+  fs.appendFileSync(logFile, `${Date.now()}: ${msg}\n`);
+}
+
+// Create readline interface
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+  terminal: false
+});
+
+debug('Policy script started');
+
+// Process each event
+rl.on('line', (line) => {
+  try {
+    const event = JSON.parse(line);
+    debug(`Processing event ${event.id}`);
+
+    // Your policy logic here
+    const action = shouldAccept(event) ? 'accept' : 'reject';
+
+    // ONLY JSON to stdout
+    console.log(JSON.stringify({
+      id: event.id,
+      action: action,
+      msg: action === 'reject' ? 'Policy rejected' : ''
+    }));
+
+  } catch (err) {
+    debug(`Error: ${err.message}`);
+
+    // Still return valid JSON
+    console.log(JSON.stringify({
+      id: '',
+      action: 'reject',
+      msg: 'Policy script error'
+    }));
+  }
+});
+
+rl.on('close', () => {
+  debug('Policy script stopped');
+});
+
+function shouldAccept(event) {
+  // Your policy logic
+  return !event.content.toLowerCase().includes('spam');
+}
+```
+
+#### Event Fields
+
+Scripts receive additional context fields:
+
+```json
+{
+  "id": "event_id",
+  "pubkey": "author_pubkey",
+  "kind": 1,
+  "content": "Event content",
+  "tags": [],
+  "created_at": 1234567890,
+  "sig": "signature",
+  "logged_in_pubkey": "authenticated_user_pubkey",
+  "ip_address": "127.0.0.1",
+  "access_type": "read"
+}
+```
+
+**access_type values:**
+- `"write"`: Event is being stored (EVENT message)
+- `"read"`: Event is being retrieved (REQ message)
+
+Use this to implement different policies for reads vs writes.
+
 ## Policy Evaluation Order
 
 Events are evaluated in this order:

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,7 @@ type PolicyEvent struct {
 	*event.E
 	LoggedInPubkey string `json:"logged_in_pubkey,omitempty"`
 	IPAddress      string `json:"ip_address,omitempty"`
+	AccessType     string `json:"access_type,omitempty"` // "read" or "write"
 }
 
 // MarshalJSON implements custom JSON marshaling for PolicyEvent.
@@ -108,6 +110,9 @@ func (pe *PolicyEvent) MarshalJSON() ([]byte, error) {
 	}
 	if pe.IPAddress != "" {
 		safeEvent["ip_address"] = pe.IPAddress
+	}
+	if pe.AccessType != "" {
+		safeEvent["access_type"] = pe.AccessType
 	}
 
 	return json.Marshal(safeEvent)
@@ -532,6 +537,17 @@ func (sr *ScriptRunner) ProcessEvent(evt *PolicyEvent) (
 
 	// Send the event JSON to the script (newline-terminated)
 	if _, err := stdin.Write(append(eventJSON, '\n')); chk.E(err) {
+		// Check if it's a broken pipe error, which means the script has died
+		if strings.Contains(err.Error(), "broken pipe") || strings.Contains(err.Error(), "closed pipe") {
+			log.E.F(
+				"policy script %s stdin closed (broken pipe) - script may have crashed or exited prematurely",
+				sr.scriptPath,
+			)
+			// Mark as not running so it will be restarted on next periodic check
+			sr.mutex.Lock()
+			sr.isRunning = false
+			sr.mutex.Unlock()
+		}
 		return nil, fmt.Errorf("failed to write event to script: %v", err)
 	}
 
@@ -541,6 +557,10 @@ func (sr *ScriptRunner) ProcessEvent(evt *PolicyEvent) (
 		log.D.S("response", response)
 		return &response, nil
 	case <-time.After(5 * time.Second):
+		log.W.F(
+			"policy script %s response timeout - script may not be responding correctly (check for debug output on stdout)",
+			sr.scriptPath,
+		)
 		return nil, fmt.Errorf("script response timeout")
 	case <-sr.ctx.Done():
 		return nil, fmt.Errorf("script context cancelled")
@@ -554,6 +574,7 @@ func (sr *ScriptRunner) readResponses() {
 	}
 
 	scanner := bufio.NewScanner(sr.stdout)
+	nonJSONLineCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
@@ -562,10 +583,31 @@ func (sr *ScriptRunner) readResponses() {
 		log.D.F("policy response: %s", line)
 		var response PolicyResponse
 		if err := json.Unmarshal([]byte(line), &response); chk.E(err) {
-			log.E.F(
-				"failed to parse policy response from %s: %v", sr.scriptPath,
-				err,
-			)
+			// Check if this looks like debug output
+			if strings.HasPrefix(line, "{") {
+				// Looks like JSON but failed to parse
+				log.E.F(
+					"failed to parse policy response from %s: %v\nLine: %s",
+					sr.scriptPath, err, line,
+				)
+			} else {
+				// Definitely not JSON - probably debug output
+				nonJSONLineCount++
+				if nonJSONLineCount <= 3 {
+					log.W.F(
+						"policy script %s produced non-JSON output on stdout (should only output JSONL): %q",
+						sr.scriptPath, line,
+					)
+				} else if nonJSONLineCount == 4 {
+					log.W.F(
+						"policy script %s continues to produce non-JSON output - suppressing further warnings",
+						sr.scriptPath,
+					)
+				}
+				log.W.F(
+					"IMPORTANT: Policy scripts must ONLY write JSON responses to stdout. Use stderr or a log file for debug output.",
+				)
+			}
 			continue
 		}
 
@@ -984,6 +1026,7 @@ func (p *P) checkScriptPolicy(
 		E:              ev,
 		LoggedInPubkey: hex.Enc(loggedInPubkey),
 		IPAddress:      ipAddress,
+		AccessType:     access,
 	}
 
 	// Process event through policy script

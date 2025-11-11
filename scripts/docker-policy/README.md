@@ -21,9 +21,10 @@ test-docker-policy/
 1. **Builds** an Ubuntu 22.04.5 Docker image with ORLY relay
 2. **Configures** the policy engine with `cs-policy.js`
 3. **Starts** the relay with policy engine enabled
-4. **Sends** a test event to the relay
-5. **Verifies** that `cs-policy.js` created `/home/orly/cs-policy-output.txt`
-6. **Reports** success or failure
+4. **Tests EVENT messages** (write control) using the `policytest` tool
+5. **Tests REQ messages** (read control) using the `policytest` tool
+6. **Verifies** that `cs-policy.js` created `/home/orly/cs-policy-output.txt`
+7. **Reports** success or failure
 
 ## How cs-policy.js Works
 
@@ -46,8 +47,30 @@ if (fs.existsSync(filePath)) {
 Run the automated test:
 
 ```bash
-./test-docker-policy/test-policy.sh
+./scripts/docker-policy/test-policy.sh
 ```
+
+## Policy Test Tool
+
+The `policytest` tool is a command-line utility for testing policy enforcement:
+
+```bash
+# Test write control (EVENT messages)
+./policytest -url ws://localhost:8777 -type event -kind 1
+
+# Test read control (REQ messages)
+./policytest -url ws://localhost:8777 -type req -kind 1
+
+# Test both write and read control
+./policytest -url ws://localhost:8777 -type both -kind 1
+```
+
+### Options
+
+- `-url` - Relay WebSocket URL (default: `ws://127.0.0.1:3334`)
+- `-type` - Test type: `event` for write control, `req` for read control, `both` for both (default: `event`)
+- `-kind` - Event kind to test (default: `4678`)
+- `-timeout` - Operation timeout (default: `20s`)
 
 ## Manual Testing
 

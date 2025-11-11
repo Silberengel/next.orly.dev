@@ -24,8 +24,10 @@ rl.on('line', (line) => {
     // Parse the policy event
     const event = JSON.parse(line);
 
-    // Log event details
-    fs.appendFileSync(filePath, `${Date.now()}: Event ID: ${event.id || 'unknown'}\n`);
+    // Log event details including access type
+    const accessType = event.access_type || 'unknown';
+    const eventKind = event.kind || 'unknown';
+    fs.appendFileSync(filePath, `${Date.now()}: Event ID: ${event.id || 'unknown'}, Kind: ${eventKind}, Access: ${accessType}\n`);
 
     // Respond with "accept" to allow the event
     const response = {
