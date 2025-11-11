@@ -29,23 +29,27 @@ cp "$REPO_ROOT/orly" "$SCRIPT_DIR/"
 cp "$REPO_ROOT/pkg/crypto/p8k/libsecp256k1.so" "$SCRIPT_DIR/"
 
 echo ""
-echo -e "${YELLOW}Step 3: Building Docker image...${NC}"
+echo -e "${YELLOW}Step 3: Cleaning up old containers...${NC}"
+cd "$SCRIPT_DIR" && docker-compose down -v 2>/dev/null || true
+
+echo ""
+echo -e "${YELLOW}Step 4: Building Docker image...${NC}"
 cd "$SCRIPT_DIR" && docker-compose build
 
 echo ""
-echo -e "${YELLOW}Step 4: Starting ORLY relay container...${NC}"
+echo -e "${YELLOW}Step 5: Starting ORLY relay container...${NC}"
 cd "$SCRIPT_DIR" && docker-compose up -d
 
 echo ""
-echo -e "${YELLOW}Step 5: Waiting for relay to start (15 seconds)...${NC}"
+echo -e "${YELLOW}Step 6: Waiting for relay to start (15 seconds)...${NC}"
 sleep 15
 
 echo ""
-echo -e "${YELLOW}Step 6: Checking relay logs...${NC}"
+echo -e "${YELLOW}Step 7: Checking relay logs...${NC}"
 docker logs orly-policy-test 2>&1 | tail -20
 
 echo ""
-echo -e "${YELLOW}Step 7: Sending test event to relay...${NC}"
+echo -e "${YELLOW}Step 8: Sending test event to relay...${NC}"
 
 # Install websocat if not available
 if ! command -v websocat &> /dev/null; then
@@ -73,11 +77,11 @@ echo "Sending test event..."
 echo "$TEST_EVENT" | timeout 5 $WEBSOCAT ws://localhost:$RELAY_PORT 2>&1 || echo "Connection attempt completed"
 
 echo ""
-echo -e "${YELLOW}Step 8: Waiting for policy script to execute (5 seconds)...${NC}"
+echo -e "${YELLOW}Step 9: Waiting for policy script to execute (5 seconds)...${NC}"
 sleep 5
 
 echo ""
-echo -e "${YELLOW}Step 9: Checking if cs-policy.js created output file...${NC}"
+echo -e "${YELLOW}Step 10: Checking if cs-policy.js created output file...${NC}"
 
 # Check if the output file exists in the container
 if docker exec orly-policy-test test -f /home/orly/cs-policy-output.txt; then
@@ -97,7 +101,7 @@ else
 fi
 
 echo ""
-echo -e "${YELLOW}Step 10: Additional debugging info...${NC}"
+echo -e "${YELLOW}Step 11: Additional debugging info...${NC}"
 echo "Files in /home/orly directory:"
 docker exec orly-policy-test ls -la /home/orly/
 
