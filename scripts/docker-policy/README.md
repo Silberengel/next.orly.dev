@@ -26,21 +26,19 @@ test-docker-policy/
 6. **Verifies** that `cs-policy.js` created `/home/orly/cs-policy-output.txt`
 7. **Reports** success or failure
 
-## How cs-policy.js Works
+## How cs-policy-daemon.js Works
 
-The policy script writes a timestamped message to `/home/orly/cs-policy-output.txt` each time it's executed:
+The policy script is a long-lived process that:
+1. Reads events from stdin (one JSON event per line)
+2. Processes each event and returns a JSON response to stdout
+3. Logs debug information to:
+   - `/home/orly/cs-policy-output.txt` (file output)
+   - stderr (appears in relay log with prefix `[policy script /path]`)
 
-```javascript
-#!/usr/bin/env node
-const fs = require('fs')
-const filePath = '/home/orly/cs-policy-output.txt'
-
-if (fs.existsSync(filePath)) {
-    fs.appendFileSync(filePath, `${Date.now()}: Hey there!\n`)
-} else {
-    fs.writeFileSync(filePath, `${Date.now()}: Hey there!\n`)
-}
-```
+**Key Features:**
+- Logs event details including kind, ID, and access type (read/write)
+- Writes debug output to stderr which appears in the relay log
+- Returns JSON responses to stdout for policy decisions
 
 ## Quick Start
 

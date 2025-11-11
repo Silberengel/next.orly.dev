@@ -635,7 +635,17 @@ func (sr *ScriptRunner) logOutput(stdout, stderr io.ReadCloser) {
 
 	// Only log stderr, stdout is used by readResponses
 	go func() {
-		io.Copy(os.Stderr, stderr)
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line != "" {
+				// Log script stderr output through relay logging system
+				log.I.F("[policy script %s] %s", sr.scriptPath, line)
+			}
+		}
+		if err := scanner.Err(); chk.E(err) {
+			log.E.F("error reading stderr from policy script %s: %v", sr.scriptPath, err)
+		}
 	}()
 }
 

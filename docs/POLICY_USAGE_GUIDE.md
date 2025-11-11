@@ -369,13 +369,15 @@ Ensure scripts are executable and have appropriate permissions.
 
 Scripts MUST write ONLY JSON responses to stdout. Any other output (debug messages, logs, etc.) will break the JSONL protocol and cause errors.
 
+**Debug Output**: Use stderr for debug messages - all stderr output from policy scripts is automatically logged to the relay log with the prefix `[policy script /path/to/script]`.
+
 ```javascript
 // ❌ WRONG - This will cause "broken pipe" errors
 console.log("Policy script starting...");  // This goes to stdout!
 console.log(JSON.stringify(response));     // Correct
 
 // ✅ CORRECT - Use stderr or file for debug output
-console.error("Policy script starting...");  // This goes to stderr (OK)
+console.error("Policy script starting...");  // This goes to stderr (appears in relay log)
 fs.appendFileSync('/tmp/policy.log', 'Starting...\n');  // This goes to file (OK)
 console.log(JSON.stringify(response));      // Stdout for JSON only
 ```
@@ -529,13 +531,11 @@ Expected output (valid JSON only):
 ```javascript
 #!/usr/bin/env node
 
-const fs = require('fs');
 const readline = require('readline');
 
-// Use stderr or file for debug logging
-const logFile = '/tmp/policy-debug.log';
+// Use stderr for debug logging - appears in relay log automatically
 function debug(msg) {
-  fs.appendFileSync(logFile, `${Date.now()}: ${msg}\n`);
+  console.error(`[policy] ${msg}`);
 }
 
 // Create readline interface
@@ -551,10 +551,14 @@ debug('Policy script started');
 rl.on('line', (line) => {
   try {
     const event = JSON.parse(line);
-    debug(`Processing event ${event.id}`);
+    debug(`Processing event ${event.id}, kind: ${event.kind}, access: ${event.access_type}`);
 
     // Your policy logic here
     const action = shouldAccept(event) ? 'accept' : 'reject';
+
+    if (action === 'reject') {
+      debug(`Rejected event ${event.id}: policy violation`);
+    }
 
     // ONLY JSON to stdout
     console.log(JSON.stringify({
@@ -581,8 +585,28 @@ rl.on('close', () => {
 
 function shouldAccept(event) {
   // Your policy logic
-  return !event.content.toLowerCase().includes('spam');
+  if (event.content.toLowerCase().includes('spam')) {
+    return false;
+  }
+
+  // Different logic for read vs write
+  if (event.access_type === 'write') {
+    // Write control logic
+    return event.content.length < 10000;
+  } else if (event.access_type === 'read') {
+    // Read control logic
+    return true; // Allow all reads
+  }
+
+  return true;
 }
+```
+
+**Relay Log Output Example:**
+```
+INFO [policy script /home/orly/.config/ORLY/policy.js] [policy] Policy script started
+INFO [policy script /home/orly/.config/ORLY/policy.js] [policy] Processing event abc123, kind: 1, access: write
+INFO [policy script /home/orly/.config/ORLY/policy.js] [policy] Processing event def456, kind: 1, access: read
 ```
 
 #### Event Fields
