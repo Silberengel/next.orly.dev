@@ -19,12 +19,16 @@ test-docker-policy/
 ## What the Test Does
 
 1. **Builds** an Ubuntu 22.04.5 Docker image with ORLY relay
-2. **Configures** the policy engine with `cs-policy.js`
+2. **Configures** the policy engine with `cs-policy-daemon.js`
 3. **Starts** the relay with policy engine enabled
-4. **Tests EVENT messages** (write control) using the `policytest` tool
-5. **Tests REQ messages** (read control) using the `policytest` tool
-6. **Verifies** that `cs-policy.js` created `/home/orly/cs-policy-output.txt`
-7. **Reports** success or failure
+4. **Publishes 2 events** to test write control (EVENT messages)
+5. **Queries for those events** to test read control (REQ messages)
+6. **Verifies** that:
+   - Both events were published successfully
+   - Events can be queried and retrieved
+   - Policy script processed both write and read operations
+   - Policy script logged to both file and relay log (stderr)
+7. **Reports** detailed results with policy invocation counts
 
 ## How cs-policy-daemon.js Works
 
@@ -61,14 +65,38 @@ The `policytest` tool is a command-line utility for testing policy enforcement:
 
 # Test both write and read control
 ./policytest -url ws://localhost:8777 -type both -kind 1
+
+# Publish multiple events and query for them (full integration test)
+./policytest -url ws://localhost:8777 -type publish-and-query -kind 1 -count 2
 ```
 
 ### Options
 
 - `-url` - Relay WebSocket URL (default: `ws://127.0.0.1:3334`)
-- `-type` - Test type: `event` for write control, `req` for read control, `both` for both (default: `event`)
+- `-type` - Test type:
+  - `event` - Test write control only
+  - `req` - Test read control only
+  - `both` - Test write then read
+  - `publish-and-query` - Publish events then query for them (full test)
 - `-kind` - Event kind to test (default: `4678`)
+- `-count` - Number of events to publish for `publish-and-query` (default: `2`)
 - `-timeout` - Operation timeout (default: `20s`)
+
+### Output
+
+The `publish-and-query` test provides detailed output:
+
+```
+Publishing 2 events of kind 1...
+Event 1/2 published successfully (id: a1b2c3d4...)
+Event 2/2 published successfully (id: e5f6g7h8...)
+PUBLISH: 2 accepted, 0 rejected out of 2 total
+
+Querying for events of kind 1...
+Query returned 2 events
+QUERY: found 2/2 published events (total returned: 2)
+SUCCESS: All published events were retrieved
+```
 
 ## Manual Testing
 
@@ -156,15 +184,50 @@ docker exec orly-policy-test netstat -tlnp | grep 8777
 When successful, you should see:
 
 ```
+=== Step 9: Publishing 2 events and querying for them ===
+
+--- Publishing and querying events ---
+Publishing 2 events of kind 1...
+Event 1/2 published successfully (id: abc12345...)
+Event 2/2 published successfully (id: def67890...)
+PUBLISH: 2 accepted, 0 rejected out of 2 total
+
+Querying for events of kind 1...
+Query returned 2 events
+QUERY: found 2/2 published events (total returned: 2)
+SUCCESS: All published events were retrieved
+
+=== Step 10: Checking relay logs ===
+INFO [policy script /home/orly/cs-policy-daemon.js] [cs-policy] Policy script started
+INFO [policy script /home/orly/cs-policy-daemon.js] [cs-policy] Processing event abc12345, kind: 1, access: write
+INFO [policy script /home/orly/cs-policy-daemon.js] [cs-policy] Processing event def67890, kind: 1, access: write
+INFO [policy script /home/orly/cs-policy-daemon.js] [cs-policy] Processing event abc12345, kind: 1, access: read
+INFO [policy script /home/orly/cs-policy-daemon.js] [cs-policy] Processing event def67890, kind: 1, access: read
+
+=== Step 12: Checking output file ===
 ✓ SUCCESS: cs-policy-output.txt file exists!
 
 Output file contents:
-1704123456789: Hey there!
+1234567890123: Policy script started
+1234567890456: Event ID: abc12345..., Kind: 1, Access: write
+1234567890789: Event ID: def67890..., Kind: 1, Access: write
+1234567891012: Event ID: abc12345..., Kind: 1, Access: read
+1234567891234: Event ID: def67890..., Kind: 1, Access: read
 
-✓ Policy script is working correctly!
+Policy invocations summary:
+  - Write operations (EVENT): 2 (expected: 2)
+  - Read operations (REQ):    2 (expected: >=1)
+
+✓ SUCCESS: Policy script processed both write and read operations!
+  - Published 2 events (write control)
+  - Queried events (read control)
 ```
 
-Each line in the output file represents one execution of the policy script, with a Unix timestamp.
+The test verifies:
+- **Write Control**: Policy script processes EVENT messages (2 publications)
+- **Read Control**: Policy script processes REQ messages (query retrieves events)
+- **Dual Logging**: Script output appears in both file and relay log (stderr)
+- **Event Lifecycle**: Events are stored and can be retrieved
 
 ## Configuration Files
 

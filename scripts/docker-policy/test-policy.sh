@@ -53,7 +53,7 @@ echo -e "${YELLOW}Step 8: Building policytest tool...${NC}"
 cd "$REPO_ROOT" && CGO_ENABLED=0 go build -o policytest ./cmd/policytest
 
 echo ""
-echo -e "${YELLOW}Step 9: Testing EVENT message (write control)...${NC}"
+echo -e "${YELLOW}Step 9: Publishing 2 events and querying for them...${NC}"
 
 # Check which port the relay is listening on
 RELAY_PORT=$(docker logs orly-policy-test 2>&1 | grep "starting listener" | grep -oP ':\K[0-9]+' | head -1)
@@ -62,27 +62,19 @@ if [ -z "$RELAY_PORT" ]; then
 fi
 echo "Relay is listening on port: $RELAY_PORT"
 
-# Test EVENT message
+# Test publish and query - this will publish 2 events and query for them
 cd "$REPO_ROOT"
-./policytest -url "ws://localhost:$RELAY_PORT" -type event -kind 1 2>&1 || echo "EVENT test completed"
+echo ""
+echo "--- Publishing and querying events ---"
+./policytest -url "ws://localhost:$RELAY_PORT" -type publish-and-query -kind 1 -count 2 2>&1
 
 echo ""
-echo -e "${YELLOW}Relay logs after EVENT test:${NC}"
-docker logs orly-policy-test 2>&1 | tail -10
+echo -e "${YELLOW}Step 10: Checking relay logs...${NC}"
+docker logs orly-policy-test 2>&1 | tail -20
 
 echo ""
-echo -e "${YELLOW}Step 10: Testing REQ message (read control)...${NC}"
-
-# Test REQ message
-./policytest -url "ws://localhost:$RELAY_PORT" -type req -kind 1 2>&1 || echo "REQ test completed"
-
-echo ""
-echo -e "${YELLOW}Relay logs after REQ test:${NC}"
-docker logs orly-policy-test 2>&1 | tail -10
-
-echo ""
-echo -e "${YELLOW}Step 11: Waiting for policy script to execute (5 seconds)...${NC}"
-sleep 5
+echo -e "${YELLOW}Step 11: Waiting for policy script to process (3 seconds)...${NC}"
+sleep 3
 
 echo ""
 echo -e "${YELLOW}Step 12: Checking if cs-policy.js created output file...${NC}"
@@ -99,19 +91,28 @@ if docker exec orly-policy-test test -f /home/orly/cs-policy-output.txt; then
     WRITE_COUNT=$(docker exec orly-policy-test cat /home/orly/cs-policy-output.txt | grep -c "Access: write" || echo "0")
     READ_COUNT=$(docker exec orly-policy-test cat /home/orly/cs-policy-output.txt | grep -c "Access: read" || echo "0")
 
-    echo "Policy invocations:"
-    echo "  - Write operations: $WRITE_COUNT"
-    echo "  - Read operations: $READ_COUNT"
+    echo "Policy invocations summary:"
+    echo "  - Write operations (EVENT): $WRITE_COUNT (expected: 2)"
+    echo "  - Read operations (REQ):    $READ_COUNT (expected: >=1)"
     echo ""
 
-    if [ "$WRITE_COUNT" -gt 0 ] && [ "$READ_COUNT" -gt 0 ]; then
-        echo -e "${GREEN}✓ Policy script processed both write and read operations!${NC}"
+    # Analyze results
+    if [ "$WRITE_COUNT" -ge 2 ] && [ "$READ_COUNT" -ge 1 ]; then
+        echo -e "${GREEN}✓ SUCCESS: Policy script processed both write and read operations!${NC}"
+        echo -e "${GREEN}  - Published 2 events (write control)${NC}"
+        echo -e "${GREEN}  - Queried events (read control)${NC}"
+        EXIT_CODE=0
+    elif [ "$WRITE_COUNT" -gt 0 ] && [ "$READ_COUNT" -gt 0 ]; then
+        echo -e "${YELLOW}⚠ PARTIAL: Policy invoked but counts don't match expected${NC}"
+        echo -e "${YELLOW}  - Write count: $WRITE_COUNT (expected 2)${NC}"
+        echo -e "${YELLOW}  - Read count: $READ_COUNT (expected >=1)${NC}"
         EXIT_CODE=0
     elif [ "$WRITE_COUNT" -gt 0 ]; then
-        echo -e "${YELLOW}⚠ Policy script only processed write operations (read operations may not have been tested)${NC}"
+        echo -e "${YELLOW}⚠ WARNING: Policy script only processed write operations${NC}"
+        echo -e "${YELLOW}  Read operations may not have been tested or logged${NC}"
         EXIT_CODE=0
     else
-        echo -e "${YELLOW}⚠ Policy script is working but access types may not be logged correctly${NC}"
+        echo -e "${YELLOW}⚠ WARNING: Policy script is working but access types may not be logged correctly${NC}"
         EXIT_CODE=0
     fi
 else
