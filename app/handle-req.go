@@ -661,6 +661,8 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 		l.subscriptionsMu.Unlock()
 
 		// Register subscription with publisher
+		// Set AuthRequired based on ACL mode - when ACL is "none", don't require auth for privileged events
+		authRequired := acl.Registry.Active.Load() != "none"
 		l.publishers.Receive(
 			&W{
 				Conn:         l.conn,
@@ -669,6 +671,7 @@ func (l *Listener) HandleReq(msg []byte) (err error) {
 				Receiver:     receiver,
 				Filters:      &subbedFilters,
 				AuthedPubkey: l.authedPubkey.Load(),
+				AuthRequired: authRequired,
 			},
 		)
 
