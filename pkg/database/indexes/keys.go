@@ -55,9 +55,12 @@ type I string
 func (i I) Write(w io.Writer) (n int, err error) { return w.Write([]byte(i)) }
 
 const (
-	EventPrefix        = I("evt")
-	IdPrefix           = I("eid")
-	FullIdPubkeyPrefix = I("fpc") // full id, pubkey, created at
+	EventPrefix            = I("evt")
+	SmallEventPrefix       = I("sev") // small event with inline data (<=384 bytes)
+	ReplaceableEventPrefix = I("rev") // replaceable event (kinds 0,3,10000-19999) with inline data
+	AddressableEventPrefix = I("aev") // addressable event (kinds 30000-39999) with inline data
+	IdPrefix               = I("eid")
+	FullIdPubkeyPrefix     = I("fpc") // full id, pubkey, created at
 
 	CreatedAtPrefix  = I("c--") // created at
 	KindPrefix       = I("kc-") // kind, created at
@@ -80,6 +83,12 @@ func Prefix(prf int) (i I) {
 	switch prf {
 	case Event:
 		return EventPrefix
+	case SmallEvent:
+		return SmallEventPrefix
+	case ReplaceableEvent:
+		return ReplaceableEventPrefix
+	case AddressableEvent:
+		return AddressableEventPrefix
 	case Id:
 		return IdPrefix
 	case FullIdPubkey:
@@ -125,6 +134,12 @@ func Identify(r io.Reader) (i int, err error) {
 	switch I(b[:]) {
 	case EventPrefix:
 		i = Event
+	case SmallEventPrefix:
+		i = SmallEvent
+	case ReplaceableEventPrefix:
+		i = ReplaceableEvent
+	case AddressableEventPrefix:
+		i = AddressableEvent
 	case IdPrefix:
 		i = Id
 	case FullIdPubkeyPrefix:
@@ -199,6 +214,53 @@ func EventEnc(ser *types.Uint40) (enc *T) {
 	return New(NewPrefix(Event), ser)
 }
 func EventDec(ser *types.Uint40) (enc *T) { return New(NewPrefix(), ser) }
+
+// SmallEvent stores events <=384 bytes with inline data to avoid double lookup.
+// This is a Reiser4-inspired optimization for small event packing.
+// 384 bytes covers: ID(32) + Pubkey(32) + Sig(64) + basic fields + small content
+//
+//	prefix|5 serial|2 size_uint16|data (variable length, max 384 bytes)
+var SmallEvent = next()
+
+func SmallEventVars() (ser *types.Uint40) { return new(types.Uint40) }
+func SmallEventEnc(ser *types.Uint40) (enc *T) {
+	return New(NewPrefix(SmallEvent), ser)
+}
+func SmallEventDec(ser *types.Uint40) (enc *T) { return New(NewPrefix(), ser) }
+
+// ReplaceableEvent stores replaceable events (kinds 0,3,10000-19999) with inline data.
+// Optimized storage for metadata events that are frequently replaced.
+// Key format enables direct lookup by pubkey+kind without additional index traversal.
+//
+//	prefix|8 pubkey_hash|2 kind|2 size_uint16|data (variable length, max 384 bytes)
+var ReplaceableEvent = next()
+
+func ReplaceableEventVars() (p *types.PubHash, ki *types.Uint16) {
+	return new(types.PubHash), new(types.Uint16)
+}
+func ReplaceableEventEnc(p *types.PubHash, ki *types.Uint16) (enc *T) {
+	return New(NewPrefix(ReplaceableEvent), p, ki)
+}
+func ReplaceableEventDec(p *types.PubHash, ki *types.Uint16) (enc *T) {
+	return New(NewPrefix(), p, ki)
+}
+
+// AddressableEvent stores parameterized replaceable events (kinds 30000-39999) with inline data.
+// Optimized storage for addressable events identified by pubkey+kind+d-tag.
+// Key format enables direct lookup without additional index traversal.
+//
+//	prefix|8 pubkey_hash|2 kind|8 dtag_hash|2 size_uint16|data (variable length, max 384 bytes)
+var AddressableEvent = next()
+
+func AddressableEventVars() (p *types.PubHash, ki *types.Uint16, d *types.Ident) {
+	return new(types.PubHash), new(types.Uint16), new(types.Ident)
+}
+func AddressableEventEnc(p *types.PubHash, ki *types.Uint16, d *types.Ident) (enc *T) {
+	return New(NewPrefix(AddressableEvent), p, ki, d)
+}
+func AddressableEventDec(p *types.PubHash, ki *types.Uint16, d *types.Ident) (enc *T) {
+	return New(NewPrefix(), p, ki, d)
+}
 
 // Id contains a truncated 8-byte hash of an event index. This is the secondary
 // key of an event, the primary key is the serial found in the Event.

@@ -177,6 +177,19 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 		return
 	}
 	log.T.F("SaveEvent: generated %d indexes for event %x (kind %d)", len(idxs), ev.ID, ev.Kind)
+
+	// Serialize event once to check size
+	eventDataBuf := new(bytes.Buffer)
+	ev.MarshalBinary(eventDataBuf)
+	eventData := eventDataBuf.Bytes()
+
+	// Determine storage strategy (Reiser4 optimizations)
+	// 384 bytes covers: ID(32) + Pubkey(32) + Sig(64) + basic fields + small content
+	const smallEventThreshold = 384
+	isSmallEvent := len(eventData) <= smallEventThreshold
+	isReplaceableEvent := kind.IsReplaceable(ev.Kind)
+	isAddressableEvent := kind.IsParameterizedReplaceable(ev.Kind)
+
 	// Start a transaction to save the event and all its indexes
 	err = d.Update(
 		func(txn *badger.Txn) (err error) {
@@ -185,26 +198,98 @@ func (d *D) SaveEvent(c context.Context, ev *event.E) (
 			if err = ser.Set(serial); chk.E(err) {
 				return
 			}
-			keyBuf := new(bytes.Buffer)
-			if err = indexes.EventEnc(ser).MarshalWrite(keyBuf); chk.E(err) {
-				return
-			}
-			kb := keyBuf.Bytes()
-			
-			// Pre-allocate value buffer
-			valueBuf := new(bytes.Buffer)
-			ev.MarshalBinary(valueBuf)
-			vb := valueBuf.Bytes()
-			
+
 			// Save each index
 			for _, key := range idxs {
 				if err = txn.Set(key, nil); chk.E(err) {
 					return
 				}
 			}
-			// write the event
-			if err = txn.Set(kb, vb); chk.E(err) {
-				return
+
+			// Write the event using optimized storage strategy
+			// Determine if we should use inline addressable/replaceable storage
+			useAddressableInline := false
+			var dTag *tag.T
+			if isAddressableEvent && isSmallEvent {
+				dTag = ev.Tags.GetFirst([]byte("d"))
+				useAddressableInline = dTag != nil
+			}
+
+			// All small events get a sev key for serial-based access
+			if isSmallEvent {
+				// Small event: store inline with sev prefix
+				// Format: sev|serial|size_uint16|event_data
+				keyBuf := new(bytes.Buffer)
+				if err = indexes.SmallEventEnc(ser).MarshalWrite(keyBuf); chk.E(err) {
+					return
+				}
+				// Append size as uint16 big-endian (2 bytes for size up to 65535)
+				sizeBytes := []byte{byte(len(eventData) >> 8), byte(len(eventData))}
+				keyBuf.Write(sizeBytes)
+				// Append event data
+				keyBuf.Write(eventData)
+
+				if err = txn.Set(keyBuf.Bytes(), nil); chk.E(err) {
+					return
+				}
+				log.T.F("SaveEvent: stored small event inline (%d bytes)", len(eventData))
+			} else {
+				// Large event: store separately with evt prefix
+				keyBuf := new(bytes.Buffer)
+				if err = indexes.EventEnc(ser).MarshalWrite(keyBuf); chk.E(err) {
+					return
+				}
+				if err = txn.Set(keyBuf.Bytes(), eventData); chk.E(err) {
+					return
+				}
+				log.T.F("SaveEvent: stored large event separately (%d bytes)", len(eventData))
+			}
+
+			// Additionally, store replaceable/addressable events with specialized keys for direct access
+			if useAddressableInline {
+				// Addressable event: also store with aev|pubkey_hash|kind|dtag_hash|size|data
+				pubHash := new(types.PubHash)
+				pubHash.FromPubkey(ev.Pubkey)
+				kindVal := new(types.Uint16)
+				kindVal.Set(ev.Kind)
+				dTagHash := new(types.Ident)
+				dTagHash.FromIdent(dTag.Value())
+
+				keyBuf := new(bytes.Buffer)
+				if err = indexes.AddressableEventEnc(pubHash, kindVal, dTagHash).MarshalWrite(keyBuf); chk.E(err) {
+					return
+				}
+				// Append size as uint16 big-endian
+				sizeBytes := []byte{byte(len(eventData) >> 8), byte(len(eventData))}
+				keyBuf.Write(sizeBytes)
+				// Append event data
+				keyBuf.Write(eventData)
+
+				if err = txn.Set(keyBuf.Bytes(), nil); chk.E(err) {
+					return
+				}
+				log.T.F("SaveEvent: also stored addressable event with specialized key")
+			} else if isReplaceableEvent && isSmallEvent {
+				// Replaceable event: also store with rev|pubkey_hash|kind|size|data
+				pubHash := new(types.PubHash)
+				pubHash.FromPubkey(ev.Pubkey)
+				kindVal := new(types.Uint16)
+				kindVal.Set(ev.Kind)
+
+				keyBuf := new(bytes.Buffer)
+				if err = indexes.ReplaceableEventEnc(pubHash, kindVal).MarshalWrite(keyBuf); chk.E(err) {
+					return
+				}
+				// Append size as uint16 big-endian
+				sizeBytes := []byte{byte(len(eventData) >> 8), byte(len(eventData))}
+				keyBuf.Write(sizeBytes)
+				// Append event data
+				keyBuf.Write(eventData)
+
+				if err = txn.Set(keyBuf.Bytes(), nil); chk.E(err) {
+					return
+				}
+				log.T.F("SaveEvent: also stored replaceable event with specialized key")
 			}
 			return
 		},

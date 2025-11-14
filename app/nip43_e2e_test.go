@@ -1,13 +1,12 @@
 package app
 
 import (
-	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -75,13 +74,15 @@ func setupE2ETest(t *testing.T) (*Server, *httptest.Server, func()) {
 	server.mux = http.NewServeMux()
 
 	// Set up HTTP handlers
-	server.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Accept") == "application/nostr+json" {
-			server.HandleRelayInfo(w, r)
-			return
-		}
-		http.NotFound(w, r)
-	})
+	server.mux.HandleFunc(
+		"/", func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Accept") == "application/nostr+json" {
+				server.HandleRelayInfo(w, r)
+				return
+			}
+			http.NotFound(w, r)
+		},
+	)
 
 	httpServer := httptest.NewServer(server.mux)
 
@@ -133,7 +134,10 @@ func TestE2E_RelayInfoIncludesNIP43(t *testing.T) {
 
 	// Verify server name
 	if info.Name != server.Config.AppName {
-		t.Errorf("wrong relay name: got %s, want %s", info.Name, server.Config.AppName)
+		t.Errorf(
+			"wrong relay name: got %s, want %s", info.Name,
+			server.Config.AppName,
+		)
 	}
 }
 
@@ -205,7 +209,10 @@ func TestE2E_CompleteJoinFlow(t *testing.T) {
 		t.Fatalf("failed to get membership: %v", err)
 	}
 	if membership.InviteCode != inviteCode {
-		t.Errorf("wrong invite code: got %s, want %s", membership.InviteCode, inviteCode)
+		t.Errorf(
+			"wrong invite code: got %s, want %s", membership.InviteCode,
+			inviteCode,
+		)
 	}
 }
 
@@ -355,6 +362,9 @@ func TestE2E_ExpiredInviteCode(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	db, err := database.New(ctx, cancel, tempDir, "info")
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
@@ -365,8 +375,6 @@ func TestE2E_ExpiredInviteCode(t *testing.T) {
 		NIP43Enabled:      true,
 		NIP43InviteExpiry: 1 * time.Millisecond, // Very short expiry
 	}
-
-	ctx := context.Background()
 
 	server := &Server{
 		Ctx:           ctx,
@@ -498,7 +506,10 @@ func BenchmarkJoinRequestProcessing(b *testing.B) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	db, err := database.Open(filepath.Join(tempDir, "test.db"), "error")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	db, err := database.New(ctx, cancel, tempDir, "error")
 	if err != nil {
 		b.Fatalf("failed to open database: %v", err)
 	}
@@ -508,8 +519,6 @@ func BenchmarkJoinRequestProcessing(b *testing.B) {
 		NIP43Enabled:      true,
 		NIP43InviteExpiry: 24 * time.Hour,
 	}
-
-	ctx := context.Background()
 
 	server := &Server{
 		Ctx:           ctx,

@@ -66,6 +66,29 @@ func SecretBytesToPubKeyHex(skb []byte) (pk string, err error) {
 	return hex.Enc(signer.Pub()), nil
 }
 
+// SecretBytesToPubKeyBytes generates a public key bytes from secret key bytes.
+func SecretBytesToPubKeyBytes(skb []byte) (pkb []byte, err error) {
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
+	if err = signer.InitSec(skb); chk.E(err) {
+		return
+	}
+	return signer.Pub(), nil
+}
+
+// SecretBytesToSigner creates a signer from secret key bytes.
+func SecretBytesToSigner(skb []byte) (signer *p8k.Signer, err error) {
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
+	if err = signer.InitSec(skb); chk.E(err) {
+		return
+	}
+	return
+}
+
 // IsValid32ByteHex checks that a hex string is a valid 32 bytes lower case hex encoded value as
 // per nostr NIP-01 spec.
 func IsValid32ByteHex[V []byte | string](pk V) bool {
