@@ -48,7 +48,12 @@
       "Bash(./test-policy.sh:*)",
       "Bash(docker rm:*)",
       "Bash(./scripts/docker-policy/test-policy.sh:*)",
-      "Bash(./policytest:*)"
+      "Bash(./policytest:*)",
+      "WebSearch",
+      "WebFetch(domain:blog.scottlogic.com)",
+      "WebFetch(domain:eli.thegreenplace.net)",
+      "WebFetch(domain:learn-wasm.dev)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []
