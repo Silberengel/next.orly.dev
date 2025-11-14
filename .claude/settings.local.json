@@ -53,7 +53,11 @@
       "WebFetch(domain:blog.scottlogic.com)",
       "WebFetch(domain:eli.thegreenplace.net)",
       "WebFetch(domain:learn-wasm.dev)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(./build.sh)",
+      "Bash(./pkg/wasm/shell/run.sh:*)",
+      "Bash(./run.sh echo.wasm)",
+      "Bash(./test.sh)"
     ],
     "deny": [],
     "ask": []
