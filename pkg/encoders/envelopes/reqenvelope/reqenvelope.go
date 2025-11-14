@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/text"
@@ -86,24 +85,19 @@ func (en *T) Marshal(dst []byte) (b []byte) {
 // string is correctly unescaped by NIP-01 escaping rules.
 func (en *T) Unmarshal(b []byte) (r []byte, err error) {
 	r = b
-	log.I.F("%s", r)
 	if en.Subscription, r, err = text.UnmarshalQuoted(r); chk.E(err) {
 		return
 	}
-	log.I.F("%s", r)
 	if r, err = text.Comma(r); chk.E(err) {
 		return
 	}
-	log.I.F("%s", r)
 	en.Filters = new(filter.S)
 	if r, err = en.Filters.Unmarshal(r); chk.E(err) {
 		return
 	}
-	log.I.F("%s", r)
 	if r, err = envelopes.SkipToTheEnd(r); chk.E(err) {
 		return
 	}
-	log.I.F("%s", r)
 	return
 }
 

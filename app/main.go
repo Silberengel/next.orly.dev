@@ -122,6 +122,21 @@ func Run(
 				log.E.F("failed to start spider manager: %v", err)
 			} else {
 				log.I.F("spider manager started successfully in '%s' mode", cfg.SpiderMode)
+
+				// Hook up follow list update notifications from ACL to spider
+				if cfg.SpiderMode == "follows" {
+					for _, aclInstance := range acl.Registry.ACL {
+						if aclInstance.Type() == "follows" {
+							if follows, ok := aclInstance.(*acl.Follows); ok {
+								follows.SetFollowListUpdateCallback(func() {
+									log.I.F("follow list updated, notifying spider")
+									l.spiderManager.NotifyFollowListUpdate()
+								})
+								log.I.F("spider: follow list update notifications configured")
+							}
+						}
+					}
+				}
 			}
 		}
 	}

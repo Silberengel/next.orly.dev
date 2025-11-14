@@ -3,6 +3,7 @@ package spider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,12 +24,24 @@ const (
 	BatchSize = 20
 	// CatchupWindow is the extra time added to disconnection periods for catch-up
 	CatchupWindow = 30 * time.Minute
-	// ReconnectDelay is the delay between reconnection attempts
-	ReconnectDelay = 5 * time.Second
-	// MaxReconnectDelay is the maximum delay between reconnection attempts
-	MaxReconnectDelay = 5 * time.Minute
-	// BlackoutPeriod is the duration to blacklist a relay after MaxReconnectDelay is reached
+	// ReconnectDelay is the initial delay between reconnection attempts
+	ReconnectDelay = 10 * time.Second
+	// MaxReconnectDelay is the maximum delay before switching to blackout
+	MaxReconnectDelay = 1 * time.Hour
+	// BlackoutPeriod is the duration to blacklist a relay after max backoff is reached
 	BlackoutPeriod = 24 * time.Hour
+	// BatchCreationDelay is the delay between creating each batch subscription
+	BatchCreationDelay = 500 * time.Millisecond
+	// RateLimitBackoffDuration is how long to wait when we get a rate limit error
+	RateLimitBackoffDuration = 1 * time.Minute
+	// RateLimitBackoffMultiplier is the factor by which we increase backoff on repeated rate limits
+	RateLimitBackoffMultiplier = 2
+	// MaxRateLimitBackoff is the maximum backoff duration for rate limiting
+	MaxRateLimitBackoff = 30 * time.Minute
+	// MainLoopInterval is how often the spider checks for updates
+	MainLoopInterval = 5 * time.Minute
+	// EventHandlerBufferSize is the buffer size for event channels
+	EventHandlerBufferSize = 100
 )
 
 // Spider manages connections to admin relays and syncs events for followed pubkeys
@@ -51,6 +64,9 @@ type Spider struct {
 	// Callbacks for getting updated data
 	getAdminRelays func() []string
 	getFollowList  func() [][]byte
+
+	// Notification channel for follow list updates
+	followListUpdated chan struct{}
 }
 
 // RelayConnection manages a single relay connection and its subscriptions
@@ -72,6 +88,10 @@ type RelayConnection struct {
 
 	// Blackout tracking for IP filters
 	blackoutUntil time.Time
+
+	// Rate limiting tracking
+	rateLimitBackoff time.Duration
+	rateLimitUntil   time.Time
 }
 
 // BatchSubscription represents a subscription for a batch of pubkeys
@@ -110,12 +130,13 @@ func New(ctx context.Context, db *database.D, pub publisher.I, mode string) (s *
 
 	ctx, cancel := context.WithCancel(ctx)
 	s = &Spider{
-		ctx:         ctx,
-		cancel:      cancel,
-		db:          db,
-		pub:         pub,
-		mode:        mode,
-		connections: make(map[string]*RelayConnection),
+		ctx:               ctx,
+		cancel:            cancel,
+		db:                db,
+		pub:               pub,
+		mode:              mode,
+		connections:       make(map[string]*RelayConnection),
+		followListUpdated: make(chan struct{}, 1),
 	}
 
 	return
@@ -127,6 +148,19 @@ func (s *Spider) SetCallbacks(getAdminRelays func() []string, getFollowList func
 	defer s.mu.Unlock()
 	s.getAdminRelays = getAdminRelays
 	s.getFollowList = getFollowList
+}
+
+// NotifyFollowListUpdate signals the spider that the follow list has been updated
+func (s *Spider) NotifyFollowListUpdate() {
+	if s.followListUpdated != nil {
+		select {
+		case s.followListUpdated <- struct{}{}:
+			log.D.F("spider: follow list update notification sent")
+		default:
+			// Channel full, update already pending
+			log.D.F("spider: follow list update notification already pending")
+		}
+	}
 }
 
 // Start begins the spider operation
@@ -182,14 +216,20 @@ func (s *Spider) Stop() {
 
 // mainLoop is the main spider loop that manages connections and subscriptions
 func (s *Spider) mainLoop() {
-	ticker := time.NewTicker(30 * time.Second) // Check every 30 seconds
+	ticker := time.NewTicker(MainLoopInterval)
 	defer ticker.Stop()
+
+	log.I.F("spider: main loop started, checking every %v", MainLoopInterval)
 
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
+		case <-s.followListUpdated:
+			log.I.F("spider: follow list updated, refreshing connections")
+			s.updateConnections()
 		case <-ticker.C:
+			log.D.F("spider: periodic check triggered")
 			s.updateConnections()
 		}
 	}
@@ -261,19 +301,24 @@ func (s *Spider) createConnection(url string, followList [][]byte) {
 // manage handles the lifecycle of a relay connection
 func (rc *RelayConnection) manage(followList [][]byte) {
 	for {
+		// Check context first
 		select {
 		case <-rc.ctx.Done():
+			log.D.F("spider: connection manager for %s stopping (context done)", rc.url)
 			return
 		default:
 		}
 
 		// Check if relay is blacked out
 		if rc.isBlackedOut() {
-			log.D.F("spider: %s is blacked out until %v", rc.url, rc.blackoutUntil)
+			waitDuration := time.Until(rc.blackoutUntil)
+			log.I.F("spider: %s is blacked out for %v more", rc.url, waitDuration)
+
+			// Wait for blackout to expire or context cancellation
 			select {
 			case <-rc.ctx.Done():
 				return
-			case <-time.After(time.Until(rc.blackoutUntil)):
+			case <-time.After(waitDuration):
 				// Blackout expired, reset delay and try again
 				rc.reconnectDelay = ReconnectDelay
 				log.I.F("spider: blackout period ended for %s, retrying", rc.url)
@@ -282,6 +327,7 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 		}
 
 		// Attempt to connect
+		log.D.F("spider: attempting to connect to %s (backoff: %v)", rc.url, rc.reconnectDelay)
 		if err := rc.connect(); chk.E(err) {
 			log.W.F("spider: failed to connect to %s: %v", rc.url, err)
 			rc.waitBeforeReconnect()
@@ -290,8 +336,17 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 
 		log.I.F("spider: connected to %s", rc.url)
 		rc.connectionStartTime = time.Now()
-		rc.reconnectDelay = ReconnectDelay // Reset delay on successful connection
-		rc.blackoutUntil = time.Time{}     // Clear blackout on successful connection
+
+		// Only reset reconnect delay on successful connection
+		// (don't reset if we had a quick disconnect before)
+		if rc.reconnectDelay > ReconnectDelay*8 {
+			// Gradual recovery: reduce by half instead of full reset
+			rc.reconnectDelay = rc.reconnectDelay / 2
+			log.D.F("spider: reducing backoff for %s to %v", rc.url, rc.reconnectDelay)
+		} else {
+			rc.reconnectDelay = ReconnectDelay
+		}
+		rc.blackoutUntil = time.Time{} // Clear blackout on successful connection
 
 		// Create subscriptions for follow list
 		rc.createSubscriptions(followList)
@@ -300,19 +355,25 @@ func (rc *RelayConnection) manage(followList [][]byte) {
 		<-rc.client.Context().Done()
 
 		log.W.F("spider: disconnected from %s: %v", rc.url, rc.client.ConnectionCause())
-		
-		// Check if disconnection happened very quickly (likely IP filter)
+
+		// Check if disconnection happened very quickly (likely IP filter or ban)
 		connectionDuration := time.Since(rc.connectionStartTime)
-		const quickDisconnectThreshold = 30 * time.Second
+		const quickDisconnectThreshold = 2 * time.Minute
 		if connectionDuration < quickDisconnectThreshold {
-			log.W.F("spider: quick disconnection from %s after %v (likely IP filter)", rc.url, connectionDuration)
-			// Don't reset the delay, keep the backoff
+			log.W.F("spider: quick disconnection from %s after %v (likely connection issue/ban)", rc.url, connectionDuration)
+			// Don't reset the delay, keep the backoff and increase it
 			rc.waitBeforeReconnect()
 		} else {
-			// Normal disconnection, reset backoff for future connections
-			rc.reconnectDelay = ReconnectDelay
+			// Normal disconnection after decent uptime - gentle backoff
+			log.I.F("spider: normal disconnection from %s after %v uptime", rc.url, connectionDuration)
+			// Small delay before reconnecting
+			select {
+			case <-rc.ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
 		}
-		
+
 		rc.handleDisconnection()
 
 		// Clean up
@@ -326,15 +387,56 @@ func (rc *RelayConnection) connect() (err error) {
 	connectCtx, cancel := context.WithTimeout(rc.ctx, 10*time.Second)
 	defer cancel()
 
-	if rc.client, err = ws.RelayConnect(connectCtx, rc.url); chk.E(err) {
+	// Create client with notice handler to detect rate limiting
+	rc.client, err = ws.RelayConnect(connectCtx, rc.url, ws.WithNoticeHandler(rc.handleNotice))
+	if chk.E(err) {
 		return
 	}
 
 	return
 }
 
+// handleNotice processes NOTICE messages from the relay
+func (rc *RelayConnection) handleNotice(notice []byte) {
+	noticeStr := string(notice)
+	log.D.F("spider: NOTICE from %s: '%s'", rc.url, noticeStr)
+
+	// Check for rate limiting errors
+	if strings.Contains(noticeStr, "too many concurrent REQs") ||
+		strings.Contains(noticeStr, "rate limit") ||
+		strings.Contains(noticeStr, "slow down") {
+		rc.handleRateLimit()
+	}
+}
+
+// handleRateLimit applies backoff when rate limiting is detected
+func (rc *RelayConnection) handleRateLimit() {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	// Initialize backoff if not set
+	if rc.rateLimitBackoff == 0 {
+		rc.rateLimitBackoff = RateLimitBackoffDuration
+	} else {
+		// Exponential backoff
+		rc.rateLimitBackoff *= RateLimitBackoffMultiplier
+		if rc.rateLimitBackoff > MaxRateLimitBackoff {
+			rc.rateLimitBackoff = MaxRateLimitBackoff
+		}
+	}
+
+	rc.rateLimitUntil = time.Now().Add(rc.rateLimitBackoff)
+	log.W.F("spider: rate limit detected on %s, backing off for %v until %v",
+		rc.url, rc.rateLimitBackoff, rc.rateLimitUntil)
+
+	// Close all current subscriptions to reduce load
+	rc.clearSubscriptionsLocked()
+}
+
 // waitBeforeReconnect waits before attempting to reconnect with exponential backoff
 func (rc *RelayConnection) waitBeforeReconnect() {
+	log.I.F("spider: waiting %v before reconnecting to %s", rc.reconnectDelay, rc.url)
+
 	select {
 	case <-rc.ctx.Done():
 		return
@@ -342,12 +444,14 @@ func (rc *RelayConnection) waitBeforeReconnect() {
 	}
 
 	// Exponential backoff - double every time
+	// 10s -> 20s -> 40s -> 80s (1.3m) -> 160s (2.7m) -> 320s (5.3m) -> 640s (10.7m) -> 1280s (21m) -> 2560s (42m) -> 3600s (1h)
 	rc.reconnectDelay *= 2
-	
-	// If backoff exceeds 5 minutes, blackout for 24 hours
+
+	// Cap at MaxReconnectDelay (1 hour), then switch to 24-hour blackout
 	if rc.reconnectDelay >= MaxReconnectDelay {
 		rc.blackoutUntil = time.Now().Add(BlackoutPeriod)
-		log.W.F("spider: max backoff exceeded for %s (reached %v), blacking out for 24 hours", rc.url, rc.reconnectDelay)
+		rc.reconnectDelay = ReconnectDelay // Reset for after blackout
+		log.W.F("spider: max reconnect backoff reached for %s, entering 24-hour blackout period", rc.url)
 	}
 }
 
@@ -375,7 +479,24 @@ func (rc *RelayConnection) handleDisconnection() {
 // createSubscriptions creates batch subscriptions for the follow list
 func (rc *RelayConnection) createSubscriptions(followList [][]byte) {
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
+
+	// Check if we're in a rate limit backoff period
+	if time.Now().Before(rc.rateLimitUntil) {
+		remaining := time.Until(rc.rateLimitUntil)
+		rc.mu.Unlock()
+		log.W.F("spider: skipping subscription creation for %s, rate limited for %v more", rc.url, remaining)
+
+		// Schedule retry after backoff period
+		go func() {
+			time.Sleep(remaining)
+			rc.createSubscriptions(followList)
+		}()
+		return
+	}
+
+	// Clear rate limit backoff on successful subscription attempt
+	rc.rateLimitBackoff = 0
+	rc.rateLimitUntil = time.Time{}
 
 	// Clear existing subscriptions
 	rc.clearSubscriptionsLocked()
@@ -386,9 +507,27 @@ func (rc *RelayConnection) createSubscriptions(followList [][]byte) {
 	log.I.F("spider: creating %d subscription batches for %d pubkeys on %s",
 		len(batches), len(followList), rc.url)
 
+	// Release lock before creating subscriptions to avoid holding it during delays
+	rc.mu.Unlock()
+
 	for i, batch := range batches {
-		batchID := fmt.Sprintf("batch-%d", i) // Simple batch ID
+		// Check context before creating each batch
+		select {
+		case <-rc.ctx.Done():
+			return
+		default:
+		}
+
+		batchID := fmt.Sprintf("batch-%d", i)
+
+		rc.mu.Lock()
 		rc.createBatchSubscription(batchID, batch)
+		rc.mu.Unlock()
+
+		// Add delay between batches to avoid overwhelming the relay
+		if i < len(batches)-1 { // Don't delay after the last batch
+			time.Sleep(BatchCreationDelay)
+		}
 	}
 }
 
@@ -457,6 +596,10 @@ func (rc *RelayConnection) createBatchSubscription(batchID string, pubkeys [][]b
 
 // handleEvents processes events from the subscription
 func (bs *BatchSubscription) handleEvents() {
+	// Throttle event processing to avoid CPU spikes
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-bs.relay.ctx.Done():
@@ -466,13 +609,19 @@ func (bs *BatchSubscription) handleEvents() {
 				return // Subscription closed
 			}
 
+			// Wait for throttle tick to avoid processing events too rapidly
+			<-ticker.C
+
 			// Save event to database
 			if _, err := bs.relay.spider.db.SaveEvent(bs.relay.ctx, ev); err != nil {
+				// Ignore duplicate events and other errors
+				log.T.F("spider: failed to save event from %s: %v", bs.relay.url, err)
 			} else {
 				// Publish event if it was newly saved
 				if bs.relay.spider.pub != nil {
 					go bs.relay.spider.pub.Deliver(ev)
 				}
+				log.T.F("spider: saved event from %s", bs.relay.url)
 			}
 		}
 	}
@@ -485,7 +634,14 @@ func (rc *RelayConnection) updateSubscriptions(followList [][]byte) {
 	}
 
 	rc.mu.Lock()
-	defer rc.mu.Unlock()
+
+	// Check if we're in a rate limit backoff period
+	if time.Now().Before(rc.rateLimitUntil) {
+		remaining := time.Until(rc.rateLimitUntil)
+		rc.mu.Unlock()
+		log.D.F("spider: deferring subscription update for %s, rate limited for %v more", rc.url, remaining)
+		return
+	}
 
 	// Check if we need to perform catch-up for disconnected subscriptions
 	now := time.Now()
@@ -507,9 +663,28 @@ func (rc *RelayConnection) updateSubscriptions(followList [][]byte) {
 	rc.clearSubscriptionsLocked()
 
 	batches := rc.createBatches(followList)
+
+	// Release lock before creating subscriptions
+	rc.mu.Unlock()
+
 	for i, batch := range batches {
+		// Check context before creating each batch
+		select {
+		case <-rc.ctx.Done():
+			return
+		default:
+		}
+
 		batchID := fmt.Sprintf("batch-%d", i)
+
+		rc.mu.Lock()
 		rc.createBatchSubscription(batchID, batch)
+		rc.mu.Unlock()
+
+		// Add delay between batches
+		if i < len(batches)-1 {
+			time.Sleep(BatchCreationDelay)
+		}
 	}
 }
 
@@ -559,39 +734,43 @@ func (rc *RelayConnection) performCatchup(sub *BatchSubscription, disconnectTime
 	}
 	defer catchupSub.Unsub()
 
-	// Process catch-up events
+	// Process catch-up events with throttling
 	eventCount := 0
-	timeout := time.After(30 * time.Second)
+	timeout := time.After(60 * time.Second) // Increased timeout for catch-up
+	throttle := time.NewTicker(20 * time.Millisecond)
+	defer throttle.Stop()
 
 	for {
 		select {
 		case <-catchupCtx.Done():
-			log.D.F("spider: catch-up completed on %s, processed %d events", rc.url, eventCount)
+			log.I.F("spider: catch-up completed on %s, processed %d events", rc.url, eventCount)
 			return
 		case <-timeout:
-			log.D.F("spider: catch-up timeout on %s, processed %d events", rc.url, eventCount)
+			log.I.F("spider: catch-up timeout on %s, processed %d events", rc.url, eventCount)
 			return
 		case <-catchupSub.EndOfStoredEvents:
-			log.D.F("spider: catch-up EOSE on %s, processed %d events", rc.url, eventCount)
+			log.I.F("spider: catch-up EOSE on %s, processed %d events", rc.url, eventCount)
 			return
 		case ev := <-catchupSub.Events:
 			if ev == nil {
 				return
 			}
 
+			// Throttle event processing
+			<-throttle.C
+
 			eventCount++
 
 			// Save event to database
 			if _, err := rc.spider.db.SaveEvent(rc.ctx, ev); err != nil {
-				if !chk.E(err) {
-					log.T.F("spider: catch-up saved event %s from %s",
-						hex.Enc(ev.ID[:]), rc.url)
-				}
+				// Silently ignore errors (mostly duplicates)
 			} else {
 				// Publish event if it was newly saved
 				if rc.spider.pub != nil {
 					go rc.spider.pub.Deliver(ev)
 				}
+				log.T.F("spider: catch-up saved event %s from %s",
+					hex.Enc(ev.ID[:]), rc.url)
 			}
 		}
 	}

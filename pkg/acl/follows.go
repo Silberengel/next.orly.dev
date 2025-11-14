@@ -46,6 +46,8 @@ type Follows struct {
 	subsCancel context.CancelFunc
 	// Track last follow list fetch time
 	lastFollowListFetch time.Time
+	// Callback for external notification of follow list changes
+	onFollowListUpdate func()
 }
 
 func (f *Follows) Configure(cfg ...any) (err error) {
@@ -314,7 +316,6 @@ func (f *Follows) adminRelays() (urls []string) {
 				"wss://nostr.wine",
 				"wss://nos.lol",
 				"wss://relay.damus.io",
-				"wss://nostr.band",
 			}
 			log.I.F("using failover relays: %v", failoverRelays)
 			for _, relay := range failoverRelays {
@@ -933,6 +934,13 @@ func (f *Follows) AdminRelays() []string {
 	return f.adminRelays()
 }
 
+// SetFollowListUpdateCallback sets a callback to be called when the follow list is updated
+func (f *Follows) SetFollowListUpdateCallback(callback func()) {
+	f.followsMx.Lock()
+	defer f.followsMx.Unlock()
+	f.onFollowListUpdate = callback
+}
+
 // AddFollow appends a pubkey to the in-memory follows list if not already present
 // and signals the syncer to refresh subscriptions.
 func (f *Follows) AddFollow(pub []byte) {
@@ -960,6 +968,10 @@ func (f *Follows) AddFollow(pub []byte) {
 		default:
 			// if channel is full or not yet listened to, ignore
 		}
+	}
+	// notify external listeners (e.g., spider)
+	if f.onFollowListUpdate != nil {
+		go f.onFollowListUpdate()
 	}
 }
 

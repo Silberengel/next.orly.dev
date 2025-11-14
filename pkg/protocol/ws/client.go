@@ -111,6 +111,7 @@ type RelayOption interface {
 var (
 	_ RelayOption = (WithCustomHandler)(nil)
 	_ RelayOption = (WithRequestHeader)(nil)
+	_ RelayOption = (WithNoticeHandler)(nil)
 )
 
 // WithCustomHandler must be a function that handles any relay message that couldn't be
@@ -126,6 +127,18 @@ type WithRequestHeader http.Header
 
 func (ch WithRequestHeader) ApplyRelayOption(r *Client) {
 	r.requestHeader = http.Header(ch)
+}
+
+// WithNoticeHandler must be a function that handles NOTICE messages from the relay.
+type WithNoticeHandler func(notice []byte)
+
+func (nh WithNoticeHandler) ApplyRelayOption(r *Client) {
+	r.notices = make(chan []byte, 8)
+	go func() {
+		for notice := range r.notices {
+			nh(notice)
+		}
+	}()
 }
 
 // String just returns the relay URL.

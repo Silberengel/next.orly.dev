@@ -57,7 +57,9 @@
       "Bash(./build.sh)",
       "Bash(./pkg/wasm/shell/run.sh:*)",
       "Bash(./run.sh echo.wasm)",
-      "Bash(./test.sh)"
+      "Bash(./test.sh)",
+      "Bash(ORLY_PPROF=cpu ORLY_LOG_LEVEL=info ORLY_LISTEN=0.0.0.0 ORLY_PORT=3334 ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku ORLY_OWNERS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku ORLY_ACL_MODE=follows ORLY_SPIDER_MODE=follows timeout 120 go run:*)",
+      "Bash(go tool pprof:*)"
     ],
     "deny": [],
     "ask": []
