@@ -77,9 +77,11 @@
       "Bash(docker run:*)",
       "Bash(docker inspect:*)",
       "Bash(./run-benchmark-clean.sh:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(CGO_ENABLED=0 timeout 180 go build:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "outputStyle": "Explanatory"
 }

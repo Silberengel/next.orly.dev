@@ -12,19 +12,21 @@ import (
 	"github.com/dgraph-io/badger/v4/options"
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
+	"next.orly.dev/pkg/database/querycache"
 	"next.orly.dev/pkg/utils/apputil"
 	"next.orly.dev/pkg/utils/units"
 )
 
 // D implements the Database interface using Badger as the storage backend
 type D struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	dataDir string
-	Logger  *logger
+	ctx        context.Context
+	cancel     context.CancelFunc
+	dataDir    string
+	Logger     *logger
 	*badger.DB
-	seq   *badger.Sequence
-	ready chan struct{} // Closed when database is ready to serve requests
+	seq        *badger.Sequence
+	ready      chan struct{} // Closed when database is ready to serve requests
+	queryCache *querycache.EventCache
 }
 
 // Ensure D implements Database interface at compile time
@@ -35,14 +37,29 @@ func New(
 ) (
 	d *D, err error,
 ) {
+	// Initialize query cache with configurable size (default 512MB)
+	queryCacheSize := int64(512 * 1024 * 1024) // 512 MB
+	if v := os.Getenv("ORLY_QUERY_CACHE_SIZE_MB"); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			queryCacheSize = int64(n * 1024 * 1024)
+		}
+	}
+	queryCacheMaxAge := 5 * time.Minute // Default 5 minutes
+	if v := os.Getenv("ORLY_QUERY_CACHE_MAX_AGE"); v != "" {
+		if duration, perr := time.ParseDuration(v); perr == nil {
+			queryCacheMaxAge = duration
+		}
+	}
+
 	d = &D{
-		ctx:     ctx,
-		cancel:  cancel,
-		dataDir: dataDir,
-		Logger:  NewLogger(lol.GetLogLevel(logLevel), dataDir),
-		DB:      nil,
-		seq:     nil,
-		ready:   make(chan struct{}),
+		ctx:        ctx,
+		cancel:     cancel,
+		dataDir:    dataDir,
+		Logger:     NewLogger(lol.GetLogLevel(logLevel), dataDir),
+		DB:         nil,
+		seq:        nil,
+		ready:      make(chan struct{}),
+		queryCache: querycache.NewEventCache(queryCacheSize, queryCacheMaxAge),
 	}
 
 	// Ensure the data directory exists
@@ -196,6 +213,21 @@ func (d *D) Init(path string) (err error) {
 func (d *D) Sync() (err error) {
 	d.DB.RunValueLogGC(0.5)
 	return d.DB.Sync()
+}
+
+// QueryCacheStats returns statistics about the query cache
+func (d *D) QueryCacheStats() querycache.CacheStats {
+	if d.queryCache == nil {
+		return querycache.CacheStats{}
+	}
+	return d.queryCache.Stats()
+}
+
+// InvalidateQueryCache clears all entries from the query cache
+func (d *D) InvalidateQueryCache() {
+	if d.queryCache != nil {
+		d.queryCache.Invalidate()
+	}
 }
 
 // Close releases resources and closes the database.

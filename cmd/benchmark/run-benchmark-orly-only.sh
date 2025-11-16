@@ -63,9 +63,9 @@ echo ""
 # Run the benchmark binary directly against the running ORLY instance
 docker run --rm --network benchmark_benchmark-net \
     -e BENCHMARK_TARGETS=next-orly:8080 \
-    -e BENCHMARK_EVENTS=50000 \
+    -e BENCHMARK_EVENTS=10000 \
     -e BENCHMARK_WORKERS=24 \
-    -e BENCHMARK_DURATION=60s \
+    -e BENCHMARK_DURATION=20s \
     -v "$(pwd)/reports:/reports" \
     benchmark-benchmark-runner \
     /app/benchmark-runner --output-dir=/reports

@@ -51,6 +51,14 @@ func (d *D) QueryAllVersions(c context.Context, f *filter.F) (
 func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool, showAllVersions bool) (
 	evs event.S, err error,
 ) {
+	// Try cache first (only for standard queries, not special cases)
+	if d.queryCache != nil && !showAllVersions && includeDeleteEvents {
+		if cachedEvents, found := d.queryCache.Get(f); found {
+			log.D.F("QueryEventsWithOptions: returning %d cached events", len(cachedEvents))
+			return cachedEvents, nil
+		}
+	}
+
 	// Determine if we should return multiple versions of replaceable events
 	// based on the limit parameter
 	wantMultipleVersions := showAllVersions || (f.Limit != nil && *f.Limit > 1)
@@ -583,6 +591,13 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 		}()
 	}
+
+	// Populate cache with results (only for standard queries)
+	if d.queryCache != nil && !showAllVersions && includeDeleteEvents && len(evs) > 0 {
+		d.queryCache.Put(f, evs)
+		log.D.F("QueryEventsWithOptions: cached %d events", len(evs))
+	}
+
 	return
 }
 
