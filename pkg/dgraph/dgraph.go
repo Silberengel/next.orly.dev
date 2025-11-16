@@ -12,6 +12,7 @@ import (
 	"github.com/dgraph-io/dgo/v230"
 	"github.com/dgraph-io/dgo/v230/protos/api"
 	"google.golang.org/grpc"
+	"next.orly.dev/pkg/encoders/filter"
 	"google.golang.org/grpc/credentials/insecure"
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
@@ -283,3 +284,6 @@ func (d *D) warmup() {
 	// Just give a brief moment for any background processes to settle
 	d.Logger.Infof("dgraph database warmup complete, ready to serve requests")
 }
+func (d *D) GetCachedJSON(f *filter.F) ([][]byte, bool) { return nil, false }
+func (d *D) CacheMarshaledJSON(f *filter.F, marshaledJSON [][]byte) {}
+func (d *D) InvalidateQueryCache() {}

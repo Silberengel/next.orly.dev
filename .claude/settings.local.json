@@ -78,7 +78,12 @@
       "Bash(docker inspect:*)",
       "Bash(./run-benchmark-clean.sh:*)",
       "Bash(cd:*)",
-      "Bash(CGO_ENABLED=0 timeout 180 go build:*)"
+      "Bash(CGO_ENABLED=0 timeout 180 go build:*)",
+      "Bash(/home/mleku/src/next.orly.dev/pkg/dgraph/dgraph.go)",
+      "Bash(ORLY_LOG_LEVEL=debug timeout 60 ./orly:*)",
+      "Bash(ORLY_LOG_LEVEL=debug timeout 30 ./orly:*)",
+      "Bash(killall:*)",
+      "Bash(kill:*)"
     ],
     "deny": [],
     "ask": []

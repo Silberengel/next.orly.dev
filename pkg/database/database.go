@@ -13,6 +13,7 @@ import (
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/database/querycache"
+	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/utils/apputil"
 	"next.orly.dev/pkg/utils/units"
 )
@@ -227,6 +228,24 @@ func (d *D) QueryCacheStats() querycache.CacheStats {
 func (d *D) InvalidateQueryCache() {
 	if d.queryCache != nil {
 		d.queryCache.Invalidate()
+	}
+}
+
+// GetCachedJSON retrieves cached marshaled JSON for a filter
+// Returns nil, false if not found
+func (d *D) GetCachedJSON(f *filter.F) ([][]byte, bool) {
+	if d.queryCache == nil {
+		return nil, false
+	}
+	return d.queryCache.Get(f)
+}
+
+// CacheMarshaledJSON stores marshaled JSON event envelopes for a filter
+func (d *D) CacheMarshaledJSON(f *filter.F, marshaledJSON [][]byte) {
+	if d.queryCache != nil && len(marshaledJSON) > 0 {
+		// Store the serialized JSON directly - this is already in envelope format
+		// We create a wrapper to store it with the right structure
+		d.queryCache.PutJSON(f, marshaledJSON)
 	}
 }
 

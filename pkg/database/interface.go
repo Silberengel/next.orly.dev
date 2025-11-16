@@ -97,6 +97,11 @@ type Database interface {
 	// Migrations (version tracking for schema updates)
 	RunMigrations()
 
+	// Query cache methods
+	GetCachedJSON(f *filter.F) ([][]byte, bool)
+	CacheMarshaledJSON(f *filter.F, marshaledJSON [][]byte)
+	InvalidateQueryCache()
+
 	// Utility methods
 	EventIdsBySerial(start uint64, count int) (evs []uint64, err error)
 }
