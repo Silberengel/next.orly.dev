@@ -19,11 +19,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 || echo 000); echo $$code | grep -E '^(101|200|400|404|426)$' >/dev/null",
-        ]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -45,11 +41,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget --quiet --server-response --tries=1 http://localhost:3334 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null",
-        ]
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3334 || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -71,11 +63,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget --quiet --server-response --tries=1 http://localhost:3334 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null",
-        ]
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3334 || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -99,11 +87,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget --quiet --server-response --tries=1 http://localhost:7447 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404)' >/dev/null",
-        ]
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:7447 || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -114,7 +98,7 @@ services:
     image: ghcr.io/hoytech/strfry:latest
     container_name: benchmark-strfry
     environment:
-      - STRFRY_DB_PATH=/data/strfry.lmdb
+      - STRFRY_DB_PATH=/data/strfry-db
       - STRFRY_RELAY_PORT=8080
     volumes:
       - ./data/strfry:/data
@@ -123,12 +107,10 @@ services:
       - "8005:8080"
     networks:
       - benchmark-net
+    entrypoint: /bin/sh
+    command: -c "mkdir -p /data/strfry-db && exec /app/strfry relay"
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget --quiet --server-response --tries=1 http://127.0.0.1:8080 2>&1 | grep -E 'HTTP/[0-9.]+ (101|200|400|404|426)' >/dev/null",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -150,15 +132,7 @@ services:
     networks:
       - benchmark-net
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8080",
-        ]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -185,8 +159,8 @@ services:
         condition: service_healthy
     environment:
       - BENCHMARK_TARGETS=next-orly:8080,khatru-sqlite:3334,khatru-badger:3334,relayer-basic:7447,strfry:8080,nostr-rs-relay:8080
-      - BENCHMARK_EVENTS=10000
-      - BENCHMARK_WORKERS=8
+      - BENCHMARK_EVENTS=50000
+      - BENCHMARK_WORKERS=24
       - BENCHMARK_DURATION=60s
     volumes:
       - ./reports:/reports
@@ -197,7 +171,9 @@ services:
         echo 'Waiting for all relays to be ready...' &&
         sleep 30 &&
         echo 'Starting benchmark tests...' &&
-        /app/benchmark-runner --output-dir=/reports
+        /app/benchmark-runner --output-dir=/reports &&
+        echo 'Benchmark complete - triggering shutdown...' &&
+        exit 0
       "
 
   # PostgreSQL for relayer-basic

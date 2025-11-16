@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # Dgraph database
+  dgraph:
+    image: dgraph/standalone:latest
+    container_name: orly-dgraph
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9080:9080"  # gRPC (ORLY connects here)
+      - "8000:8000"  # Ratel UI
+    volumes:
+      - dgraph-data:/dgraph
+    environment:
+      - DGRAPH_ALPHA_JAEGER_COLLECTOR=false
+    networks:
+      - orly-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ORLY relay with dgraph backend
+  orly:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: orly-relay
+    ports:
+      - "3334:3334"  # WebSocket/HTTP
+    depends_on:
+      dgraph:
+        condition: service_healthy
+    environment:
+      # Database configuration
+      - ORLY_DB_TYPE=dgraph
+      - ORLY_DGRAPH_URL=dgraph:9080
+      - ORLY_DATA_DIR=/data
+
+      # Server configuration
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=3334
+      - ORLY_LOG_LEVEL=info
+      - ORLY_APP_NAME=ORLY-Dgraph-Test
+
+      # Admin configuration (example)
+      - ORLY_ADMINS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
+      - ORLY_OWNERS=npub1fjqqy4a93z5zsjwsfxqhc2764kvykfdyttvldkkkdera8dr78vhsmmleku
+
+      # ACL mode
+      - ORLY_ACL_MODE=none
+    volumes:
+      - orly-data:/data
+    networks:
+      - orly-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3334/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Relay tester (optional, for automated testing)
+  relay-tester:
+    build:
+      context: ..
+      dockerfile: Dockerfile.relay-tester
+    container_name: orly-tester
+    depends_on:
+      orly:
+        condition: service_healthy
+    environment:
+      - RELAY_URL=ws://orly:3334
+    networks:
+      - orly-network
+    profiles:
+      - test
+
+networks:
+  orly-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  dgraph-data:
+    driver: local
+  orly-data:
+    driver: local

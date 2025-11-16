@@ -32,11 +32,11 @@ docker-compose.yml
 
 # Node modules (will be installed during build)
 app/web/node_modules/
-app/web/dist/
+# app/web/dist/ - NEEDED for embedded web UI
 app/web/bun.lockb
 
 # Go modules cache
-go.sum
+# go.sum - NEEDED for docker builds
 
 # Logs and temp files
 *.log
@@ -72,7 +72,10 @@ scripts/runtests.sh
 scripts/sprocket/
 
 # Benchmark and test data
-cmd/benchmark/
+# cmd/benchmark/ - NEEDED for benchmark-runner docker build
+cmd/benchmark/data/
+cmd/benchmark/reports/
+cmd/benchmark/external/
 reports/
 *.txt
 *.conf

@@ -396,7 +396,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 			env.E.Pubkey,
 		)
 		log.I.F("delete event pubkey hex: %s", hex.Enc(env.E.Pubkey))
-		if _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+		if _, err = l.DB.SaveEvent(saveCtx, env.E); err != nil {
 			log.E.F("failed to save delete event %0x: %v", env.E.ID, err)
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
@@ -446,7 +446,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 		// check if the event was deleted
 		// Combine admins and owners for deletion checking
 		adminOwners := append(l.Admins, l.Owners...)
-		if err = l.CheckForDeleted(env.E, adminOwners); err != nil {
+		if err = l.DB.CheckForDeleted(env.E, adminOwners); err != nil {
 			if strings.HasPrefix(err.Error(), "blocked:") {
 				errStr := err.Error()[len("blocked: "):len(err.Error())]
 				if err = Ok.Error(
@@ -461,7 +461,7 @@ func (l *Listener) HandleEvent(msg []byte) (err error) {
 	saveCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// log.I.F("saving event %0x, %s", env.E.ID, env.E.Serialize())
-	if _, err = l.SaveEvent(saveCtx, env.E); err != nil {
+	if _, err = l.DB.SaveEvent(saveCtx, env.E); err != nil {
 		if strings.HasPrefix(err.Error(), "blocked:") {
 			errStr := err.Error()[len("blocked: "):len(err.Error())]
 			if err = Ok.Error(

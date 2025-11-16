@@ -18,7 +18,7 @@ import (
 func (l *Listener) GetSerialsFromFilter(f *filter.F) (
 	sers types.Uint40s, err error,
 ) {
-	return l.D.GetSerialsFromFilter(f)
+	return l.DB.GetSerialsFromFilter(f)
 }
 
 func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
@@ -89,7 +89,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 				if len(sers) > 0 {
 					for _, s := range sers {
 						var ev *event.E
-						if ev, err = l.FetchEventBySerial(s); chk.E(err) {
+						if ev, err = l.DB.FetchEventBySerial(s); chk.E(err) {
 							continue
 						}
 						// Only delete events that match the a-tag criteria:
@@ -127,7 +127,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 							hex.Enc(ev.ID), at.Kind.K, hex.Enc(at.Pubkey),
 							string(at.DTag), ev.CreatedAt, env.E.CreatedAt,
 						)
-						if err = l.DeleteEventBySerial(
+						if err = l.DB.DeleteEventBySerial(
 							l.Ctx(), s, ev,
 						); chk.E(err) {
 							log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
@@ -171,7 +171,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 				// delete them all
 				for _, s := range sers {
 					var ev *event.E
-					if ev, err = l.FetchEventBySerial(s); chk.E(err) {
+					if ev, err = l.DB.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
 					// Debug: log the comparison details
@@ -199,7 +199,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						"HandleDelete: deleting event %s by authorized user %s",
 						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
 					)
-					if err = l.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
+					if err = l.DB.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
 						log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
 						continue
 					}
@@ -233,7 +233,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 				// delete old ones, so we can just delete them all
 				for _, s := range sers {
 					var ev *event.E
-					if ev, err = l.FetchEventBySerial(s); chk.E(err) {
+					if ev, err = l.DB.FetchEventBySerial(s); chk.E(err) {
 						continue
 					}
 					// For admin/owner deletes: allow deletion regardless of pubkey match
@@ -246,7 +246,7 @@ func (l *Listener) HandleDelete(env *eventenvelope.Submission) (err error) {
 						"HandleDelete: deleting event %s via k-tag by authorized user %s",
 						hex.Enc(ev.ID), hex.Enc(env.E.Pubkey),
 					)
-					if err = l.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
+					if err = l.DB.DeleteEventBySerial(l.Ctx(), s, ev); chk.E(err) {
 						log.E.F("HandleDelete: failed to delete event %s: %v", hex.Enc(ev.ID), err)
 						continue
 					}

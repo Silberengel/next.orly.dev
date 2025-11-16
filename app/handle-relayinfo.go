@@ -83,7 +83,7 @@ func (s *Server) HandleRelayInfo(w http.ResponseWriter, r *http.Request) {
 	log.I.Ln("supported NIPs", supportedNIPs)
 	// Get relay identity pubkey as hex
 	var relayPubkey string
-	if skb, err := s.D.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
+	if skb, err := s.DB.GetRelayIdentitySecret(); err == nil && len(skb) == 32 {
 		var sign *p8k.Signer
 		var sigErr error
 		if sign, sigErr = p8k.New(); sigErr == nil {

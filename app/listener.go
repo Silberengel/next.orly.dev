@@ -239,12 +239,12 @@ func (l *Listener) getManagedACL() *database.ManagedACL {
 
 // QueryEvents queries events using the database QueryEvents method
 func (l *Listener) QueryEvents(ctx context.Context, f *filter.F) (event.S, error) {
-	return l.D.QueryEvents(ctx, f)
+	return l.DB.QueryEvents(ctx, f)
 }
 
 // QueryAllVersions queries events using the database QueryAllVersions method
 func (l *Listener) QueryAllVersions(ctx context.Context, f *filter.F) (event.S, error) {
-	return l.D.QueryAllVersions(ctx, f)
+	return l.DB.QueryAllVersions(ctx, f)
 }
 
 // canSeePrivateEvent checks if the authenticated user can see an event with a private tag

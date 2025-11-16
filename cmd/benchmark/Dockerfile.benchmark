@@ -24,7 +24,7 @@ RUN go mod download
 COPY . .
 
 # Build the benchmark tool with CGO enabled
-RUN CGO_ENABLED=1 GOOS=linux go build -a -o benchmark cmd/benchmark/main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -a -o benchmark ./cmd/benchmark
 
 # Copy libsecp256k1.so if available
 RUN if [ -f pkg/crypto/p8k/libsecp256k1.so ]; then \
@@ -42,8 +42,7 @@ WORKDIR /app
 # Copy benchmark binary
 COPY --from=builder /build/benchmark /app/benchmark
 
-# Copy libsecp256k1.so if available
-COPY --from=builder /build/libsecp256k1.so /app/libsecp256k1.so 2>/dev/null || true
+# libsecp256k1 is already installed system-wide via apk
 
 # Copy benchmark runner script
 COPY cmd/benchmark/benchmark-runner.sh /app/benchmark-runner
@@ -60,8 +59,8 @@ RUN adduser -u 1000 -D appuser && \
 ENV LD_LIBRARY_PATH=/app:/usr/local/lib:/usr/lib
 
 # Environment variables
-ENV BENCHMARK_EVENTS=10000
-ENV BENCHMARK_WORKERS=8
+ENV BENCHMARK_EVENTS=50000
+ENV BENCHMARK_WORKERS=24
 ENV BENCHMARK_DURATION=60s
 
 # Drop privileges: run as uid 1000

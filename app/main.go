@@ -25,7 +25,7 @@ import (
 )
 
 func Run(
-	ctx context.Context, cfg *config.C, db *database.D,
+	ctx context.Context, cfg *config.C, db database.Database,
 ) (quit chan struct{}) {
 	quit = make(chan struct{})
 	var once sync.Once
@@ -65,7 +65,7 @@ func Run(
 	l := &Server{
 		Ctx:        ctx,
 		Config:     cfg,
-		D:          db,
+		DB:         db,
 		publishers: publish.New(NewPublisher(ctx)),
 		Admins:     adminKeys,
 		Owners:     ownerKeys,
@@ -87,7 +87,7 @@ func Run(
 
 	// Initialize spider manager based on mode
 	if cfg.SpiderMode != "none" {
-		if l.spiderManager, err = spider.New(ctx, db, l.publishers, cfg.SpiderMode); chk.E(err) {
+		if l.spiderManager, err = spider.New(ctx, db.(*database.D), l.publishers, cfg.SpiderMode); chk.E(err) {
 			log.E.F("failed to create spider manager: %v", err)
 		} else {
 			// Set up callbacks for follows mode
@@ -142,7 +142,7 @@ func Run(
 	}
 
 	// Initialize relay group manager
-	l.relayGroupMgr = dsync.NewRelayGroupManager(db, cfg.RelayGroupAdmins)
+	l.relayGroupMgr = dsync.NewRelayGroupManager(db.(*database.D), cfg.RelayGroupAdmins)
 
 	// Initialize sync manager if relay peers are configured
 	var peers []string
@@ -170,7 +170,7 @@ func Run(
 				if relayURL == "" {
 					relayURL = fmt.Sprintf("http://localhost:%d", cfg.Port)
 				}
-				l.syncManager = dsync.NewManager(ctx, db, nodeID, relayURL, peers, l.relayGroupMgr, l.policyManager)
+				l.syncManager = dsync.NewManager(ctx, db.(*database.D), nodeID, relayURL, peers, l.relayGroupMgr, l.policyManager)
 				log.I.F("distributed sync manager initialized with %d peers", len(peers))
 			}
 		}
@@ -188,7 +188,7 @@ func Run(
 	}
 
 	if len(clusterAdminNpubs) > 0 {
-		l.clusterManager = dsync.NewClusterManager(ctx, db, clusterAdminNpubs, cfg.ClusterPropagatePrivilegedEvents, l.publishers)
+		l.clusterManager = dsync.NewClusterManager(ctx, db.(*database.D), clusterAdminNpubs, cfg.ClusterPropagatePrivilegedEvents, l.publishers)
 		l.clusterManager.Start()
 		log.I.F("cluster replication manager initialized with %d admin npubs", len(clusterAdminNpubs))
 	}
@@ -197,7 +197,7 @@ func Run(
 	l.UserInterface()
 
 	// Initialize Blossom blob storage server
-	if l.blossomServer, err = initializeBlossomServer(ctx, cfg, db); err != nil {
+	if l.blossomServer, err = initializeBlossomServer(ctx, cfg, db.(*database.D)); err != nil {
 		log.E.F("failed to initialize blossom server: %v", err)
 		// Continue without blossom server
 	} else if l.blossomServer != nil {
@@ -237,7 +237,7 @@ func Run(
 		}
 	}
 
-	if l.paymentProcessor, err = NewPaymentProcessor(ctx, cfg, db); err != nil {
+	if l.paymentProcessor, err = NewPaymentProcessor(ctx, cfg, db.(*database.D)); err != nil {
 		// log.E.F("failed to create payment processor: %v", err)
 		// Continue without payment processor
 	} else {
@@ -247,6 +247,11 @@ func Run(
 			log.I.F("payment processor started successfully")
 		}
 	}
+
+	// Wait for database to be ready before accepting requests
+	log.I.F("waiting for database warmup to complete...")
+	<-db.Ready()
+	log.I.F("database ready, starting HTTP servers")
 
 	// Check if TLS is enabled
 	var tlsEnabled bool

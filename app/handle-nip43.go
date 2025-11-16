@@ -27,7 +27,7 @@ func (l *Listener) HandleNIP43JoinRequest(ev *event.E) error {
 	}
 
 	// Check if user is already a member
-	isMember, err := l.D.IsNIP43Member(ev.Pubkey)
+	isMember, err := l.DB.IsNIP43Member(ev.Pubkey)
 	if chk.E(err) {
 		log.E.F("error checking membership: %v", err)
 		return l.sendOKResponse(ev.ID, false, "error: internal server error")
@@ -47,7 +47,7 @@ func (l *Listener) HandleNIP43JoinRequest(ev *event.E) error {
 	}
 
 	// Add the member
-	if err = l.D.AddNIP43Member(ev.Pubkey, inviteCode); chk.E(err) {
+	if err = l.DB.AddNIP43Member(ev.Pubkey, inviteCode); chk.E(err) {
 		log.E.F("error adding member: %v", err)
 		return l.sendOKResponse(ev.ID, false, "error: failed to add member")
 	}
@@ -88,7 +88,7 @@ func (l *Listener) HandleNIP43LeaveRequest(ev *event.E) error {
 	}
 
 	// Check if user is a member
-	isMember, err := l.D.IsNIP43Member(ev.Pubkey)
+	isMember, err := l.DB.IsNIP43Member(ev.Pubkey)
 	if chk.E(err) {
 		log.E.F("error checking membership: %v", err)
 		return l.sendOKResponse(ev.ID, false, "error: internal server error")
@@ -100,7 +100,7 @@ func (l *Listener) HandleNIP43LeaveRequest(ev *event.E) error {
 	}
 
 	// Remove the member
-	if err = l.D.RemoveNIP43Member(ev.Pubkey); chk.E(err) {
+	if err = l.DB.RemoveNIP43Member(ev.Pubkey); chk.E(err) {
 		log.E.F("error removing member: %v", err)
 		return l.sendOKResponse(ev.ID, false, "error: failed to remove member")
 	}
@@ -160,7 +160,7 @@ func (s *Server) HandleNIP43InviteRequest(pubkey []byte) (*event.E, error) {
 
 // publishAddUserEvent publishes a kind 8000 add user event
 func (l *Listener) publishAddUserEvent(userPubkey []byte) error {
-	relaySecret, err := l.D.GetOrCreateRelayIdentitySecret()
+	relaySecret, err := l.DB.GetOrCreateRelayIdentitySecret()
 	if chk.E(err) {
 		return err
 	}
@@ -173,7 +173,7 @@ func (l *Listener) publishAddUserEvent(userPubkey []byte) error {
 	// Save to database
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err = l.SaveEvent(ctx, ev); chk.E(err) {
+	if _, err = l.DB.SaveEvent(ctx, ev); chk.E(err) {
 		return err
 	}
 
@@ -186,7 +186,7 @@ func (l *Listener) publishAddUserEvent(userPubkey []byte) error {
 
 // publishRemoveUserEvent publishes a kind 8001 remove user event
 func (l *Listener) publishRemoveUserEvent(userPubkey []byte) error {
-	relaySecret, err := l.D.GetOrCreateRelayIdentitySecret()
+	relaySecret, err := l.DB.GetOrCreateRelayIdentitySecret()
 	if chk.E(err) {
 		return err
 	}
@@ -199,7 +199,7 @@ func (l *Listener) publishRemoveUserEvent(userPubkey []byte) error {
 	// Save to database
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err = l.SaveEvent(ctx, ev); chk.E(err) {
+	if _, err = l.DB.SaveEvent(ctx, ev); chk.E(err) {
 		return err
 	}
 
@@ -213,12 +213,12 @@ func (l *Listener) publishRemoveUserEvent(userPubkey []byte) error {
 // publishMembershipList publishes a kind 13534 membership list event
 func (l *Listener) publishMembershipList() error {
 	// Get all members
-	members, err := l.D.GetAllNIP43Members()
+	members, err := l.DB.GetAllNIP43Members()
 	if chk.E(err) {
 		return err
 	}
 
-	relaySecret, err := l.D.GetOrCreateRelayIdentitySecret()
+	relaySecret, err := l.DB.GetOrCreateRelayIdentitySecret()
 	if chk.E(err) {
 		return err
 	}
@@ -231,7 +231,7 @@ func (l *Listener) publishMembershipList() error {
 	// Save to database
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err = l.SaveEvent(ctx, ev); chk.E(err) {
+	if _, err = l.DB.SaveEvent(ctx, ev); chk.E(err) {
 		return err
 	}
 

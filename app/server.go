@@ -39,7 +39,7 @@ type Server struct {
 	publishers *publish.S
 	Admins     [][]byte
 	Owners     [][]byte
-	*database.D
+	DB         database.Database // Changed from embedded *database.D to interface field
 
 	// optional reverse proxy for dev web server
 	devProxy *httputil.ReverseProxy
@@ -58,7 +58,7 @@ type Server struct {
 	blossomServer    *blossom.Server
 	InviteManager    *nip43.InviteManager
 	cfg              *config.C
-	db               *database.D
+	db               database.Database // Changed from *database.D to interface
 }
 
 // isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system
@@ -612,7 +612,7 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Stream export
-	s.D.Export(s.Ctx, w, pks...)
+	s.DB.Export(s.Ctx, w, pks...)
 }
 
 // handleEventsMine returns the authenticated user's events in JSON format with pagination using NIP-98 authentication.
@@ -655,7 +655,7 @@ func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("DEBUG: Querying events for pubkey: %s", hex.Enc(pubkey))
-	events, err := s.D.QueryEvents(s.Ctx, f)
+	events, err := s.DB.QueryEvents(s.Ctx, f)
 	if chk.E(err) {
 		log.Printf("DEBUG: QueryEvents failed: %v", err)
 		http.Error(w, "Failed to query events", http.StatusInternalServerError)
@@ -742,13 +742,13 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		s.D.Import(file)
+		s.DB.Import(file)
 	} else {
 		if r.Body == nil {
 			http.Error(w, "Empty request body", http.StatusBadRequest)
 			return
 		}
-		s.D.Import(r.Body)
+		s.DB.Import(r.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

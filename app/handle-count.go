@@ -78,7 +78,7 @@ func (l *Listener) HandleCount(msg []byte) (err error) {
 		}
 		var cnt int
 		var a bool
-		cnt, a, err = l.D.CountEvents(ctx, f)
+		cnt, a, err = l.DB.CountEvents(ctx, f)
 		if chk.E(err) {
 			return
 		}

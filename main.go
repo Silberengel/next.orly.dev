@@ -7,6 +7,8 @@ import (
 	pp "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -19,12 +21,15 @@ import (
 	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
+	_ "next.orly.dev/pkg/dgraph" // Import to register dgraph factory
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/utils/interrupt"
 	"next.orly.dev/pkg/version"
 )
 
 func main() {
+	runtime.GOMAXPROCS(128)
+	debug.SetGCPercent(10)
 	var err error
 	var cfg *config.C
 	if cfg, err = config.New(); chk.T(err) {
@@ -35,8 +40,10 @@ func main() {
 	if config.IdentityRequested() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		var db *database.D
-		if db, err = database.New(ctx, cancel, cfg.DataDir, cfg.DBLogLevel); chk.E(err) {
+		var db database.Database
+		if db, err = database.NewDatabase(
+			ctx, cancel, cfg.DBType, cfg.DataDir, cfg.DBLogLevel,
+		); chk.E(err) {
 			os.Exit(1)
 		}
 		defer db.Close()
@@ -48,7 +55,9 @@ func main() {
 		if chk.E(err) {
 			os.Exit(1)
 		}
-		fmt.Printf("identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk)
+		fmt.Printf(
+			"identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk,
+		)
 		os.Exit(0)
 	}
 
@@ -62,19 +71,23 @@ func main() {
 				profile.CPUProfile, profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("cpu profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("cpu profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.CPUProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("cpu profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("cpu profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -85,19 +98,23 @@ func main() {
 				profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("memory profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("memory profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("memory profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("memory profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -108,19 +125,23 @@ func main() {
 				profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("allocation profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("allocation profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileAllocs)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("allocation profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("allocation profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -130,19 +151,23 @@ func main() {
 				profile.MemProfileHeap, profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("heap profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("heap profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileHeap)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("heap profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("heap profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -152,19 +177,23 @@ func main() {
 				profile.MutexProfile, profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("mutex profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("mutex profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MutexProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("mutex profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("mutex profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -175,19 +204,23 @@ func main() {
 				profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("threadcreate profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("threadcreate profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.ThreadcreationProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("threadcreate profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("threadcreate profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -197,19 +230,23 @@ func main() {
 				profile.GoroutineProfile, profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("goroutine profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("goroutine profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.GoroutineProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("goroutine profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("goroutine profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -219,19 +256,23 @@ func main() {
 				profile.BlockProfile, profile.ProfilePath(cfg.PprofPath),
 			)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("block profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("block profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		} else {
 			prof := profile.Start(profile.BlockProfile)
 			profileStop = func() {
-				profileStopOnce.Do(func() {
-					prof.Stop()
-					log.I.F("block profiling stopped and flushed")
-				})
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("block profiling stopped and flushed")
+					},
+				)
 			}
 			defer profileStop()
 		}
@@ -239,17 +280,21 @@ func main() {
 	}
 
 	// Register a handler so profiling is stopped when an interrupt is received
-	interrupt.AddHandler(func() {
-		log.I.F("interrupt received: stopping profiling")
-		profileStop()
-	})
+	interrupt.AddHandler(
+		func() {
+			log.I.F("interrupt received: stopping profiling")
+			profileStop()
+		},
+	)
 	ctx, cancel := context.WithCancel(context.Background())
-	var db *database.D
-	if db, err = database.New(
-		ctx, cancel, cfg.DataDir, cfg.DBLogLevel,
+	var db database.Database
+	log.I.F("initializing %s database at %s", cfg.DBType, cfg.DataDir)
+	if db, err = database.NewDatabase(
+		ctx, cancel, cfg.DBType, cfg.DataDir, cfg.DBLogLevel,
 	); chk.E(err) {
 		os.Exit(1)
 	}
+	log.I.F("%s database initialized successfully", cfg.DBType)
 	acl.Registry.Active.Store(cfg.ACLMode)
 	if err = acl.Registry.Configure(cfg, db, ctx); chk.E(err) {
 		os.Exit(1)

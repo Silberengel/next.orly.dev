@@ -76,6 +76,10 @@ type C struct {
 	NIP43PublishMemberList bool         `env:"ORLY_NIP43_PUBLISH_MEMBER_LIST" default:"true" usage:"publish kind 13534 membership list events"`
 	NIP43InviteExpiry     time.Duration `env:"ORLY_NIP43_INVITE_EXPIRY" default:"24h" usage:"how long invite codes remain valid"`
 
+	// Database configuration
+	DBType     string `env:"ORLY_DB_TYPE" default:"badger" usage:"database backend to use: badger or dgraph"`
+	DgraphURL  string `env:"ORLY_DGRAPH_URL" default:"localhost:9080" usage:"dgraph gRPC endpoint address (only used when ORLY_DB_TYPE=dgraph)"`
+
 	// TLS configuration
 	TLSDomains []string `env:"ORLY_TLS_DOMAINS" usage:"comma-separated list of domains to respond to for TLS"`
 	Certs      []string `env:"ORLY_CERTS" usage:"comma-separated list of paths to certificate root names (e.g., /path/to/cert will load /path/to/cert.pem and /path/to/cert.key)"`
