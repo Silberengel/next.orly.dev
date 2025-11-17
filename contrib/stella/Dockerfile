@@ -15,6 +15,9 @@ RUN apk add --no-cache \
 # Install secp256k1 library from Alpine packages
 RUN apk add --no-cache libsecp256k1-dev
 
+# Install Node.js and npm for web app build
+RUN apk add --no-cache nodejs npm
+
 # Set working directory
 WORKDIR /build
 
@@ -22,11 +25,26 @@ WORKDIR /build
 COPY ../../go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Build the web app first
+WORKDIR /build/app/web
+COPY ../../app/web/package.json ../../app/web/package-lock.json* ../../app/web/bun.lock* ./
+# Use npm ci if package-lock.json exists, otherwise npm install
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY ../../app/web ./
+RUN npm run build
+
+# Return to build root and copy source code
+WORKDIR /build
 COPY ../.. .
 
 # Build the relay with optimizations from v0.4.8
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-w -s" -o relay .
+
+# Build the GC utility for database maintenance
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-w -s" -o gc-db ./cmd/gc-db
+
+# Build the repair utility for database repair
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags "-w -s" -o repair-db ./cmd/repair-db
 
 # Create non-root user for security
 RUN adduser -D -u 1000 stella && \
@@ -44,8 +62,14 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 
-# Copy binary from builder
+# Copy binaries from builder
 COPY --from=builder /build/relay /app/relay
+COPY --from=builder /build/gc-db /app/gc-db
+COPY --from=builder /build/repair-db /app/repair-db
+
+# Copy entrypoint script
+COPY scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Create runtime user and directories
 RUN adduser -D -u 1000 stella && \
@@ -74,5 +98,8 @@ VOLUME ["/data"]
 # Drop privileges and run as stella user
 USER 1000:1000
 
-# Run Stella's Nostr relay
-CMD ["/app/relay"]
+# Use entrypoint script that can run GC if needed
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# Run Stella's Nostr relay by default
+CMD []

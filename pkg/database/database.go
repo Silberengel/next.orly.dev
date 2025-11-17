@@ -12,6 +12,7 @@ import (
 	"github.com/dgraph-io/badger/v4/options"
 	"lol.mleku.dev"
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/database/querycache"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/utils/apputil"
@@ -20,10 +21,10 @@ import (
 
 // D implements the Database interface using Badger as the storage backend
 type D struct {
-	ctx        context.Context
-	cancel     context.CancelFunc
-	dataDir    string
-	Logger     *logger
+	ctx     context.Context
+	cancel  context.CancelFunc
+	dataDir string
+	Logger  *logger
 	*badger.DB
 	seq        *badger.Sequence
 	ready      chan struct{} // Closed when database is ready to serve requests
@@ -100,7 +101,14 @@ func New(
 	opts.MemTableSize = 16 * units.Mb // 16 MB memtable (reduced from 64 MB)
 
 	// Keep value log files to a moderate size
-	opts.ValueLogFileSize = 128 * units.Mb // 128 MB value log files (reduced from 256 MB)
+	// Allow override via environment variable for existing databases with different limits
+	var valueLogFileSizeMB = 128 // default 128 MB
+	if v := os.Getenv("ORLY_DB_VALUE_LOG_FILE_SIZE_MB"); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 {
+			valueLogFileSizeMB = n
+		}
+	}
+	opts.ValueLogFileSize = int64(valueLogFileSizeMB * units.Mb)
 
 	// CRITICAL: Keep small inline events in LSM tree, not value log
 	// VLogPercentile 0.99 means 99% of values stay in LSM (our optimized inline events!)
@@ -130,6 +138,25 @@ func New(
 	opts.MaxLevels = 7                // Default is 7, keep it
 
 	opts.Logger = d.Logger
+
+	// Try to open in read-only mode first to run GC if value log files are full
+	// This helps when the database has full value log files that prevent normal opening
+	readOpts := opts
+	readOpts.ReadOnly = true
+	if readOnlyDB, readErr := badger.Open(readOpts); readErr == nil {
+		// Database can be opened read-only, try running GC to free space
+		log.I.F("database opened in read-only mode, running value log GC to free space...")
+		for i := 0; i < 10; i++ {
+			if gcErr := readOnlyDB.RunValueLogGC(0.5); gcErr != nil {
+				// GC completed or no more to collect
+				break
+			}
+		}
+		readOnlyDB.Close()
+		log.I.F("value log GC completed, opening database in normal mode...")
+	}
+
+	// Now try to open in normal mode
 	if d.DB, err = badger.Open(opts); chk.E(err) {
 		return
 	}
