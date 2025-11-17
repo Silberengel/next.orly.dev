@@ -14,6 +14,55 @@ import (
 func (d *D) FetchEventBySerial(ser *types.Uint40) (ev *event.E, err error) {
 	if err = d.View(
 		func(txn *badger.Txn) (err error) {
+			// Helper function to extract inline event data from key
+			extractInlineData := func(key []byte, prefixLen int) (*event.E, error) {
+				if len(key) > prefixLen+2 {
+					sizeIdx := prefixLen
+					size := int(key[sizeIdx])<<8 | int(key[sizeIdx+1])
+					dataStart := sizeIdx + 2
+
+					if len(key) >= dataStart+size {
+						eventData := key[dataStart : dataStart+size]
+						ev := new(event.E)
+						if err := ev.UnmarshalBinary(bytes.NewBuffer(eventData)); err != nil {
+							return nil, fmt.Errorf(
+								"error unmarshaling inline event (size=%d): %w",
+								size, err,
+							)
+						}
+						return ev, nil
+					}
+				}
+				return nil, nil
+			}
+
+			// Try sev (small event inline) prefix first - Reiser4 optimization
+			smallBuf := new(bytes.Buffer)
+			if err = indexes.SmallEventEnc(ser).MarshalWrite(smallBuf); chk.E(err) {
+				return
+			}
+
+			opts := badger.DefaultIteratorOptions
+			opts.Prefix = smallBuf.Bytes()
+			opts.PrefetchValues = true
+			opts.PrefetchSize = 1
+			it := txn.NewIterator(opts)
+			defer it.Close()
+
+			it.Rewind()
+			if it.Valid() {
+				// Found in sev table - extract inline data
+				key := it.Item().Key()
+				// Key format: sev|serial|size_uint16|event_data
+				if ev, err = extractInlineData(key, 8); err != nil {
+					return err
+				}
+				if ev != nil {
+					return nil
+				}
+			}
+
+			// Not found in sev table, try evt (traditional) prefix
 			buf := new(bytes.Buffer)
 			if err = indexes.EventEnc(ser).MarshalWrite(buf); chk.E(err) {
 				return

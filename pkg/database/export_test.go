@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sort"
 	"testing"
 
 	"lol.mleku.dev/chk"
@@ -39,11 +40,9 @@ func TestExport(t *testing.T) {
 	scanner := bufio.NewScanner(bytes.NewBuffer(examples.Cache))
 	scanner.Buffer(make([]byte, 0, 1_000_000_000), 1_000_000_000)
 
-	// Maps to store event IDs and their associated pubkeys
-	eventIDs := make(map[string]bool)
-	pubkeyToEventIDs := make(map[string][]string)
+	var events []*event.E
 
-	// Process each event
+	// First, collect all events
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
@@ -54,6 +53,25 @@ func TestExport(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		events = append(events, ev)
+	}
+
+	// Check for scanner errors
+	if err = scanner.Err(); err != nil {
+		t.Fatalf("Scanner error: %v", err)
+	}
+
+	// Sort events by CreatedAt to ensure addressable events are processed in chronological order
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt < events[j].CreatedAt
+	})
+
+	// Maps to store event IDs and their associated pubkeys
+	eventIDs := make(map[string]bool)
+	pubkeyToEventIDs := make(map[string][]string)
+
+	// Process each event in chronological order
+	for _, ev := range events {
 		// Save the event to the database
 		if _, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event: %v", err)
@@ -66,11 +84,6 @@ func TestExport(t *testing.T) {
 		// Store the event ID by pubkey
 		pubkey := string(ev.Pubkey)
 		pubkeyToEventIDs[pubkey] = append(pubkeyToEventIDs[pubkey], eventID)
-	}
-
-	// Check for scanner errors
-	if err = scanner.Err(); err != nil {
-		t.Fatalf("Scanner error: %v", err)
 	}
 
 	t.Logf("Saved %d events to the database", len(eventIDs))

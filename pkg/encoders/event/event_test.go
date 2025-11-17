@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"lukechampine.com/frand"
 	"next.orly.dev/pkg/encoders/event/examples"
 	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/encoders/json"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/utils"
 	"next.orly.dev/pkg/utils/bufpool"
@@ -75,13 +76,15 @@ func TestExamplesCache(t *testing.T) {
 		c := bufpool.Get()
 		c = c[:0]
 		c = append(c, b...)
+		// log.I.F("c: %s", c)
+		// log.I.F("b: %s", b)
 		ev := New()
-		if err = json.Unmarshal(b, ev); chk.E(err) {
+		if _, err = ev.Unmarshal(c); chk.E(err) {
 			t.Fatal(err)
 		}
 		var b2 []byte
 		// can't use encoding/json.Marshal as it improperly escapes <, > and &.
-		if b2, err = json.Marshal(ev); err != nil {
+		if b2, err = ev.MarshalJSON(); err != nil {
 			t.Fatal(err)
 		}
 		if !utils.FastEqual(c, b2) {

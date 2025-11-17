@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  orly-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orly-policy-test
+    ports:
+      - "8777:8777"
+    volumes:
+      # Mount a volume to persist data and access output files
+      - orly-data:/home/orly/.local/share/ORLY
+      - orly-output:/home/orly
+    networks:
+      - orly-test-net
+    restart: unless-stopped
+
+volumes:
+  orly-data:
+  orly-output:
+
+networks:
+  orly-test-net:
+    driver: bridge

@@ -4,13 +4,12 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 func TestCreateUnsigned(t *testing.T) {
 	var err error
-	signer := new(p256k.Signer)
+	signer := p8k.MustNew()
 	if err = signer.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}
@@ -22,7 +21,7 @@ func TestCreateUnsigned(t *testing.T) {
 		if err = ev.Sign(signer); chk.E(err) {
 			t.Fatal(err)
 		}
-		log.I.S(ev)
+		// log.I.S(ev)
 		if ok, err = Validate(ev, challenge, relayURL); chk.E(err) {
 			t.Fatal(err)
 		}

@@ -7,7 +7,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/utils"
 )
@@ -17,7 +17,10 @@ var GeneratePrivateKey = func() string { return GenerateSecretKeyHex() }
 
 // GenerateSecretKey creates a new secret key and returns the bytes of the secret.
 func GenerateSecretKey() (skb []byte, err error) {
-	signer := &p256k.Signer{}
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
 	if err = signer.Generate(); chk.E(err) {
 		return
 	}
@@ -40,7 +43,10 @@ func GetPublicKeyHex(sk string) (pk string, err error) {
 	if b, err = hex.Dec(sk); chk.E(err) {
 		return
 	}
-	signer := &p256k.Signer{}
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
 	if err = signer.InitSec(b); chk.E(err) {
 		return
 	}
@@ -50,11 +56,37 @@ func GetPublicKeyHex(sk string) (pk string, err error) {
 
 // SecretBytesToPubKeyHex generates a public key from secret key bytes.
 func SecretBytesToPubKeyHex(skb []byte) (pk string, err error) {
-	signer := &p256k.Signer{}
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
 	if err = signer.InitSec(skb); chk.E(err) {
 		return
 	}
 	return hex.Enc(signer.Pub()), nil
+}
+
+// SecretBytesToPubKeyBytes generates a public key bytes from secret key bytes.
+func SecretBytesToPubKeyBytes(skb []byte) (pkb []byte, err error) {
+	var signer *p8k.Signer
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
+	if err = signer.InitSec(skb); chk.E(err) {
+		return
+	}
+	return signer.Pub(), nil
+}
+
+// SecretBytesToSigner creates a signer from secret key bytes.
+func SecretBytesToSigner(skb []byte) (signer *p8k.Signer, err error) {
+	if signer, err = p8k.New(); chk.E(err) {
+		return
+	}
+	if err = signer.InitSec(skb); chk.E(err) {
+		return
+	}
+	return
 }
 
 // IsValid32ByteHex checks that a hex string is a valid 32 bytes lower case hex encoded value as

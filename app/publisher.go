@@ -6,24 +6,29 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
-	"lol.mleku.dev/chk"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
+	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/interfaces/publisher"
 	"next.orly.dev/pkg/interfaces/typer"
+	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils"
 )
 
 const Type = "socketapi"
 
+// WriteChanMap maps websocket connections to their write channels
+type WriteChanMap map[*websocket.Conn]chan publish.WriteRequest
+
 type Subscription struct {
 	remote       string
 	AuthedPubkey []byte
+	Receiver     event.C // Channel for delivering events to this subscription
+	AuthRequired bool    // Whether ACL requires authentication for privileged events
 	*filter.S
 }
 
@@ -54,6 +59,11 @@ type W struct {
 
 	// AuthedPubkey is the authenticated pubkey associated with the listener (if any).
 	AuthedPubkey []byte
+
+	// AuthRequired indicates whether the ACL in operation requires auth. If
+	// this is set to true, the publisher will not publish privileged or other
+	// restricted events to non-authed listeners, otherwise, it will.
+	AuthRequired bool
 }
 
 func (w *W) Type() (typeName string) { return Type }
@@ -67,14 +77,17 @@ type P struct {
 	Mx sync.RWMutex
 	// Map is the map of subscribers and subscriptions from the websocket api.
 	Map
+	// WriteChans maps websocket connections to their write channels
+	WriteChans WriteChanMap
 }
 
 var _ publisher.I = &P{}
 
 func NewPublisher(c context.Context) (publisher *P) {
 	return &P{
-		c:   c,
-		Map: make(Map),
+		c:          c,
+		Map:        make(Map),
+		WriteChans: make(WriteChanMap, 100),
 	}
 }
 
@@ -102,17 +115,8 @@ func (p *P) Receive(msg typer.T) {
 		if m.Cancel {
 			if m.Id == "" {
 				p.removeSubscriber(m.Conn)
-				// log.D.F("removed listener %s", m.remote)
 			} else {
 				p.removeSubscriberId(m.Conn, m.Id)
-				// log.D.C(
-				// 	func() string {
-				// 		return fmt.Sprintf(
-				// 			"removed subscription %s for %s", m.Id,
-				// 			m.remote,
-				// 		)
-				// 	},
-				// )
 			}
 			return
 		}
@@ -122,29 +126,14 @@ func (p *P) Receive(msg typer.T) {
 			subs = make(map[string]Subscription)
 			subs[m.Id] = Subscription{
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+				Receiver: m.Receiver, AuthRequired: m.AuthRequired,
 			}
 			p.Map[m.Conn] = subs
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"created new subscription for %s, %s",
-			// 			m.remote,
-			// 			m.Filters.Marshal(nil),
-			// 		)
-			// 	},
-			// )
 		} else {
 			subs[m.Id] = Subscription{
 				S: m.Filters, remote: m.remote, AuthedPubkey: m.AuthedPubkey,
+				Receiver: m.Receiver, AuthRequired: m.AuthRequired,
 			}
-			// log.D.C(
-			// 	func() string {
-			// 		return fmt.Sprintf(
-			// 			"added subscription %s for %s", m.Id,
-			// 			m.remote,
-			// 		)
-			// 	},
-			// )
 		}
 	}
 }
@@ -161,7 +150,6 @@ func (p *P) Receive(msg typer.T) {
 // applies authentication checks if required by the server and skips delivery
 // for unauthenticated users when events are privileged.
 func (p *P) Deliver(ev *event.E) {
-	var err error
 	// Snapshot the deliveries under read lock to avoid holding locks during I/O
 	p.Mx.RLock()
 	type delivery struct {
@@ -193,7 +181,17 @@ func (p *P) Deliver(ev *event.E) {
 	for _, d := range deliveries {
 		// If the event is privileged, enforce that the subscriber's authed pubkey matches
 		// either the event pubkey or appears in any 'p' tag of the event.
-		if kind.IsPrivileged(ev.Kind) && len(d.sub.AuthedPubkey) > 0 {
+		// Only check authentication if AuthRequired is true (ACL is active)
+		if kind.IsPrivileged(ev.Kind) && d.sub.AuthRequired {
+			if len(d.sub.AuthedPubkey) == 0 {
+				// Not authenticated - cannot see privileged events
+				log.D.F(
+					"subscription delivery DENIED for privileged event %s to %s (not authenticated)",
+					hex.Enc(ev.ID), d.sub.remote,
+				)
+				continue
+			}
+
 			pk := d.sub.AuthedPubkey
 			allowed := false
 			// Direct author match
@@ -211,68 +209,85 @@ func (p *P) Deliver(ev *event.E) {
 						break
 					}
 				}
- 		}
- 		if !allowed {
- 			log.D.F("subscription delivery DENIED for privileged event %s to %s (auth mismatch)", 
- 				hex.Enc(ev.ID), d.sub.remote)
- 			// Skip delivery for this subscriber
- 			continue
- 		}
- 	}
-	
- 	var res *eventenvelope.Result
- 	if res, err = eventenvelope.NewResultWith(d.id, ev); chk.E(err) {
- 		log.E.F("failed to create event envelope for %s to %s: %v", 
- 			hex.Enc(ev.ID), d.sub.remote, err)
- 		continue
- 	}
-	
- 	// Log delivery attempt
- 	msgData := res.Marshal(nil)
- 	log.D.F("attempting delivery of event %s (kind=%d, len=%d) to subscription %s @ %s", 
- 		hex.Enc(ev.ID), ev.Kind, len(msgData), d.id, d.sub.remote)
-	
- 	// Use a separate context with timeout for writes to prevent race conditions
- 	// where the publisher context gets cancelled while writing events
- 	writeCtx, cancel := context.WithTimeout(
- 		context.Background(), DefaultWriteTimeout,
- 	)
- 	defer cancel()
+			}
+			if !allowed {
+				log.D.F(
+					"subscription delivery DENIED for privileged event %s to %s (auth mismatch)",
+					hex.Enc(ev.ID), d.sub.remote,
+				)
+				// Skip delivery for this subscriber
+				continue
+			}
+		}
 
- 	deliveryStart := time.Now()
- 	if err = d.w.Write(
- 		writeCtx, websocket.MessageText, msgData,
- 	); err != nil {
- 		deliveryDuration := time.Since(deliveryStart)
-		
- 		// Log detailed failure information
- 		log.E.F("subscription delivery FAILED: event=%s to=%s sub=%s duration=%v error=%v", 
- 			hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, err)
-		
- 		// Check for timeout specifically
- 		if writeCtx.Err() != nil {
- 			log.E.F("subscription delivery TIMEOUT: event=%s to=%s after %v (limit=%v)", 
- 				hex.Enc(ev.ID), d.sub.remote, deliveryDuration, DefaultWriteTimeout)
- 		}
-		
- 		// Log connection cleanup
- 		log.D.F("removing failed subscriber connection: %s", d.sub.remote)
-		
- 		// On error, remove the subscriber connection safely
- 		p.removeSubscriber(d.w)
- 		_ = d.w.CloseNow()
- 		continue
- 	}
-	
- 	deliveryDuration := time.Since(deliveryStart)
- 	log.D.F("subscription delivery SUCCESS: event=%s to=%s sub=%s duration=%v len=%d", 
- 		hex.Enc(ev.ID), d.sub.remote, d.id, deliveryDuration, len(msgData))
-	
- 	// Log slow deliveries for performance monitoring
- 	if deliveryDuration > time.Millisecond*50 {
- 		log.D.F("SLOW subscription delivery: event=%s to=%s duration=%v (>50ms)", 
- 			hex.Enc(ev.ID), d.sub.remote, deliveryDuration)
- 	}
+		// Check for private tags - only deliver to authorized users
+		if ev.Tags != nil && ev.Tags.Len() > 0 {
+			hasPrivateTag := false
+			var privatePubkey []byte
+
+			for _, t := range *ev.Tags {
+				if t.Len() >= 2 {
+					keyBytes := t.Key()
+					if len(keyBytes) == 7 && string(keyBytes) == "private" {
+						hasPrivateTag = true
+						privatePubkey = t.Value()
+						break
+					}
+				}
+			}
+
+			if hasPrivateTag {
+				canSeePrivate := p.canSeePrivateEvent(
+					d.sub.AuthedPubkey, privatePubkey, d.sub.remote,
+				)
+				if !canSeePrivate {
+					log.D.F(
+						"subscription delivery DENIED for private event %s to %s (unauthorized)",
+						hex.Enc(ev.ID), d.sub.remote,
+					)
+					continue
+				}
+				log.D.F(
+					"subscription delivery ALLOWED for private event %s to %s (authorized)",
+					hex.Enc(ev.ID), d.sub.remote,
+				)
+			}
+		}
+
+		// Send event to the subscription's receiver channel
+		// The consumer goroutine (in handle-req.go) will read from this channel
+		// and forward it to the client via the write channel
+		log.D.F(
+			"attempting delivery of event %s (kind=%d) to subscription %s @ %s",
+			hex.Enc(ev.ID), ev.Kind, d.id, d.sub.remote,
+		)
+
+		// Check if receiver channel exists
+		if d.sub.Receiver == nil {
+			log.E.F(
+				"subscription %s has nil receiver channel for %s", d.id,
+				d.sub.remote,
+			)
+			continue
+		}
+
+		// Send to receiver channel - non-blocking with timeout
+		select {
+		case <-p.c.Done():
+			continue
+		case d.sub.Receiver <- ev:
+			log.D.F(
+				"subscription delivery QUEUED: event=%s to=%s sub=%s",
+				hex.Enc(ev.ID), d.sub.remote, d.id,
+			)
+		case <-time.After(DefaultWriteTimeout):
+			log.E.F(
+				"subscription delivery TIMEOUT: event=%s to=%s sub=%s",
+				hex.Enc(ev.ID), d.sub.remote, d.id,
+			)
+			// Receiver channel is full - subscription consumer is stuck or slow
+			// The subscription should be removed by the cleanup logic
+		}
 	}
 }
 
@@ -288,8 +303,35 @@ func (p *P) removeSubscriberId(ws *websocket.Conn, id string) {
 		// Check the actual map after deletion, not the original reference
 		if len(p.Map[ws]) == 0 {
 			delete(p.Map, ws)
+			// Don't remove write channel here - it's tied to the connection, not subscriptions
+			// The write channel will be removed when the connection closes (in handle-websocket.go defer)
+			// This allows new subscriptions to be created on the same connection
 		}
 	}
+}
+
+// SetWriteChan stores the write channel for a websocket connection
+// If writeChan is nil, the entry is removed from the map
+func (p *P) SetWriteChan(
+	conn *websocket.Conn, writeChan chan publish.WriteRequest,
+) {
+	p.Mx.Lock()
+	defer p.Mx.Unlock()
+	if writeChan == nil {
+		delete(p.WriteChans, conn)
+	} else {
+		p.WriteChans[conn] = writeChan
+	}
+}
+
+// GetWriteChan returns the write channel for a websocket connection
+func (p *P) GetWriteChan(conn *websocket.Conn) (
+	chan publish.WriteRequest, bool,
+) {
+	p.Mx.RLock()
+	defer p.Mx.RUnlock()
+	ch, ok := p.WriteChans[conn]
+	return ch, ok
 }
 
 // removeSubscriber removes a websocket from the P collection.
@@ -298,4 +340,29 @@ func (p *P) removeSubscriber(ws *websocket.Conn) {
 	defer p.Mx.Unlock()
 	clear(p.Map[ws])
 	delete(p.Map, ws)
+	delete(p.WriteChans, ws)
+}
+
+// canSeePrivateEvent checks if the authenticated user can see an event with a private tag
+func (p *P) canSeePrivateEvent(
+	authedPubkey, privatePubkey []byte, remote string,
+) (canSee bool) {
+	// If no authenticated user, deny access
+	if len(authedPubkey) == 0 {
+		return false
+	}
+
+	// If the authenticated user matches the private tag pubkey, allow access
+	if len(privatePubkey) > 0 && utils.FastEqual(authedPubkey, privatePubkey) {
+		return true
+	}
+
+	// Check if user is an admin or owner (they can see all private events)
+	accessLevel := acl.Registry.GetAccessLevel(authedPubkey, remote)
+	if accessLevel == "admin" || accessLevel == "owner" {
+		return true
+	}
+
+	// Default deny
+	return false
 }

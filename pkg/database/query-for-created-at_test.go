@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"sort"
 	"testing"
 
 	"lol.mleku.dev/chk"
@@ -44,7 +45,7 @@ func TestQueryForCreatedAt(t *testing.T) {
 
 	var events []*event.E
 
-	// Process each event
+	// First, collect all events from examples.Cache
 	for scanner.Scan() {
 		chk.E(scanner.Err())
 		b := scanner.Bytes()
@@ -52,22 +53,34 @@ func TestQueryForCreatedAt(t *testing.T) {
 
 		// Unmarshal the event
 		if _, err = ev.Unmarshal(b); chk.E(err) {
+			ev.Free()
 			t.Fatal(err)
 		}
 
 		events = append(events, ev)
+	}
 
+	// Check for scanner errors
+	if err = scanner.Err(); err != nil {
+		t.Fatalf("Scanner error: %v", err)
+	}
+
+	// Sort events by CreatedAt to ensure addressable events are processed in chronological order
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].CreatedAt < events[j].CreatedAt
+	})
+
+	// Count the number of events processed
+	eventCount = 0
+
+	// Now process each event in chronological order
+	for _, ev := range events {
 		// Save the event to the database
 		if _, err = db.SaveEvent(ctx, ev); err != nil {
 			t.Fatalf("Failed to save event #%d: %v", eventCount+1, err)
 		}
 
 		eventCount++
-	}
-
-	// Check for scanner errors
-	if err = scanner.Err(); err != nil {
-		t.Fatalf("Scanner error: %v", err)
 	}
 
 	t.Logf("Successfully saved %d events to the database", eventCount)

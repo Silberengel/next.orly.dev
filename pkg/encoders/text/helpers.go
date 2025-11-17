@@ -114,9 +114,20 @@ func UnmarshalQuoted(b []byte) (content, rem []byte, err error) {
 			//
 			// backspace, tab, newline, form feed or carriage return.
 			case '\b', '\t', '\n', '\f', '\r':
+				pos := len(content) - len(rem)
+				contextStart := pos - 10
+				if contextStart < 0 {
+					contextStart = 0
+				}
+				contextEnd := pos + 10
+				if contextEnd > len(content) {
+					contextEnd = len(content)
+				}
 				err = errorf.E(
-					"invalid character '%s' in quoted string",
+					"invalid character '%s' in quoted string (position %d, context: %q)",
 					NostrEscape(nil, rem[:1]),
+					pos,
+					string(content[contextStart:contextEnd]),
 				)
 				return
 			}
@@ -128,15 +139,27 @@ func UnmarshalQuoted(b []byte) (content, rem []byte, err error) {
 }
 
 func MarshalHexArray(dst []byte, ha [][]byte) (b []byte) {
-	dst = append(dst, '[')
+	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	// Estimate: [ + (hex encoded item + quotes + comma) * n + ]
+	// Each hex item is 2*size + 2 quotes = 2*size + 2, plus comma for all but last
+	if b == nil && len(ha) > 0 {
+		estimatedSize := 2 // brackets
+		if len(ha) > 0 {
+			// Estimate based on first item size
+			itemSize := len(ha[0]) * 2 // hex encoding doubles size
+			estimatedSize += len(ha) * (itemSize + 2 + 1) // item + quotes + comma
+		}
+		b = make([]byte, 0, estimatedSize)
+	}
+	b = append(b, '[')
 	for i := range ha {
-		dst = AppendQuote(dst, ha[i], hex.EncAppend)
+		b = AppendQuote(b, ha[i], hex.EncAppend)
 		if i != len(ha)-1 {
-			dst = append(dst, ',')
+			b = append(b, ',')
 		}
 	}
-	dst = append(dst, ']')
-	b = dst
+	b = append(b, ']')
 	return
 }
 
@@ -145,6 +168,9 @@ func MarshalHexArray(dst []byte, ha [][]byte) (b []byte) {
 func UnmarshalHexArray(b []byte, size int) (t [][]byte, rem []byte, err error) {
 	rem = b
 	var openBracket bool
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	// Estimate based on typical array sizes (can grow if needed)
+	t = make([][]byte, 0, 16)
 	for ; len(rem) > 0; rem = rem[1:] {
 		if rem[0] == '[' {
 			openBracket = true
@@ -182,6 +208,9 @@ func UnmarshalHexArray(b []byte, size int) (t [][]byte, rem []byte, err error) {
 func UnmarshalStringArray(b []byte) (t [][]byte, rem []byte, err error) {
 	rem = b
 	var openBracket bool
+	// Pre-allocate slice with estimated capacity to reduce reallocations
+	// Estimate based on typical array sizes (can grow if needed)
+	t = make([][]byte, 0, 16)
 	for ; len(rem) > 0; rem = rem[1:] {
 		if rem[0] == '[' {
 			openBracket = true

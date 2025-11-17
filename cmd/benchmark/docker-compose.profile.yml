@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  # Next.orly.dev relay with profiling enabled
+  next-orly:
+    build:
+      context: ../..
+      dockerfile: cmd/benchmark/Dockerfile.next-orly
+    container_name: benchmark-next-orly-profile
+    environment:
+      - ORLY_DATA_DIR=/data
+      - ORLY_LISTEN=0.0.0.0
+      - ORLY_PORT=8080
+      - ORLY_LOG_LEVEL=info
+      - ORLY_PPROF=cpu
+      - ORLY_PPROF_HTTP=true
+      - ORLY_PPROF_PATH=/profiles
+      - ORLY_DB_BLOCK_CACHE_MB=512
+      - ORLY_DB_INDEX_CACHE_MB=256
+    volumes:
+      - ./data/next-orly:/data
+      - ./profiles:/profiles
+    ports:
+      - "8001:8080"
+      - "6060:6060"  # pprof HTTP endpoint
+    networks:
+      - benchmark-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s  # Longer startup period
+
+  # Benchmark runner - only test next-orly
+  benchmark-runner:
+    build:
+      context: ../..
+      dockerfile: cmd/benchmark/Dockerfile.benchmark
+    container_name: benchmark-runner-profile
+    depends_on:
+      next-orly:
+        condition: service_healthy
+    environment:
+      - BENCHMARK_TARGETS=next-orly:8080
+      - BENCHMARK_EVENTS=50000
+      - BENCHMARK_WORKERS=24
+      - BENCHMARK_DURATION=60s
+    volumes:
+      - ./reports:/reports
+    networks:
+      - benchmark-net
+    command: >
+      sh -c "
+        echo 'Waiting for ORLY to be ready (healthcheck)...' &&
+        sleep 5 &&
+        echo 'Starting benchmark tests...' &&
+        /app/benchmark-runner --output-dir=/reports &&
+        echo 'Benchmark complete - triggering shutdown...' &&
+        exit 0
+      "
+
+networks:
+  benchmark-net:
+    driver: bridge

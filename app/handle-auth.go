@@ -60,7 +60,7 @@ func (l *Listener) HandleAuth(b []byte) (err error) {
 // handleFirstTimeUser checks if user is logging in for first time and creates welcome note
 func (l *Listener) handleFirstTimeUser(pubkey []byte) {
 	// Check if this is a first-time user
-	isFirstTime, err := l.Server.D.IsFirstTimeUser(pubkey)
+	isFirstTime, err := l.Server.DB.IsFirstTimeUser(pubkey)
 	if err != nil {
 		log.E.F("failed to check first-time user status: %v", err)
 		return

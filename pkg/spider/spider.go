@@ -2,439 +2,805 @@ package spider
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"lol.mleku.dev/chk"
+	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
-	"next.orly.dev/app/config"
-	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/database"
-	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/filter"
-	"next.orly.dev/pkg/encoders/kind"
+	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
+	"next.orly.dev/pkg/interfaces/publisher"
 	"next.orly.dev/pkg/protocol/ws"
-	"next.orly.dev/pkg/utils/normalize"
 )
 
 const (
-	OneTimeSpiderSyncMarker = "spider_one_time_sync_completed"
-	SpiderLastScanMarker    = "spider_last_scan_time"
-	// MaxWebSocketMessageSize is the maximum size for WebSocket messages to avoid 32KB limit
-	MaxWebSocketMessageSize = 30 * 1024 // 30KB to be safe
-	// PubkeyHexSize is the size of a hex-encoded pubkey (32 bytes = 64 hex chars)
-	PubkeyHexSize = 64
+	// BatchSize is the number of pubkeys per subscription batch
+	BatchSize = 20
+	// CatchupWindow is the extra time added to disconnection periods for catch-up
+	CatchupWindow = 30 * time.Minute
+	// ReconnectDelay is the initial delay between reconnection attempts
+	ReconnectDelay = 10 * time.Second
+	// MaxReconnectDelay is the maximum delay before switching to blackout
+	MaxReconnectDelay = 1 * time.Hour
+	// BlackoutPeriod is the duration to blacklist a relay after max backoff is reached
+	BlackoutPeriod = 24 * time.Hour
+	// BatchCreationDelay is the delay between creating each batch subscription
+	BatchCreationDelay = 500 * time.Millisecond
+	// RateLimitBackoffDuration is how long to wait when we get a rate limit error
+	RateLimitBackoffDuration = 1 * time.Minute
+	// RateLimitBackoffMultiplier is the factor by which we increase backoff on repeated rate limits
+	RateLimitBackoffMultiplier = 2
+	// MaxRateLimitBackoff is the maximum backoff duration for rate limiting
+	MaxRateLimitBackoff = 30 * time.Minute
+	// MainLoopInterval is how often the spider checks for updates
+	MainLoopInterval = 5 * time.Minute
+	// EventHandlerBufferSize is the buffer size for event channels
+	EventHandlerBufferSize = 100
 )
 
+// Spider manages connections to admin relays and syncs events for followed pubkeys
 type Spider struct {
-	db     *database.D
-	cfg    *config.C
 	ctx    context.Context
 	cancel context.CancelFunc
+	db     *database.D
+	pub    publisher.I
+	mode   string
+
+	// Configuration
+	adminRelays []string
+	followList  [][]byte
+
+	// State management
+	mu          sync.RWMutex
+	connections map[string]*RelayConnection
+	running     bool
+
+	// Callbacks for getting updated data
+	getAdminRelays func() []string
+	getFollowList  func() [][]byte
+
+	// Notification channel for follow list updates
+	followListUpdated chan struct{}
 }
 
-func New(
-	db *database.D, cfg *config.C, ctx context.Context,
-	cancel context.CancelFunc,
-) *Spider {
-	return &Spider{
-		db:     db,
-		cfg:    cfg,
-		ctx:    ctx,
-		cancel: cancel,
-	}
+// RelayConnection manages a single relay connection and its subscriptions
+type RelayConnection struct {
+	url    string
+	client *ws.Client
+	ctx    context.Context
+	cancel context.CancelFunc
+	spider *Spider
+
+	// Subscription management
+	mu            sync.RWMutex
+	subscriptions map[string]*BatchSubscription
+
+	// Disconnection tracking
+	lastDisconnect      time.Time
+	reconnectDelay      time.Duration
+	connectionStartTime time.Time
+
+	// Blackout tracking for IP filters
+	blackoutUntil time.Time
+
+	// Rate limiting tracking
+	rateLimitBackoff time.Duration
+	rateLimitUntil   time.Time
 }
 
-// Start initializes the spider functionality based on configuration
-func (s *Spider) Start() {
-	if s.cfg.SpiderMode != "follows" {
-		log.D.Ln("Spider mode is not set to 'follows', skipping spider functionality")
+// BatchSubscription represents a subscription for a batch of pubkeys
+type BatchSubscription struct {
+	id        string
+	pubkeys   [][]byte
+	startTime time.Time
+	sub       *ws.Subscription
+	relay     *RelayConnection
+
+	// Track disconnection periods for catch-up
+	disconnectedAt *time.Time
+}
+
+// DisconnectionPeriod tracks when a subscription was disconnected
+type DisconnectionPeriod struct {
+	Start time.Time
+	End   time.Time
+}
+
+// New creates a new Spider instance
+func New(ctx context.Context, db *database.D, pub publisher.I, mode string) (s *Spider, err error) {
+	if db == nil {
+		err = errorf.E("database cannot be nil")
 		return
 	}
 
-	log.I.Ln("Starting spider in follow mode")
-
-	// Check if one-time sync has been completed
-	if !s.db.HasMarker(OneTimeSpiderSyncMarker) {
-		log.I.Ln("Performing one-time spider sync back one month")
-		go s.performOneTimeSync()
-	} else {
-		log.D.Ln("One-time spider sync already completed, skipping")
+	// Validate mode
+	switch mode {
+	case "follows", "none":
+		// Valid modes
+	default:
+		err = errorf.E("invalid spider mode: %s (valid modes: none, follows)", mode)
+		return
 	}
 
-	// Start periodic scanning
-	go s.startPeriodicScanning()
+	ctx, cancel := context.WithCancel(ctx)
+	s = &Spider{
+		ctx:               ctx,
+		cancel:            cancel,
+		db:                db,
+		pub:               pub,
+		mode:              mode,
+		connections:       make(map[string]*RelayConnection),
+		followListUpdated: make(chan struct{}, 1),
+	}
+
+	return
 }
 
-// performOneTimeSync performs the initial sync going back one month
-func (s *Spider) performOneTimeSync() {
-	defer func() {
-		// Mark the one-time sync as completed
-		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-		if err := s.db.SetMarker(
-			OneTimeSpiderSyncMarker, []byte(timestamp),
-		); err != nil {
-			log.E.F("Failed to set one-time sync marker: %v", err)
-		} else {
-			log.I.Ln("One-time spider sync completed and marked")
+// SetCallbacks sets the callback functions for getting updated admin relays and follow lists
+func (s *Spider) SetCallbacks(getAdminRelays func() []string, getFollowList func() [][]byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.getAdminRelays = getAdminRelays
+	s.getFollowList = getFollowList
+}
+
+// NotifyFollowListUpdate signals the spider that the follow list has been updated
+func (s *Spider) NotifyFollowListUpdate() {
+	if s.followListUpdated != nil {
+		select {
+		case s.followListUpdated <- struct{}{}:
+			log.D.F("spider: follow list update notification sent")
+		default:
+			// Channel full, update already pending
+			log.D.F("spider: follow list update notification already pending")
 		}
-	}()
+	}
+}
 
-	// Calculate the time one month ago
-	oneMonthAgo := time.Now().AddDate(0, -1, 0)
-	log.I.F("Starting one-time spider sync from %v", oneMonthAgo)
+// Start begins the spider operation
+func (s *Spider) Start() (err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	// Perform the sync (placeholder - would need actual implementation based on follows)
-	if err := s.performSync(oneMonthAgo, time.Now()); err != nil {
-		log.E.F("One-time spider sync failed: %v", err)
+	if s.running {
+		err = errorf.E("spider already running")
 		return
 	}
 
-	log.I.Ln("One-time spider sync completed successfully")
+	// Handle 'none' mode - no-op
+	if s.mode == "none" {
+		log.I.F("spider: mode is 'none', not starting")
+		return
+	}
+
+	if s.getAdminRelays == nil || s.getFollowList == nil {
+		err = errorf.E("callbacks must be set before starting")
+		return
+	}
+
+	s.running = true
+
+	// Start the main loop
+	go s.mainLoop()
+
+	log.I.F("spider: started in '%s' mode", s.mode)
+	return
 }
 
-// startPeriodicScanning starts the regular scanning process
-func (s *Spider) startPeriodicScanning() {
-	ticker := time.NewTicker(s.cfg.SpiderFrequency)
+// Stop stops the spider operation
+func (s *Spider) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.running {
+		return
+	}
+
+	s.running = false
+	s.cancel()
+
+	// Close all connections
+	for _, conn := range s.connections {
+		conn.close()
+	}
+	s.connections = make(map[string]*RelayConnection)
+
+	log.I.F("spider: stopped")
+}
+
+// mainLoop is the main spider loop that manages connections and subscriptions
+func (s *Spider) mainLoop() {
+	ticker := time.NewTicker(MainLoopInterval)
 	defer ticker.Stop()
 
-	log.I.F("Starting periodic spider scanning every %v", s.cfg.SpiderFrequency)
+	log.I.F("spider: main loop started, checking every %v", MainLoopInterval)
 
 	for {
 		select {
 		case <-s.ctx.Done():
-			log.D.Ln("Spider periodic scanning stopped due to context cancellation")
 			return
+		case <-s.followListUpdated:
+			log.I.F("spider: follow list updated, refreshing connections")
+			s.updateConnections()
 		case <-ticker.C:
-			s.performPeriodicScan()
+			log.D.F("spider: periodic check triggered")
+			s.updateConnections()
 		}
 	}
 }
 
-// performPeriodicScan performs the regular scan of the last two hours (double the frequency window)
-func (s *Spider) performPeriodicScan() {
-	// Calculate the scanning window (double the frequency period)
-	scanWindow := s.cfg.SpiderFrequency * 2
-	scanStart := time.Now().Add(-scanWindow)
-	scanEnd := time.Now()
+// updateConnections updates relay connections based on current admin relays and follow lists
+func (s *Spider) updateConnections() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	log.D.F(
-		"Performing periodic spider scan from %v to %v (window: %v)", scanStart,
-		scanEnd, scanWindow,
-	)
-
-	if err := s.performSync(scanStart, scanEnd); err != nil {
-		log.E.F("Periodic spider scan failed: %v", err)
+	if !s.running {
 		return
 	}
 
-	// Update the last scan marker
-	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	if err := s.db.SetMarker(
-		SpiderLastScanMarker, []byte(timestamp),
-	); err != nil {
-		log.E.F("Failed to update last scan marker: %v", err)
+	// Get current admin relays and follow list
+	adminRelays := s.getAdminRelays()
+	followList := s.getFollowList()
+
+	if len(adminRelays) == 0 || len(followList) == 0 {
+		log.D.F("spider: no admin relays (%d) or follow list (%d) available",
+			len(adminRelays), len(followList))
+		return
 	}
 
-	log.D.F("Periodic spider scan completed successfully")
-}
+	// Update connections for current admin relays
+	currentRelays := make(map[string]bool)
+	for _, url := range adminRelays {
+		currentRelays[url] = true
 
-// performSync performs the actual sync operation for the given time range
-func (s *Spider) performSync(startTime, endTime time.Time) error {
-	log.D.F(
-		"Spider sync from %v to %v - starting implementation", startTime,
-		endTime,
-	)
-
-	// 1. Check ACL mode is set to "follows"
-	if s.cfg.ACLMode != "follows" {
-		log.D.F(
-			"Spider sync skipped - ACL mode is not 'follows' (current: %s)",
-			s.cfg.ACLMode,
-		)
-		return nil
-	}
-
-	// 2. Get the list of followed users from the ACL system
-	followedPubkeys, err := s.getFollowedPubkeys()
-	if err != nil {
-		return err
-	}
-
-	if len(followedPubkeys) == 0 {
-		log.D.Ln("Spider sync: no followed pubkeys found")
-		return nil
-	}
-
-	log.D.F("Spider sync: found %d followed pubkeys", len(followedPubkeys))
-
-	// 3. Discover relay lists from followed users
-	relayURLs, err := s.discoverRelays(followedPubkeys)
-	if err != nil {
-		return err
-	}
-
-	if len(relayURLs) == 0 {
-		log.W.Ln("Spider sync: no relays discovered from followed users")
-		return nil
-	}
-
-	log.I.F("Spider sync: discovered %d relay URLs", len(relayURLs))
-
-	// 4. Query each relay for events from followed pubkeys in the time range
-	eventsFound := 0
-	for _, relayURL := range relayURLs {
-		count, err := s.queryRelayForEvents(
-			relayURL, followedPubkeys, startTime, endTime,
-		)
-		if err != nil {
-			log.E.F("Spider sync: error querying relay %s: %v", relayURL, err)
-			continue
+		if conn, exists := s.connections[url]; exists {
+			// Update existing connection
+			conn.updateSubscriptions(followList)
+		} else {
+			// Create new connection
+			s.createConnection(url, followList)
 		}
-		eventsFound += count
 	}
 
-	log.I.F(
-		"Spider sync completed: found %d new events from %d relays",
-		eventsFound, len(relayURLs),
-	)
-
-	return nil
+	// Remove connections for relays no longer in admin list
+	for url, conn := range s.connections {
+		if !currentRelays[url] {
+			log.I.F("spider: removing connection to %s (no longer in admin relays)", url)
+			conn.close()
+			delete(s.connections, url)
+		}
+	}
 }
 
-// getFollowedPubkeys retrieves the list of followed pubkeys from the ACL system
-func (s *Spider) getFollowedPubkeys() ([][]byte, error) {
-	// Access the ACL registry to get the current ACL instance
-	var followedPubkeys [][]byte
+// createConnection creates a new relay connection
+func (s *Spider) createConnection(url string, followList [][]byte) {
+	log.I.F("spider: creating connection to %s", url)
 
-	// Get all ACL instances and find the active one
-	for _, aclInstance := range acl.Registry.ACL {
-		if aclInstance.Type() == acl.Registry.Active.Load() {
-			// Cast to *Follows to access the follows field
-			if followsACL, ok := aclInstance.(*acl.Follows); ok {
-				followedPubkeys = followsACL.GetFollowedPubkeys()
-				break
+	ctx, cancel := context.WithCancel(s.ctx)
+	conn := &RelayConnection{
+		url:            url,
+		ctx:            ctx,
+		cancel:         cancel,
+		spider:         s,
+		subscriptions:  make(map[string]*BatchSubscription),
+		reconnectDelay: ReconnectDelay,
+	}
+
+	s.connections[url] = conn
+
+	// Start connection in goroutine
+	go conn.manage(followList)
+}
+
+// manage handles the lifecycle of a relay connection
+func (rc *RelayConnection) manage(followList [][]byte) {
+	for {
+		// Check context first
+		select {
+		case <-rc.ctx.Done():
+			log.D.F("spider: connection manager for %s stopping (context done)", rc.url)
+			return
+		default:
+		}
+
+		// Check if relay is blacked out
+		if rc.isBlackedOut() {
+			waitDuration := time.Until(rc.blackoutUntil)
+			log.I.F("spider: %s is blacked out for %v more", rc.url, waitDuration)
+
+			// Wait for blackout to expire or context cancellation
+			select {
+			case <-rc.ctx.Done():
+				return
+			case <-time.After(waitDuration):
+				// Blackout expired, reset delay and try again
+				rc.reconnectDelay = ReconnectDelay
+				log.I.F("spider: blackout period ended for %s, retrying", rc.url)
 			}
-		}
-	}
-
-	return followedPubkeys, nil
-}
-
-// discoverRelays discovers relay URLs from kind 10002 events of followed users
-func (s *Spider) discoverRelays(followedPubkeys [][]byte) ([]string, error) {
-	seen := make(map[string]struct{})
-	var urls []string
-
-	for _, pubkey := range followedPubkeys {
-		// Query for kind 10002 (RelayListMetadata) events from this pubkey
-		fl := &filter.F{
-			Authors: tag.NewFromAny(pubkey),
-			Kinds:   kind.NewS(kind.New(kind.RelayListMetadata.K)),
-		}
-
-		idxs, err := database.GetIndexesFromFilter(fl)
-		if chk.E(err) {
 			continue
 		}
 
-		var sers types.Uint40s
-		for _, idx := range idxs {
-			s, err := s.db.GetSerialsByRange(idx)
-			if chk.E(err) {
-				continue
-			}
-			sers = append(sers, s...)
+		// Attempt to connect
+		log.D.F("spider: attempting to connect to %s (backoff: %v)", rc.url, rc.reconnectDelay)
+		if err := rc.connect(); chk.E(err) {
+			log.W.F("spider: failed to connect to %s: %v", rc.url, err)
+			rc.waitBeforeReconnect()
+			continue
 		}
 
-		for _, ser := range sers {
-			ev, err := s.db.FetchEventBySerial(ser)
-			if chk.E(err) || ev == nil {
-				continue
-			}
+		log.I.F("spider: connected to %s", rc.url)
+		rc.connectionStartTime = time.Now()
 
-			// Extract relay URLs from 'r' tags
-			for _, v := range ev.Tags.GetAll([]byte("r")) {
-				u := string(v.Value())
-				n := string(normalize.URL(u))
-				if n == "" {
-					continue
-				}
-				if _, ok := seen[n]; ok {
-					continue
-				}
-				seen[n] = struct{}{}
-				urls = append(urls, n)
+		// Only reset reconnect delay on successful connection
+		// (don't reset if we had a quick disconnect before)
+		if rc.reconnectDelay > ReconnectDelay*8 {
+			// Gradual recovery: reduce by half instead of full reset
+			rc.reconnectDelay = rc.reconnectDelay / 2
+			log.D.F("spider: reducing backoff for %s to %v", rc.url, rc.reconnectDelay)
+		} else {
+			rc.reconnectDelay = ReconnectDelay
+		}
+		rc.blackoutUntil = time.Time{} // Clear blackout on successful connection
+
+		// Create subscriptions for follow list
+		rc.createSubscriptions(followList)
+
+		// Wait for disconnection
+		<-rc.client.Context().Done()
+
+		log.W.F("spider: disconnected from %s: %v", rc.url, rc.client.ConnectionCause())
+
+		// Check if disconnection happened very quickly (likely IP filter or ban)
+		connectionDuration := time.Since(rc.connectionStartTime)
+		const quickDisconnectThreshold = 2 * time.Minute
+		if connectionDuration < quickDisconnectThreshold {
+			log.W.F("spider: quick disconnection from %s after %v (likely connection issue/ban)", rc.url, connectionDuration)
+			// Don't reset the delay, keep the backoff and increase it
+			rc.waitBeforeReconnect()
+		} else {
+			// Normal disconnection after decent uptime - gentle backoff
+			log.I.F("spider: normal disconnection from %s after %v uptime", rc.url, connectionDuration)
+			// Small delay before reconnecting
+			select {
+			case <-rc.ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
 			}
 		}
-	}
 
-	return urls, nil
+		rc.handleDisconnection()
+
+		// Clean up
+		rc.client = nil
+		rc.clearSubscriptions()
+	}
 }
 
-// calculateOptimalChunkSize calculates the optimal chunk size for pubkeys to stay under message size limit
-func (s *Spider) calculateOptimalChunkSize() int {
-	// Estimate the size of a filter with timestamps and other fields
-	// Base filter overhead: ~200 bytes for timestamps, limits, etc.
-	baseFilterSize := 200
-
-	// Calculate how many pubkeys we can fit in the remaining space
-	availableSpace := MaxWebSocketMessageSize - baseFilterSize
-	maxPubkeys := availableSpace / PubkeyHexSize
-
-	// Use a conservative chunk size (80% of max to be safe)
-	chunkSize := int(float64(maxPubkeys) * 0.8)
-
-	// Ensure minimum chunk size of 10
-	if chunkSize < 10 {
-		chunkSize = 10
-	}
-
-	log.D.F(
-		"Spider: calculated optimal chunk size: %d pubkeys (max would be %d)",
-		chunkSize, maxPubkeys,
-	)
-	return chunkSize
-}
-
-// queryRelayForEvents connects to a relay and queries for events from followed pubkeys
-func (s *Spider) queryRelayForEvents(
-	relayURL string, followedPubkeys [][]byte, startTime, endTime time.Time,
-) (int, error) {
-	log.T.F(
-		"Spider sync: querying relay %s with %d pubkeys", relayURL,
-		len(followedPubkeys),
-	)
-
-	// Connect to the relay with a timeout context
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+// connect establishes a websocket connection to the relay
+func (rc *RelayConnection) connect() (err error) {
+	connectCtx, cancel := context.WithTimeout(rc.ctx, 10*time.Second)
 	defer cancel()
 
-	client, err := ws.RelayConnect(ctx, relayURL)
-	if err != nil {
-		return 0, err
-	}
-	defer client.Close()
-
-	// Break pubkeys into chunks to avoid 32KB message limit
-	chunkSize := s.calculateOptimalChunkSize()
-	totalEventsSaved := 0
-
-	for i := 0; i < len(followedPubkeys); i += chunkSize {
-		end := i + chunkSize
-		if end > len(followedPubkeys) {
-			end = len(followedPubkeys)
-		}
-
-		chunk := followedPubkeys[i:end]
-		log.T.F(
-			"Spider sync: processing chunk %d-%d (%d pubkeys) for relay %s",
-			i, end-1, len(chunk), relayURL,
-		)
-
-		// Create filter for this chunk of pubkeys
-		f := &filter.F{
-			Authors: tag.NewFromBytesSlice(chunk...),
-			Since:   timestamp.FromUnix(startTime.Unix()),
-			Until:   timestamp.FromUnix(endTime.Unix()),
-			Limit:   func() *uint { l := uint(1000); return &l }(), // Limit to avoid overwhelming
-		}
-
-		// Subscribe to get events for this chunk
-		sub, err := client.Subscribe(ctx, filter.NewS(f))
-		if err != nil {
-			log.E.F(
-				"Spider sync: failed to subscribe to chunk %d-%d for relay %s: %v",
-				i, end-1, relayURL, err,
-			)
-			continue
-		}
-
-		chunkEventsSaved := 0
-		chunkEventsCount := 0
-		timeout := time.After(10 * time.Second) // Timeout for receiving events
-
-		chunkDone := false
-		for !chunkDone {
-			select {
-			case <-ctx.Done():
-				log.T.F(
-					"Spider sync: context done for relay %s chunk %d-%d, saved %d/%d events",
-					relayURL, i, end-1, chunkEventsSaved, chunkEventsCount,
-				)
-				chunkDone = true
-			case <-timeout:
-				log.T.F(
-					"Spider sync: timeout for relay %s chunk %d-%d, saved %d/%d events",
-					relayURL, i, end-1, chunkEventsSaved, chunkEventsCount,
-				)
-				chunkDone = true
-			case <-sub.EndOfStoredEvents:
-				log.T.F(
-					"Spider sync: end of stored events for relay %s chunk %d-%d, saved %d/%d events",
-					relayURL, i, end-1, chunkEventsSaved, chunkEventsCount,
-				)
-				chunkDone = true
-			case ev := <-sub.Events:
-				if ev == nil {
-					continue
-				}
-				chunkEventsCount++
-
-				// Verify the event signature
-				if ok, err := ev.Verify(); !ok || err != nil {
-					log.T.F(
-						"Spider sync: invalid event signature from relay %s",
-						relayURL,
-					)
-					ev.Free()
-					continue
-				}
-
-				// Save the event to the database
-				if _, err := s.db.SaveEvent(s.ctx, ev); err != nil {
-					if !strings.HasPrefix(err.Error(), "blocked:") {
-						log.T.F(
-							"Spider sync: error saving event from relay %s: %v",
-							relayURL, err,
-						)
-					}
-					// Event might already exist, which is fine for deduplication
-				} else {
-					chunkEventsSaved++
-					if chunkEventsSaved%10 == 0 {
-						log.T.F(
-							"Spider sync: saved %d events from relay %s chunk %d-%d",
-							chunkEventsSaved, relayURL, i, end-1,
-						)
-					}
-				}
-				ev.Free()
-			}
-		}
-
-		// Clean up subscription
-		sub.Unsub()
-		totalEventsSaved += chunkEventsSaved
-
-		log.T.F(
-			"Spider sync: completed chunk %d-%d for relay %s, saved %d events",
-			i, end-1, relayURL, chunkEventsSaved,
-		)
+	// Create client with notice handler to detect rate limiting
+	rc.client, err = ws.RelayConnect(connectCtx, rc.url, ws.WithNoticeHandler(rc.handleNotice))
+	if chk.E(err) {
+		return
 	}
 
-	log.T.F(
-		"Spider sync: completed all chunks for relay %s, total saved %d events",
-		relayURL, totalEventsSaved,
-	)
-	return totalEventsSaved, nil
+	return
 }
 
-// Stop stops the spider functionality
-func (s *Spider) Stop() {
-	log.D.Ln("Stopping spider")
-	s.cancel()
+// handleNotice processes NOTICE messages from the relay
+func (rc *RelayConnection) handleNotice(notice []byte) {
+	noticeStr := string(notice)
+	log.D.F("spider: NOTICE from %s: '%s'", rc.url, noticeStr)
+
+	// Check for rate limiting errors
+	if strings.Contains(noticeStr, "too many concurrent REQs") ||
+		strings.Contains(noticeStr, "rate limit") ||
+		strings.Contains(noticeStr, "slow down") {
+		rc.handleRateLimit()
+	}
+}
+
+// handleRateLimit applies backoff when rate limiting is detected
+func (rc *RelayConnection) handleRateLimit() {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	// Initialize backoff if not set
+	if rc.rateLimitBackoff == 0 {
+		rc.rateLimitBackoff = RateLimitBackoffDuration
+	} else {
+		// Exponential backoff
+		rc.rateLimitBackoff *= RateLimitBackoffMultiplier
+		if rc.rateLimitBackoff > MaxRateLimitBackoff {
+			rc.rateLimitBackoff = MaxRateLimitBackoff
+		}
+	}
+
+	rc.rateLimitUntil = time.Now().Add(rc.rateLimitBackoff)
+	log.W.F("spider: rate limit detected on %s, backing off for %v until %v",
+		rc.url, rc.rateLimitBackoff, rc.rateLimitUntil)
+
+	// Close all current subscriptions to reduce load
+	rc.clearSubscriptionsLocked()
+}
+
+// waitBeforeReconnect waits before attempting to reconnect with exponential backoff
+func (rc *RelayConnection) waitBeforeReconnect() {
+	log.I.F("spider: waiting %v before reconnecting to %s", rc.reconnectDelay, rc.url)
+
+	select {
+	case <-rc.ctx.Done():
+		return
+	case <-time.After(rc.reconnectDelay):
+	}
+
+	// Exponential backoff - double every time
+	// 10s -> 20s -> 40s -> 80s (1.3m) -> 160s (2.7m) -> 320s (5.3m) -> 640s (10.7m) -> 1280s (21m) -> 2560s (42m) -> 3600s (1h)
+	rc.reconnectDelay *= 2
+
+	// Cap at MaxReconnectDelay (1 hour), then switch to 24-hour blackout
+	if rc.reconnectDelay >= MaxReconnectDelay {
+		rc.blackoutUntil = time.Now().Add(BlackoutPeriod)
+		rc.reconnectDelay = ReconnectDelay // Reset for after blackout
+		log.W.F("spider: max reconnect backoff reached for %s, entering 24-hour blackout period", rc.url)
+	}
+}
+
+// isBlackedOut returns true if the relay is currently blacked out
+func (rc *RelayConnection) isBlackedOut() bool {
+	return !rc.blackoutUntil.IsZero() && time.Now().Before(rc.blackoutUntil)
+}
+
+// handleDisconnection records disconnection time for catch-up logic
+func (rc *RelayConnection) handleDisconnection() {
+	now := time.Now()
+	rc.lastDisconnect = now
+
+	// Mark all subscriptions as disconnected
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	for _, sub := range rc.subscriptions {
+		if sub.disconnectedAt == nil {
+			sub.disconnectedAt = &now
+		}
+	}
+}
+
+// createSubscriptions creates batch subscriptions for the follow list
+func (rc *RelayConnection) createSubscriptions(followList [][]byte) {
+	rc.mu.Lock()
+
+	// Check if we're in a rate limit backoff period
+	if time.Now().Before(rc.rateLimitUntil) {
+		remaining := time.Until(rc.rateLimitUntil)
+		rc.mu.Unlock()
+		log.W.F("spider: skipping subscription creation for %s, rate limited for %v more", rc.url, remaining)
+
+		// Schedule retry after backoff period
+		go func() {
+			time.Sleep(remaining)
+			rc.createSubscriptions(followList)
+		}()
+		return
+	}
+
+	// Clear rate limit backoff on successful subscription attempt
+	rc.rateLimitBackoff = 0
+	rc.rateLimitUntil = time.Time{}
+
+	// Clear existing subscriptions
+	rc.clearSubscriptionsLocked()
+
+	// Create batches of pubkeys
+	batches := rc.createBatches(followList)
+
+	log.I.F("spider: creating %d subscription batches for %d pubkeys on %s",
+		len(batches), len(followList), rc.url)
+
+	// Release lock before creating subscriptions to avoid holding it during delays
+	rc.mu.Unlock()
+
+	for i, batch := range batches {
+		// Check context before creating each batch
+		select {
+		case <-rc.ctx.Done():
+			return
+		default:
+		}
+
+		batchID := fmt.Sprintf("batch-%d", i)
+
+		rc.mu.Lock()
+		rc.createBatchSubscription(batchID, batch)
+		rc.mu.Unlock()
+
+		// Add delay between batches to avoid overwhelming the relay
+		if i < len(batches)-1 { // Don't delay after the last batch
+			time.Sleep(BatchCreationDelay)
+		}
+	}
+}
+
+// createBatches splits the follow list into batches of BatchSize
+func (rc *RelayConnection) createBatches(followList [][]byte) (batches [][][]byte) {
+	for i := 0; i < len(followList); i += BatchSize {
+		end := i + BatchSize
+		if end > len(followList) {
+			end = len(followList)
+		}
+
+		batch := make([][]byte, end-i)
+		copy(batch, followList[i:end])
+		batches = append(batches, batch)
+	}
+	return
+}
+
+// createBatchSubscription creates a subscription for a batch of pubkeys
+func (rc *RelayConnection) createBatchSubscription(batchID string, pubkeys [][]byte) {
+	if rc.client == nil {
+		return
+	}
+
+	// Create filters: one for authors, one for p tags
+	// For #p tag filters, all pubkeys must be in a single tag array as hex-encoded strings
+	tagElements := [][]byte{[]byte("p")} // First element is the key
+	for _, pk := range pubkeys {
+		pkHex := hex.EncAppend(nil, pk)
+		tagElements = append(tagElements, pkHex)
+	}
+	pTags := &tag.S{tag.NewFromBytesSlice(tagElements...)}
+
+	filters := filter.NewS(
+		&filter.F{
+			Authors: tag.NewFromBytesSlice(pubkeys...),
+		},
+		&filter.F{
+			Tags: pTags,
+		},
+	)
+
+	// Subscribe
+	sub, err := rc.client.Subscribe(rc.ctx, filters)
+	if chk.E(err) {
+		log.E.F("spider: failed to create subscription %s on %s: %v", batchID, rc.url, err)
+		return
+	}
+
+	batchSub := &BatchSubscription{
+		id:        batchID,
+		pubkeys:   pubkeys,
+		startTime: time.Now(),
+		sub:       sub,
+		relay:     rc,
+	}
+
+	rc.subscriptions[batchID] = batchSub
+
+	// Start event handler
+	go batchSub.handleEvents()
+
+	log.D.F("spider: created subscription %s for %d pubkeys on %s",
+		batchID, len(pubkeys), rc.url)
+}
+
+// handleEvents processes events from the subscription
+func (bs *BatchSubscription) handleEvents() {
+	// Throttle event processing to avoid CPU spikes
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-bs.relay.ctx.Done():
+			return
+		case ev := <-bs.sub.Events:
+			if ev == nil {
+				return // Subscription closed
+			}
+
+			// Wait for throttle tick to avoid processing events too rapidly
+			<-ticker.C
+
+			// Save event to database
+			if _, err := bs.relay.spider.db.SaveEvent(bs.relay.ctx, ev); err != nil {
+				// Ignore duplicate events and other errors
+				log.T.F("spider: failed to save event from %s: %v", bs.relay.url, err)
+			} else {
+				// Publish event if it was newly saved
+				if bs.relay.spider.pub != nil {
+					go bs.relay.spider.pub.Deliver(ev)
+				}
+				log.T.F("spider: saved event from %s", bs.relay.url)
+			}
+		}
+	}
+}
+
+// updateSubscriptions updates subscriptions for a connection with new follow list
+func (rc *RelayConnection) updateSubscriptions(followList [][]byte) {
+	if rc.client == nil || !rc.client.IsConnected() {
+		return // Will be handled on reconnection
+	}
+
+	rc.mu.Lock()
+
+	// Check if we're in a rate limit backoff period
+	if time.Now().Before(rc.rateLimitUntil) {
+		remaining := time.Until(rc.rateLimitUntil)
+		rc.mu.Unlock()
+		log.D.F("spider: deferring subscription update for %s, rate limited for %v more", rc.url, remaining)
+		return
+	}
+
+	// Check if we need to perform catch-up for disconnected subscriptions
+	now := time.Now()
+	needsCatchup := false
+
+	for _, sub := range rc.subscriptions {
+		if sub.disconnectedAt != nil {
+			needsCatchup = true
+			rc.performCatchup(sub, *sub.disconnectedAt, now, followList)
+			sub.disconnectedAt = nil // Clear disconnection marker
+		}
+	}
+
+	if needsCatchup {
+		log.I.F("spider: performed catch-up for disconnected subscriptions on %s", rc.url)
+	}
+
+	// Recreate subscriptions with updated follow list
+	rc.clearSubscriptionsLocked()
+
+	batches := rc.createBatches(followList)
+
+	// Release lock before creating subscriptions
+	rc.mu.Unlock()
+
+	for i, batch := range batches {
+		// Check context before creating each batch
+		select {
+		case <-rc.ctx.Done():
+			return
+		default:
+		}
+
+		batchID := fmt.Sprintf("batch-%d", i)
+
+		rc.mu.Lock()
+		rc.createBatchSubscription(batchID, batch)
+		rc.mu.Unlock()
+
+		// Add delay between batches
+		if i < len(batches)-1 {
+			time.Sleep(BatchCreationDelay)
+		}
+	}
+}
+
+// performCatchup queries for events missed during disconnection
+func (rc *RelayConnection) performCatchup(sub *BatchSubscription, disconnectTime, reconnectTime time.Time, followList [][]byte) {
+	// Expand time window by CatchupWindow on both sides
+	since := disconnectTime.Add(-CatchupWindow)
+	until := reconnectTime.Add(CatchupWindow)
+
+	log.I.F("spider: performing catch-up for %s from %v to %v (expanded window)",
+		rc.url, since, until)
+
+	// Create catch-up filters with time constraints
+	sinceTs := timestamp.T{V: since.Unix()}
+	untilTs := timestamp.T{V: until.Unix()}
+
+	// Create filters with hex-encoded pubkeys for #p tags
+	// All pubkeys must be in a single tag array
+	tagElements := [][]byte{[]byte("p")} // First element is the key
+	for _, pk := range sub.pubkeys {
+		pkHex := hex.EncAppend(nil, pk)
+		tagElements = append(tagElements, pkHex)
+	}
+	pTags := &tag.S{tag.NewFromBytesSlice(tagElements...)}
+
+	filters := filter.NewS(
+		&filter.F{
+			Authors: tag.NewFromBytesSlice(sub.pubkeys...),
+			Since:   &sinceTs,
+			Until:   &untilTs,
+		},
+		&filter.F{
+			Tags:  pTags,
+			Since: &sinceTs,
+			Until: &untilTs,
+		},
+	)
+
+	// Create temporary subscription for catch-up
+	catchupCtx, cancel := context.WithTimeout(rc.ctx, 30*time.Second)
+	defer cancel()
+
+	catchupSub, err := rc.client.Subscribe(catchupCtx, filters)
+	if chk.E(err) {
+		log.E.F("spider: failed to create catch-up subscription on %s: %v", rc.url, err)
+		return
+	}
+	defer catchupSub.Unsub()
+
+	// Process catch-up events with throttling
+	eventCount := 0
+	timeout := time.After(60 * time.Second) // Increased timeout for catch-up
+	throttle := time.NewTicker(20 * time.Millisecond)
+	defer throttle.Stop()
+
+	for {
+		select {
+		case <-catchupCtx.Done():
+			log.I.F("spider: catch-up completed on %s, processed %d events", rc.url, eventCount)
+			return
+		case <-timeout:
+			log.I.F("spider: catch-up timeout on %s, processed %d events", rc.url, eventCount)
+			return
+		case <-catchupSub.EndOfStoredEvents:
+			log.I.F("spider: catch-up EOSE on %s, processed %d events", rc.url, eventCount)
+			return
+		case ev := <-catchupSub.Events:
+			if ev == nil {
+				return
+			}
+
+			// Throttle event processing
+			<-throttle.C
+
+			eventCount++
+
+			// Save event to database
+			if _, err := rc.spider.db.SaveEvent(rc.ctx, ev); err != nil {
+				// Silently ignore errors (mostly duplicates)
+			} else {
+				// Publish event if it was newly saved
+				if rc.spider.pub != nil {
+					go rc.spider.pub.Deliver(ev)
+				}
+				log.T.F("spider: catch-up saved event %s from %s",
+					hex.Enc(ev.ID[:]), rc.url)
+			}
+		}
+	}
+}
+
+// clearSubscriptions clears all subscriptions (with lock)
+func (rc *RelayConnection) clearSubscriptions() {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	rc.clearSubscriptionsLocked()
+}
+
+// clearSubscriptionsLocked clears all subscriptions (without lock)
+func (rc *RelayConnection) clearSubscriptionsLocked() {
+	for _, sub := range rc.subscriptions {
+		if sub.sub != nil {
+			sub.sub.Unsub()
+		}
+	}
+	rc.subscriptions = make(map[string]*BatchSubscription)
+}
+
+// close closes the relay connection
+func (rc *RelayConnection) close() {
+	rc.clearSubscriptions()
+
+	if rc.client != nil {
+		rc.client.Close()
+		rc.client = nil
+	}
+
+	rc.cancel()
 }

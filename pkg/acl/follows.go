@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
 	"lol.mleku.dev/log"
@@ -44,6 +44,10 @@ type Follows struct {
 	follows    [][]byte
 	updated    chan struct{}
 	subsCancel context.CancelFunc
+	// Track last follow list fetch time
+	lastFollowListFetch time.Time
+	// Callback for external notification of follow list changes
+	onFollowListUpdate func()
 }
 
 func (f *Follows) Configure(cfg ...any) (err error) {
@@ -176,6 +180,33 @@ func (f *Follows) adminRelays() (urls []string) {
 	copy(admins, f.admins)
 	f.followsMx.RUnlock()
 	seen := make(map[string]struct{})
+	// Build a set of normalized self relay addresses to avoid self-connections
+	selfSet := make(map[string]struct{})
+	selfHosts := make(map[string]struct{})
+	if f.cfg != nil && len(f.cfg.RelayAddresses) > 0 {
+		for _, a := range f.cfg.RelayAddresses {
+			n := string(normalize.URL(a))
+			if n == "" {
+				continue
+			}
+			selfSet[n] = struct{}{}
+			// Also record hostname (without port) for robust matching
+			// Accept simple splitting; normalize.URL ensures scheme://host[:port]
+			host := n
+			if i := strings.Index(host, "://"); i >= 0 {
+				host = host[i+3:]
+			}
+			if j := strings.Index(host, "/"); j >= 0 {
+				host = host[:j]
+			}
+			if k := strings.Index(host, ":"); k >= 0 {
+				host = host[:k]
+			}
+			if host != "" {
+				selfHosts[host] = struct{}{}
+			}
+		}
+	}
 
 	// First, try to get relay URLs from admin kind 10002 events
 	for _, adm := range admins {
@@ -206,6 +237,26 @@ func (f *Follows) adminRelays() (urls []string) {
 				if n == "" {
 					continue
 				}
+				// Skip if this URL is one of our configured self relay addresses or hosts
+				if _, isSelf := selfSet[n]; isSelf {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				// Host match
+				host := n
+				if i := strings.Index(host, "://"); i >= 0 {
+					host = host[i+3:]
+				}
+				if j := strings.Index(host, "/"); j >= 0 {
+					host = host[:j]
+				}
+				if k := strings.Index(host, ":"); k >= 0 {
+					host = host[:k]
+				}
+				if _, isSelfHost := selfHosts[host]; isSelfHost {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
 				if _, ok := seen[n]; ok {
 					continue
 				}
@@ -217,13 +268,33 @@ func (f *Follows) adminRelays() (urls []string) {
 
 	// If no admin relays found, use bootstrap relays as fallback
 	if len(urls) == 0 {
-		log.I.F("no admin relays found in DB, checking bootstrap relays")
+		log.I.F("no admin relays found in DB, checking bootstrap relays and failover relays")
 		if len(f.cfg.BootstrapRelays) > 0 {
 			log.I.F("using bootstrap relays: %v", f.cfg.BootstrapRelays)
 			for _, relay := range f.cfg.BootstrapRelays {
 				n := string(normalize.URL(relay))
 				if n == "" {
 					log.W.F("invalid bootstrap relay URL: %s", relay)
+					continue
+				}
+				// Skip if this URL is one of our configured self relay addresses or hosts
+				if _, isSelf := selfSet[n]; isSelf {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				// Host match
+				host := n
+				if i := strings.Index(host, "://"); i >= 0 {
+					host = host[i+3:]
+				}
+				if j := strings.Index(host, "/"); j >= 0 {
+					host = host[:j]
+				}
+				if k := strings.Index(host, ":"); k >= 0 {
+					host = host[:k]
+				}
+				if _, isSelfHost := selfHosts[host]; isSelfHost {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
 					continue
 				}
 				if _, ok := seen[n]; ok {
@@ -233,14 +304,59 @@ func (f *Follows) adminRelays() (urls []string) {
 				urls = append(urls, n)
 			}
 		} else {
-			log.W.F("no bootstrap relays configured")
+			log.I.F("no bootstrap relays configured, using failover relays")
+		}
+
+		// If still no relays found, use hardcoded failover relays
+		// These relays will be used to fetch admin relay lists (kind 10002) and store them
+		// in the database so they're found next time
+		if len(urls) == 0 {
+			failoverRelays := []string{
+				"wss://nostr.land",
+				"wss://nostr.wine",
+				"wss://nos.lol",
+				"wss://relay.damus.io",
+			}
+			log.I.F("using failover relays: %v", failoverRelays)
+			for _, relay := range failoverRelays {
+				n := string(normalize.URL(relay))
+				if n == "" {
+					log.W.F("invalid failover relay URL: %s", relay)
+					continue
+				}
+				// Skip if this URL is one of our configured self relay addresses or hosts
+				if _, isSelf := selfSet[n]; isSelf {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				// Host match
+				host := n
+				if i := strings.Index(host, "://"); i >= 0 {
+					host = host[i+3:]
+				}
+				if j := strings.Index(host, "/"); j >= 0 {
+					host = host[:j]
+				}
+				if k := strings.Index(host, ":"); k >= 0 {
+					host = host[:k]
+				}
+				if _, isSelfHost := selfHosts[host]; isSelfHost {
+					log.D.F("follows syncer: skipping configured self relay address: %s", n)
+					continue
+				}
+				if _, ok := seen[n]; ok {
+					continue
+				}
+				seen[n] = struct{}{}
+				urls = append(urls, n)
+			}
 		}
 	}
 
 	return
 }
 
-func (f *Follows) startSubscriptions(ctx context.Context) {
+func (f *Follows) startEventSubscriptions(ctx context.Context) {
 	// build authors list: admins + follows
 	f.followsMx.RLock()
 	authors := make([][]byte, 0, len(f.admins)+len(f.follows))
@@ -257,10 +373,11 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 		log.W.F("follows syncer: no admin relays found in DB (kind 10002) and no bootstrap relays configured")
 		return
 	}
-	log.T.F(
+	log.I.F(
 		"follows syncer: subscribing to %d relays for %d authors", len(urls),
 		len(authors),
 	)
+	log.I.F("follows syncer: starting follow list fetching from relays: %v", urls)
 	for _, u := range urls {
 		u := u
 		go func() {
@@ -280,12 +397,15 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				headers.Set("Origin", "https://orly.dev")
 
 				// Use proper WebSocket dial options
-				dialOptions := &websocket.DialOptions{
-					HTTPHeader: headers,
+				dialer := websocket.Dialer{
+					HandshakeTimeout: 10 * time.Second,
 				}
 
-				c, _, err := websocket.Dial(connCtx, u, dialOptions)
+				c, resp, err := dialer.DialContext(connCtx, u, headers)
 				cancel()
+				if resp != nil {
+					resp.Body.Close()
+				}
 				if err != nil {
 					log.W.F("follows syncer: dial %s failed: %v", u, err)
 
@@ -336,11 +456,13 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				}
 				backoff = time.Second
 				log.T.F("follows syncer: successfully connected to %s", u)
+				log.I.F("follows syncer: subscribing to events from relay %s", u)
 
-				// send REQ for kind 3 (follow lists), kind 10002 (relay lists), and all events from follows
+				// send REQ for admin follow lists, relay lists, and all events from follows
 				ff := &filter.S{}
+				// Add filter for admin follow lists (kind 3) - for immediate updates
 				f1 := &filter.F{
-					Authors: tag.NewFromBytesSlice(authors...),
+					Authors: tag.NewFromBytesSlice(f.admins...),
 					Kinds:   kind.NewS(kind.New(kind.FollowList.K)),
 					Limit:   values.ToUintPointer(100),
 				}
@@ -354,103 +476,139 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 				f3 := &filter.F{
 					Authors: tag.NewFromBytesSlice(authors...),
 					Since:   oneMonthAgo,
-					Limit:   values.ToUintPointer(1000),
+					Limit:   values.ToUintPointer(500),
 				}
 				*ff = append(*ff, f1, f2, f3)
-				req := reqenvelope.NewFrom([]byte("follows-sync"), ff)
-				if err = c.Write(
-					ctx, websocket.MessageText, req.Marshal(nil),
-				); chk.E(err) {
+				// Use a subscription ID for event sync (no follow lists)
+				subID := "event-sync"
+				req := reqenvelope.NewFrom([]byte(subID), ff)
+				reqBytes := req.Marshal(nil)
+				log.T.F("follows syncer: outbound REQ to %s: %s", u, string(reqBytes))
+				c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err = c.WriteMessage(websocket.TextMessage, reqBytes); chk.E(err) {
 					log.W.F(
-						"follows syncer: failed to send REQ to %s: %v", u, err,
+						"follows syncer: failed to send event REQ to %s: %v", u, err,
 					)
-					_ = c.Close(websocket.StatusInternalError, "write failed")
+					_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "write failed"), time.Now().Add(time.Second))
 					continue
 				}
 				log.T.F(
-					"follows syncer: sent REQ to %s for kind 3, 10002, and all events (last 30 days) from followed users",
+					"follows syncer: sent event REQ to %s for admin follow lists, kind 10002, and all events (last 30 days) from followed users",
 					u,
 				)
-				// read loop
+				// read loop with keepalive
+				keepaliveTicker := time.NewTicker(30 * time.Second)
+				defer keepaliveTicker.Stop()
+
+			readLoop:
 				for {
 					select {
 					case <-ctx.Done():
-						_ = c.Close(websocket.StatusNormalClosure, "ctx done")
+						_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "ctx done"), time.Now().Add(time.Second))
 						return
-					default:
-					}
-					_, data, err := c.Read(ctx)
-					if err != nil {
-						_ = c.Close(websocket.StatusNormalClosure, "read err")
-						break
-					}
-					label, rem, err := envelopes.Identify(data)
-					if chk.E(err) {
+					case <-keepaliveTicker.C:
+						// Send ping to keep connection alive
+						c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+						if err := c.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+							log.T.F("follows syncer: ping failed for %s: %v", u, err)
+							break readLoop
+						}
+						log.T.F("follows syncer: sent ping to %s", u)
 						continue
-					}
-					switch label {
-					case eventenvelope.L:
-						res, _, err := eventenvelope.ParseResult(rem)
-						if chk.E(err) || res == nil || res.Event == nil {
+					default:
+						// Set a read timeout to avoid hanging
+						c.SetReadDeadline(time.Now().Add(60 * time.Second))
+						_, data, err := c.ReadMessage()
+						if err != nil {
+							_ = c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "read err"), time.Now().Add(time.Second))
+							break readLoop
+						}
+						label, rem, err := envelopes.Identify(data)
+						if chk.E(err) {
 							continue
 						}
-						// verify signature before saving
-						if ok, err := res.Event.Verify(); chk.T(err) || !ok {
-							continue
-						}
+						switch label {
+						case eventenvelope.L:
+							res, _, err := eventenvelope.ParseResult(rem)
+							if chk.E(err) || res == nil || res.Event == nil {
+								continue
+							}
+							// verify signature before saving
+							if ok, err := res.Event.Verify(); chk.T(err) || !ok {
+								continue
+							}
 
-						// Process events based on kind
-						switch res.Event.Kind {
-						case kind.FollowList.K:
-							log.T.F(
-								"follows syncer: received kind 3 (follow list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-							// Extract followed pubkeys from 'p' tags in kind 3 events
-							f.extractFollowedPubkeys(res.Event)
-						case kind.RelayListMetadata.K:
-							log.T.F(
-								"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-						default:
-							// Log all other events from followed users
-							log.T.F(
-								"follows syncer: received kind %d event from %s on relay %s",
-								res.Event.Kind,
-								hex.EncodeToString(res.Event.Pubkey), u,
-							)
-						}
-
-						if _, err = f.D.SaveEvent(
-							ctx, res.Event,
-						); err != nil {
-							if !strings.HasPrefix(
-								err.Error(), "blocked:",
-							) {
-								log.W.F(
-									"follows syncer: save event failed: %v",
-									err,
+							// Process events based on kind
+							switch res.Event.Kind {
+							case kind.FollowList.K:
+								// Check if this is from an admin and process immediately
+								if f.isAdminPubkey(res.Event.Pubkey) {
+									log.I.F(
+										"follows syncer: received admin follow list from %s on relay %s - processing immediately",
+										hex.EncodeToString(res.Event.Pubkey), u,
+									)
+									f.extractFollowedPubkeys(res.Event)
+								} else {
+									log.T.F(
+										"follows syncer: received follow list from non-admin %s on relay %s - ignoring",
+										hex.EncodeToString(res.Event.Pubkey), u,
+									)
+								}
+							case kind.RelayListMetadata.K:
+								log.T.F(
+									"follows syncer: received kind 10002 (relay list) event from %s on relay %s",
+									hex.EncodeToString(res.Event.Pubkey), u,
+								)
+							default:
+								// Log all other events from followed users
+								log.T.F(
+									"follows syncer: received kind %d event from %s on relay %s",
+									res.Event.Kind,
+									hex.EncodeToString(res.Event.Pubkey), u,
 								)
 							}
-							// ignore duplicates and continue
-						} else {
-							// Only dispatch if the event was newly saved (no error)
-							if f.pubs != nil {
-								go f.pubs.Deliver(res.Event)
+
+							if _, err = f.D.SaveEvent(
+								ctx, res.Event,
+							); err != nil {
+								if !strings.HasPrefix(
+									err.Error(), "blocked:",
+								) {
+									log.W.F(
+										"follows syncer: save event failed: %v",
+										err,
+									)
+								}
+								// ignore duplicates and continue
+							} else {
+								// Only dispatch if the event was newly saved (no error)
+								if f.pubs != nil {
+									go f.pubs.Deliver(res.Event)
+								}
+								// log.I.F(
+								// 	"saved new event from follows syncer: %0x",
+								// 	res.Event.ID,
+								// )
 							}
-							// log.I.F(
-							// 	"saved new event from follows syncer: %0x",
-							// 	res.Event.ID,
-							// )
+						case eoseenvelope.L:
+							log.T.F("follows syncer: received EOSE from %s, continuing persistent subscription", u)
+							// Continue the subscription for new events
+						default:
+							// ignore other labels
 						}
-					case eoseenvelope.L:
-						// ignore, continue subscription
-					default:
-						// ignore other labels
 					}
 				}
-				// loop reconnect
+				// Connection dropped, reconnect after delay
+				log.W.F("follows syncer: connection to %s dropped, will reconnect in 30 seconds", u)
+
+				// Wait before reconnecting to avoid tight reconnection loops
+				timer := time.NewTimer(30 * time.Second)
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					// Continue to reconnect
+				}
 			}
 		}()
 	}
@@ -458,6 +616,11 @@ func (f *Follows) startSubscriptions(ctx context.Context) {
 
 func (f *Follows) Syncer() {
 	log.I.F("starting follows syncer")
+
+	// Start periodic follow list fetching
+	go f.startPeriodicFollowListFetching()
+
+	// Start event subscriptions
 	go func() {
 		// start immediately if Configure already ran
 		for {
@@ -478,7 +641,7 @@ func (f *Follows) Syncer() {
 				f.subsCancel = cancel
 				innerCancel = cancel
 				log.I.F("follows syncer: (re)opening subscriptions")
-				f.startSubscriptions(ctx)
+				f.startEventSubscriptions(ctx)
 			}
 			// small sleep to avoid tight loop if updated fires rapidly
 			if innerCancel == nil {
@@ -489,6 +652,246 @@ func (f *Follows) Syncer() {
 	f.updated <- struct{}{}
 }
 
+// startPeriodicFollowListFetching starts periodic fetching of admin follow lists
+func (f *Follows) startPeriodicFollowListFetching() {
+	frequency := f.cfg.FollowListFrequency
+	if frequency == 0 {
+		frequency = time.Hour // Default to 1 hour
+	}
+
+	log.I.F("starting periodic follow list fetching every %v", frequency)
+
+	ticker := time.NewTicker(frequency)
+	defer ticker.Stop()
+
+	// Fetch immediately on startup
+	f.fetchAdminFollowLists()
+
+	for {
+		select {
+		case <-f.Ctx.Done():
+			log.D.F("periodic follow list fetching stopped due to context cancellation")
+			return
+		case <-ticker.C:
+			f.fetchAdminFollowLists()
+		}
+	}
+}
+
+// fetchAdminFollowLists fetches follow lists from admin relays
+func (f *Follows) fetchAdminFollowLists() {
+	log.I.F("follows syncer: fetching admin follow lists")
+
+	urls := f.adminRelays()
+	if len(urls) == 0 {
+		log.W.F("follows syncer: no relays available for follow list fetching (no admin relays, bootstrap relays, or failover relays)")
+		return
+	}
+
+	// build authors list: admins only (not follows)
+	f.followsMx.RLock()
+	authors := make([][]byte, len(f.admins))
+	copy(authors, f.admins)
+	f.followsMx.RUnlock()
+
+	if len(authors) == 0 {
+		log.W.F("follows syncer: no admins to fetch follow lists for")
+		return
+	}
+
+	log.I.F("follows syncer: fetching follow lists from %d relays for %d admins", len(urls), len(authors))
+
+	for _, u := range urls {
+		go f.fetchFollowListsFromRelay(u, authors)
+	}
+}
+
+// fetchFollowListsFromRelay fetches follow lists from a specific relay
+func (f *Follows) fetchFollowListsFromRelay(relayURL string, authors [][]byte) {
+	ctx, cancel := context.WithTimeout(f.Ctx, 30*time.Second)
+	defer cancel()
+
+	// Create proper headers for the WebSocket connection
+	headers := http.Header{}
+	headers.Set("User-Agent", "ORLY-Relay/0.9.2")
+	headers.Set("Origin", "https://orly.dev")
+
+	// Use proper WebSocket dial options
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+	}
+
+	c, resp, err := dialer.DialContext(ctx, relayURL, headers)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err != nil {
+		log.W.F("follows syncer: failed to connect to %s for follow list fetch: %v", relayURL, err)
+		return
+	}
+	defer c.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "follow list fetch complete"), time.Now().Add(time.Second))
+
+	log.I.F("follows syncer: fetching follow lists from relay %s", relayURL)
+
+	// Create filter for follow lists and relay lists (kind 3 and kind 10002)
+	ff := &filter.S{}
+	f1 := &filter.F{
+		Authors: tag.NewFromBytesSlice(authors...),
+		Kinds:   kind.NewS(kind.New(kind.FollowList.K)),
+		Limit:   values.ToUintPointer(100),
+	}
+	f2 := &filter.F{
+		Authors: tag.NewFromBytesSlice(authors...),
+		Kinds:   kind.NewS(kind.New(kind.RelayListMetadata.K)),
+		Limit:   values.ToUintPointer(100),
+	}
+	*ff = append(*ff, f1, f2)
+
+	// Use a specific subscription ID for follow list fetching
+	subID := "follow-lists-fetch"
+	req := reqenvelope.NewFrom([]byte(subID), ff)
+	reqBytes := req.Marshal(nil)
+	log.T.F("follows syncer: outbound REQ to %s: %s", relayURL, string(reqBytes))
+	c.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err = c.WriteMessage(websocket.TextMessage, reqBytes); chk.E(err) {
+		log.W.F("follows syncer: failed to send follow list REQ to %s: %v", relayURL, err)
+		return
+	}
+
+	log.T.F("follows syncer: sent follow list and relay list REQ to %s", relayURL)
+
+	// Collect all events before processing
+	var followListEvents []*event.E
+	var relayListEvents []*event.E
+
+	// Read events with timeout
+	timeout := time.After(10 * time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			goto processEvents
+		case <-timeout:
+			log.T.F("follows syncer: timeout reading events from %s", relayURL)
+			goto processEvents
+		default:
+		}
+
+		c.SetReadDeadline(time.Now().Add(10 * time.Second))
+		_, data, err := c.ReadMessage()
+		if err != nil {
+			log.T.F("follows syncer: error reading events from %s: %v", relayURL, err)
+			goto processEvents
+		}
+
+		label, rem, err := envelopes.Identify(data)
+		if chk.E(err) {
+			continue
+		}
+
+		switch label {
+		case eventenvelope.L:
+			res, _, err := eventenvelope.ParseResult(rem)
+			if chk.E(err) || res == nil || res.Event == nil {
+				continue
+			}
+
+			// Collect events by kind
+			switch res.Event.Kind {
+			case kind.FollowList.K:
+				log.I.F("follows syncer: received follow list from %s on relay %s",
+					hex.EncodeToString(res.Event.Pubkey), relayURL)
+				followListEvents = append(followListEvents, res.Event)
+			case kind.RelayListMetadata.K:
+				log.I.F("follows syncer: received relay list from %s on relay %s",
+					hex.EncodeToString(res.Event.Pubkey), relayURL)
+				relayListEvents = append(relayListEvents, res.Event)
+			}
+		case eoseenvelope.L:
+			log.T.F("follows syncer: end of events from %s", relayURL)
+			goto processEvents
+		default:
+			// ignore other labels
+		}
+	}
+
+processEvents:
+	// Process collected events - keep only the newest per pubkey and save to database
+	f.processCollectedEvents(relayURL, followListEvents, relayListEvents)
+}
+
+// processCollectedEvents processes the collected events, keeping only the newest per pubkey
+func (f *Follows) processCollectedEvents(relayURL string, followListEvents, relayListEvents []*event.E) {
+	// Process follow list events (kind 3) - keep newest per pubkey
+	latestFollowLists := make(map[string]*event.E)
+	for _, ev := range followListEvents {
+		pubkeyHex := hex.EncodeToString(ev.Pubkey)
+		existing, exists := latestFollowLists[pubkeyHex]
+		if !exists || ev.CreatedAt > existing.CreatedAt {
+			latestFollowLists[pubkeyHex] = ev
+		}
+	}
+
+	// Process relay list events (kind 10002) - keep newest per pubkey
+	latestRelayLists := make(map[string]*event.E)
+	for _, ev := range relayListEvents {
+		pubkeyHex := hex.EncodeToString(ev.Pubkey)
+		existing, exists := latestRelayLists[pubkeyHex]
+		if !exists || ev.CreatedAt > existing.CreatedAt {
+			latestRelayLists[pubkeyHex] = ev
+		}
+	}
+
+	// Save and process the newest events
+	savedFollowLists := 0
+	savedRelayLists := 0
+
+	// Save follow list events to database and extract follows
+	for pubkeyHex, ev := range latestFollowLists {
+		if _, err := f.D.SaveEvent(f.Ctx, ev); err != nil {
+			if !strings.HasPrefix(err.Error(), "blocked:") {
+				log.W.F("follows syncer: failed to save follow list from %s: %v", pubkeyHex, err)
+			}
+		} else {
+			savedFollowLists++
+			log.I.F("follows syncer: saved newest follow list from %s (created_at: %d) from relay %s",
+				pubkeyHex, ev.CreatedAt, relayURL)
+		}
+
+		// Extract followed pubkeys from admin follow lists
+		if f.isAdminPubkey(ev.Pubkey) {
+			log.I.F("follows syncer: processing admin follow list from %s", pubkeyHex)
+			f.extractFollowedPubkeys(ev)
+		}
+	}
+
+	// Save relay list events to database
+	for pubkeyHex, ev := range latestRelayLists {
+		if _, err := f.D.SaveEvent(f.Ctx, ev); err != nil {
+			if !strings.HasPrefix(err.Error(), "blocked:") {
+				log.W.F("follows syncer: failed to save relay list from %s: %v", pubkeyHex, err)
+			}
+		} else {
+			savedRelayLists++
+			log.I.F("follows syncer: saved newest relay list from %s (created_at: %d) from relay %s",
+				pubkeyHex, ev.CreatedAt, relayURL)
+		}
+	}
+
+	log.I.F("follows syncer: processed %d follow lists and %d relay lists from %s, saved %d follow lists and %d relay lists",
+		len(followListEvents), len(relayListEvents), relayURL, savedFollowLists, savedRelayLists)
+
+	// If we saved any relay lists, trigger a refresh of subscriptions to use the new relay lists
+	if savedRelayLists > 0 {
+		log.I.F("follows syncer: saved new relay lists, triggering subscription refresh")
+		// Signal that follows have been updated to refresh subscriptions
+		select {
+		case f.updated <- struct{}{}:
+		default:
+			// Channel might be full, that's okay
+		}
+	}
+}
+
 // GetFollowedPubkeys returns a copy of the followed pubkeys list
 func (f *Follows) GetFollowedPubkeys() [][]byte {
 	f.followsMx.RLock()
@@ -497,6 +900,19 @@ func (f *Follows) GetFollowedPubkeys() [][]byte {
 	followedPubkeys := make([][]byte, len(f.follows))
 	copy(followedPubkeys, f.follows)
 	return followedPubkeys
+}
+
+// isAdminPubkey checks if a pubkey belongs to an admin
+func (f *Follows) isAdminPubkey(pubkey []byte) bool {
+	f.followsMx.RLock()
+	defer f.followsMx.RUnlock()
+
+	for _, admin := range f.admins {
+		if utils.FastEqual(admin, pubkey) {
+			return true
+		}
+	}
+	return false
 }
 
 // extractFollowedPubkeys extracts followed pubkeys from 'p' tags in kind 3 events
@@ -511,6 +927,18 @@ func (f *Follows) extractFollowedPubkeys(event *event.E) {
 			f.AddFollow(tag.Value())
 		}
 	}
+}
+
+// AdminRelays returns the admin relay URLs
+func (f *Follows) AdminRelays() []string {
+	return f.adminRelays()
+}
+
+// SetFollowListUpdateCallback sets a callback to be called when the follow list is updated
+func (f *Follows) SetFollowListUpdateCallback(callback func()) {
+	f.followsMx.Lock()
+	defer f.followsMx.Unlock()
+	f.onFollowListUpdate = callback
 }
 
 // AddFollow appends a pubkey to the in-memory follows list if not already present
@@ -541,9 +969,12 @@ func (f *Follows) AddFollow(pub []byte) {
 			// if channel is full or not yet listened to, ignore
 		}
 	}
+	// notify external listeners (e.g., spider)
+	if f.onFollowListUpdate != nil {
+		go f.onFollowListUpdate()
+	}
 }
 
 func init() {
-	log.T.F("registering follows ACL")
 	Registry.Register(new(Follows))
 }

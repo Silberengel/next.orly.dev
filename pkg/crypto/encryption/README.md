@@ -1,1 +1,7 @@
-Code copied from https://github.com/paulmillr/nip44/tree/e7aed61aaf77240ac10c325683eed14b22e7950f/go.
+**NIP-44 implementation in Go**
+
+NIP-44 specification: https://github.com/nostr-protocol/nips/blob/master/44.md
+
+To use as library: `go get -u github.com/ekzyis/nip44`
+
+To run tests, clone repository and then run `go test`.

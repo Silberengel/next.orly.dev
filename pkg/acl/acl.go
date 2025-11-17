@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/interfaces/acl"
 	"next.orly.dev/pkg/utils/atomic"
 )
@@ -77,4 +78,22 @@ func (s *S) AddFollow(pub []byte) {
 			break
 		}
 	}
+}
+
+// CheckPolicy checks if an event is allowed by the active ACL policy
+func (s *S) CheckPolicy(ev *event.E) (allowed bool, err error) {
+	for _, i := range s.ACL {
+		if i.Type() == s.Active.Load() {
+			// Check if the ACL implementation has a CheckPolicy method
+			if policyChecker, ok := i.(interface {
+				CheckPolicy(ev *event.E) (allowed bool, err error)
+			}); ok {
+				return policyChecker.CheckPolicy(ev)
+			}
+			// If no CheckPolicy method, default to allowing
+			return true, nil
+		}
+	}
+	// If no active ACL, default to allowing
+	return true, nil
 }

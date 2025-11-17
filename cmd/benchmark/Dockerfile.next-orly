@@ -45,7 +45,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the relay
+# Build the relay (libsecp256k1 installed via make install to /usr/lib)
 RUN CGO_ENABLED=1 GOOS=linux go build -gcflags "all=-N -l" -o relay .
 
 # Create non-root user (uid 1000) for runtime in builder stage (used by analyzer)
@@ -66,6 +66,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/relay /app/relay
 
+# libsecp256k1 is already installed system-wide in the final stage via apt-get install libsecp256k1-0
+
 # Create runtime user and writable directories
 RUN useradd -u 1000 -m -s /bin/bash appuser && \
     mkdir -p /data /profiles /app && \
@@ -79,10 +81,16 @@ ENV ORLY_DATA_DIR=/data
 ENV ORLY_LISTEN=0.0.0.0
 ENV ORLY_PORT=8080
 ENV ORLY_LOG_LEVEL=off
+# Aggressive cache settings to match Badger's cost metric
+# Badger tracks ~52MB cost per key, need massive cache for good hit ratio
+# Block cache: 16GB to hold ~300 keys in cache
+# Index cache: 4GB for index lookups
+ENV ORLY_DB_BLOCK_CACHE_MB=16384
+ENV ORLY_DB_INDEX_CACHE_MB=4096
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD bash -lc "code=\$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080 || echo 000); echo \$code | grep -E '^(101|200|400|404|426)$' >/dev/null || exit 1"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/ || exit 1
 
 # Drop privileges: run as uid 1000
 USER 1000:1000

@@ -472,12 +472,28 @@ func (sm *SprocketManager) logOutput(stdout, stderr io.ReadCloser) {
 	defer stdout.Close()
 	defer stderr.Close()
 
+	// Trace-log stdout lines
 	go func() {
-		io.Copy(os.Stdout, stdout)
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+			log.T.F("sprocket stdout: %s", line)
+		}
 	}()
 
+	// Trace-log stderr lines
 	go func() {
-		io.Copy(os.Stderr, stderr)
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if line == "" {
+				continue
+			}
+			log.T.F("sprocket stderr: %s", line)
+		}
 	}()
 }
 

@@ -27,12 +27,9 @@ docker run -d \
   -v orly-relay-data:/data \
   -e ORLY_OWNERS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx \
   -e ORLY_ADMINS=npub1v30tsz9vw6ylpz63g0a702nj3xa26t3m7p5us8f2y2sd8v6cnsvq465zjx,npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z,npub1m4ny6hjqzepn4rxknuq94c2gpqzr29ufkkw7ttcxyak7v43n6vvsajc2jl \
-  -e ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io \
+  -e ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.damus.io \
   -e ORLY_RELAY_URL=wss://orly-relay.imwald.eu \
   -e ORLY_ACL_MODE=follows \
-  -e ORLY_SPIDER_MODE=follows \
-  -e ORLY_SPIDER_FREQUENCY=1h \
-  -e ORLY_SPROCKET_ENABLED=false \
   -e ORLY_SUBSCRIPTION_ENABLED=false \
   silberengel/next-orly:v0.14.2
 
@@ -290,8 +287,6 @@ The latest Orly relay includes several proxy improvements:
 # Essential for proxy setups
 ORLY_RELAY_URL=wss://your-domain.com  # Must match your public URL
 ORLY_ACL_MODE=follows                  # Enable follows-based access control
-ORLY_SPIDER_MODE=follows              # Enable content syncing from other relays
-ORLY_SPROCKET_ENABLED=true            # Enable sprocket event processing plugins
 ORLY_SUBSCRIPTION_ENABLED=false      # Disable payment requirements
 ```
 
@@ -500,8 +495,6 @@ docker logs orly-relay | grep -i "kind.*3"
 ### **Spider and ACL Features**
 
 - ✅ Follows-based access control (`ORLY_ACL_MODE=follows`)
-- ✅ Content syncing from other relays (`ORLY_SPIDER_MODE=follows`)
-- ✅ Sprocket event processing plugins (`ORLY_SPROCKET_ENABLED=true`)
 - ✅ No payment requirements (`ORLY_SUBSCRIPTION_ENABLED=false`)
 
 ### **Production Ready**

@@ -25,8 +25,11 @@ type I interface {
 	// Zero wipes the secret key to prevent memory leaks.
 	Zero()
 	// ECDH returns a shared secret derived using Elliptic Curve Diffie-Hellman on
-	// the I secret and provided pubkey.
+	// the I secret and provided pubkey. Returns the 32-byte x-coordinate of the shared point.
 	ECDH(pub []byte) (secret []byte, err error)
+	// ECDHRaw returns the raw shared secret point (x-coordinate only, 32 bytes) without hashing.
+	// This is needed for protocols like NIP-44 that do their own key derivation.
+	ECDHRaw(pub []byte) (sharedX []byte, err error)
 }
 
 // Gen is an interface for nostr BIP-340 key generation.

@@ -26,13 +26,9 @@ services:
 
       # ACL and Spider Configuration
       - ORLY_ACL_MODE=follows
-      - ORLY_SPIDER_MODE=follows
-      
-      # Sprocket Configuration
-      - ORLY_SPROCKET_ENABLED=false
 
       # Bootstrap relay URLs for initial sync
-      - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.nostr.band,wss://relay.damus.io
+      - ORLY_BOOTSTRAP_RELAYS=wss://profiles.nostr1.com,wss://purplepag.es,wss://relay.damus.io
 
       # Subscription Settings (optional)
       - ORLY_SUBSCRIPTION_ENABLED=false

@@ -12,7 +12,6 @@ import (
 
 // NewLogger creates a new badger logger.
 func NewLogger(logLevel int, label string) (l *logger) {
-	log.T.Ln("getting logger for", label)
 	l = &logger{Label: label}
 	l.Level.Store(int32(logLevel))
 	return

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"lol.mleku.dev/chk"
-	"next.orly.dev/pkg/crypto/p256k"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
@@ -25,7 +25,7 @@ func TestMultipleParameterizedReplaceableEvents(t *testing.T) {
 	defer cancel()
 	defer db.Close()
 
-	sign := new(p256k.Signer)
+	sign := p8k.MustNew()
 	if err := sign.Generate(); chk.E(err) {
 		t.Fatal(err)
 	}
@@ -146,23 +146,16 @@ func TestMultipleParameterizedReplaceableEvents(t *testing.T) {
 			Ids: tag.NewFromBytesSlice(baseEvent.ID),
 		},
 	)
-	if err == nil {
-		t.Fatalf("found base event by ID: %v", err)
+	if err != nil {
+		t.Fatalf("Failed to query for base event by ID: %v", err)
 	}
 
-	// // Verify we can still get the base event when querying by ID
-	// if len(evs) != 1 {
-	// 	t.Fatalf(
-	// 		"Expected 1 event when querying for base event by ID, got %d",
-	// 		len(evs),
-	// 	)
-	// }
-	//
-	// // Verify it's the base event
-	// if !utils.FastEqual(evs[0].ID, baseEvent.ID) {
-	// 	t.Fatalf(
-	// 		"Event ID doesn't match when querying for base event by ID. Got %x, expected %x",
-	// 		evs[0].ID, baseEvent.ID,
-	// 	)
-	// }
+	// Verify we get 1 event when querying for the base event by ID
+	// Replaced events should still be accessible by their ID
+	if len(evs) != 1 {
+		t.Fatalf(
+			"Expected 1 event when querying for replaced base event by ID, got %d",
+			len(evs),
+		)
+	}
 }

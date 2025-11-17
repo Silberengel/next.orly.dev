@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"next.orly.dev/pkg/crypto/p256k"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/envelopes/eventenvelope"
 	"next.orly.dev/pkg/encoders/event"
@@ -22,6 +21,7 @@ import (
 	"next.orly.dev/pkg/encoders/tag"
 	"next.orly.dev/pkg/encoders/timestamp"
 	"next.orly.dev/pkg/protocol/ws"
+	"next.orly.dev/pkg/interfaces/signer/p8k"
 )
 
 type BenchmarkConfig struct {
@@ -167,7 +167,11 @@ func runNetworkLoad(cfg *BenchmarkConfig) {
 			fmt.Printf("worker %d: connected to %s\n", workerID, cfg.RelayURL)
 
 			// Signer for this worker
-			var keys p256k.Signer
+			var keys *p8k.Signer
+			if keys, err = p8k.New(); err != nil {
+				fmt.Printf("worker %d: signer create failed: %v\n", workerID, err)
+				return
+			}
 			if err := keys.Generate(); err != nil {
 				fmt.Printf("worker %d: keygen failed: %v\n", workerID, err)
 				return
@@ -244,7 +248,7 @@ func runNetworkLoad(cfg *BenchmarkConfig) {
 					ev.Content = []byte(fmt.Sprintf(
 						"bench worker=%d n=%d", workerID, count,
 					))
-					if err := ev.Sign(&keys); err != nil {
+					if err := ev.Sign(keys); err != nil {
 						fmt.Printf("worker %d: sign error: %v\n", workerID, err)
 						ev.Free()
 						continue
@@ -960,9 +964,33 @@ func (b *Benchmark) generateEvents(count int) []*event.E {
 	now := timestamp.Now()
 
 	// Generate a keypair for signing all events
-	var keys p256k.Signer
+	var keys *p8k.Signer
+	var err error
+	if keys, err = p8k.New(); err != nil {
+		fmt.Printf("failed to create signer: %v\n", err)
+		return nil
+	}
 	if err := keys.Generate(); err != nil {
 		log.Fatalf("Failed to generate keys for benchmark events: %v", err)
+	}
+
+	// Define size distribution - from minimal to 500MB
+	// We'll create a logarithmic distribution to test various sizes
+	sizeBuckets := []int{
+		0,          // Minimal: empty content, no tags
+		10,         // Tiny: ~10 bytes
+		100,        // Small: ~100 bytes
+		1024,       // 1 KB
+		10 * 1024,  // 10 KB
+		50 * 1024,  // 50 KB
+		100 * 1024, // 100 KB
+		500 * 1024, // 500 KB
+		1024 * 1024,      // 1 MB
+		5 * 1024 * 1024,  // 5 MB
+		10 * 1024 * 1024, // 10 MB
+		50 * 1024 * 1024, // 50 MB
+		100 * 1024 * 1024, // 100 MB
+		500000000,  // 500 MB (500,000,000 bytes)
 	}
 
 	for i := 0; i < count; i++ {
@@ -970,27 +998,109 @@ func (b *Benchmark) generateEvents(count int) []*event.E {
 
 		ev.CreatedAt = now.I64()
 		ev.Kind = kind.TextNote.K
-		ev.Content = []byte(fmt.Sprintf(
-			"This is test event number %d with some content", i,
-		))
 
-		// Create tags using NewFromBytesSlice
-		ev.Tags = tag.NewS(
-			tag.NewFromBytesSlice([]byte("t"), []byte("benchmark")),
-			tag.NewFromBytesSlice(
-				[]byte("e"), []byte(fmt.Sprintf("ref_%d", i%50)),
-			),
-		)
+		// Distribute events across size buckets
+		bucketIndex := i % len(sizeBuckets)
+		targetSize := sizeBuckets[bucketIndex]
 
-		// Properly sign the event instead of generating fake signatures
-		if err := ev.Sign(&keys); err != nil {
+		// Generate content based on target size
+		if targetSize == 0 {
+			// Minimal event: empty content, no tags
+			ev.Content = []byte{}
+			ev.Tags = tag.NewS() // Empty tag set
+		} else if targetSize < 1024 {
+			// Small events: simple text content
+			ev.Content = []byte(fmt.Sprintf(
+				"Event %d - Size bucket: %d bytes. %s",
+				i, targetSize, strings.Repeat("x", max(0, targetSize-50)),
+			))
+			// Add minimal tags
+			ev.Tags = tag.NewS(
+				tag.NewFromBytesSlice([]byte("t"), []byte("benchmark")),
+			)
+		} else {
+			// Larger events: fill with repeated content to reach target size
+			// Account for JSON overhead (~200 bytes for event structure)
+			contentSize := targetSize - 200
+			if contentSize < 0 {
+				contentSize = targetSize
+			}
+
+			// Build content with repeated pattern
+			pattern := fmt.Sprintf("Event %d, target size %d bytes. ", i, targetSize)
+			repeatCount := contentSize / len(pattern)
+			if repeatCount < 1 {
+				repeatCount = 1
+			}
+			ev.Content = []byte(strings.Repeat(pattern, repeatCount))
+
+			// Add some tags (contributes to total size)
+			numTags := min(5, max(1, targetSize/10000)) // More tags for larger events
+			tags := make([]*tag.T, 0, numTags+1)
+			tags = append(tags, tag.NewFromBytesSlice([]byte("t"), []byte("benchmark")))
+			for j := 0; j < numTags; j++ {
+				tags = append(tags, tag.NewFromBytesSlice(
+					[]byte("e"),
+					[]byte(fmt.Sprintf("ref_%d_%d", i, j)),
+				))
+			}
+			ev.Tags = tag.NewS(tags...)
+		}
+
+		// Properly sign the event
+		if err := ev.Sign(keys); err != nil {
 			log.Fatalf("Failed to sign event %d: %v", i, err)
 		}
 
 		events[i] = ev
 	}
 
+	// Log size distribution summary
+	fmt.Printf("\nGenerated %d events with size distribution:\n", count)
+	for idx, size := range sizeBuckets {
+		eventsInBucket := count / len(sizeBuckets)
+		if idx < count%len(sizeBuckets) {
+			eventsInBucket++
+		}
+		sizeStr := formatSize(size)
+		fmt.Printf("  %s: ~%d events\n", sizeStr, eventsInBucket)
+	}
+	fmt.Println()
+
 	return events
+}
+
+// formatSize formats byte size in human-readable format
+func formatSize(bytes int) string {
+	if bytes == 0 {
+		return "Empty (0 bytes)"
+	}
+	if bytes < 1024 {
+		return fmt.Sprintf("%d bytes", bytes)
+	}
+	if bytes < 1024*1024 {
+		return fmt.Sprintf("%d KB", bytes/1024)
+	}
+	if bytes < 1024*1024*1024 {
+		return fmt.Sprintf("%d MB", bytes/(1024*1024))
+	}
+	return fmt.Sprintf("%.2f GB", float64(bytes)/(1024*1024*1024))
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// max returns the maximum of two integers
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func (b *Benchmark) GenerateReport() {

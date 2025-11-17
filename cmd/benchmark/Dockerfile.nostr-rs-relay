@@ -1,12 +1,12 @@
-FROM rust:1.81-alpine AS builder
+FROM rust:alpine AS builder
 
-RUN apk add --no-cache musl-dev sqlite-dev build-base bash perl protobuf
+RUN apk add --no-cache musl-dev sqlite-dev build-base autoconf automake libtool protobuf-dev protoc
 
 WORKDIR /build
 COPY . .
 
-# Build the relay
-RUN cargo build --release
+# Regenerate Cargo.lock if needed, then build
+RUN rm -f Cargo.lock && cargo generate-lockfile && cargo build --release
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates sqlite wget

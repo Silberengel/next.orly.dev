@@ -111,6 +111,7 @@ type RelayOption interface {
 var (
 	_ RelayOption = (WithCustomHandler)(nil)
 	_ RelayOption = (WithRequestHeader)(nil)
+	_ RelayOption = (WithNoticeHandler)(nil)
 )
 
 // WithCustomHandler must be a function that handles any relay message that couldn't be
@@ -126,6 +127,18 @@ type WithRequestHeader http.Header
 
 func (ch WithRequestHeader) ApplyRelayOption(r *Client) {
 	r.requestHeader = http.Header(ch)
+}
+
+// WithNoticeHandler must be a function that handles NOTICE messages from the relay.
+type WithNoticeHandler func(notice []byte)
+
+func (nh WithNoticeHandler) ApplyRelayOption(r *Client) {
+	r.notices = make(chan []byte, 8)
+	go func() {
+		for notice := range r.notices {
+			nh(notice)
+		}
+	}()
 }
 
 // String just returns the relay URL.
@@ -263,6 +276,7 @@ func (r *Client) ConnectWithTLS(
 			case wr := <-r.writeQueue:
 				// all write requests will go through this to prevent races
 				// log.D.F("{%s} sending %v\n", r.URL, string(wr.msg))
+				log.T.F("WS.Client: outbound message to %s: %s", r.URL, string(wr.msg))
 				if err = r.Connection.WriteMessage(
 					r.connectionContext, wr.msg,
 				); err != nil {
@@ -306,7 +320,7 @@ func (r *Client) ConnectWithTLS(
 					if r.notices != nil {
 						r.notices <- env.Message
 					} else {
-						log.E.F("NOTICE from %s: '%s'\n", r.URL, env.Message)
+						log.E.F("NOTICE from %s: '%s'", r.URL, env.Message)
 					}
 				case authenvelope.L:
 					env := authenvelope.NewChallenge()
@@ -374,14 +388,9 @@ func (r *Client) ConnectWithTLS(
 					if env, message, err = okenvelope.Parse(message); chk.E(err) {
 						continue
 					}
-					if okCallback, exist := r.okCallbacks.Load(string(env.EventID)); exist {
+					eventIDHex := hex.Enc(env.EventID)
+					if okCallback, exist := r.okCallbacks.Load(eventIDHex); exist {
 						okCallback(env.OK, env.ReasonString())
-					} else {
-						// log.I.F(
-						// 	"{%s} got an unexpected OK message for event %0x",
-						// 	r.URL,
-						// 	env.EventID,
-						// )
 					}
 				}
 			}

@@ -32,6 +32,8 @@ func (d *D) QueryForIds(c context.Context, f *filter.F) (
 	}
 	var results []*store.IdPkTs
 	var founds []*types.Uint40
+	// Pre-allocate results slice with estimated capacity to reduce reallocations
+	results = make([]*store.IdPkTs, 0, len(idxs)*100) // Estimate 100 results per index
 	// When searching, we want to count how many index ranges (search terms)
 	// matched each note. We'll track counts by serial.
 	counts := make(map[uint64]int)
@@ -53,7 +55,8 @@ func (d *D) QueryForIds(c context.Context, f *filter.F) (
 	}
 	// deduplicate in case this somehow happened (such as two or more
 	// from one tag matched, only need it once)
-	seen := make(map[uint64]struct{})
+	seen := make(map[uint64]struct{}, len(results))
+	idPkTs = make([]*store.IdPkTs, 0, len(results))
 	for _, idpk := range results {
 		if _, ok := seen[idpk.Ser]; !ok {
 			seen[idpk.Ser] = struct{}{}

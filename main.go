@@ -6,9 +6,11 @@ import (
 	"net/http"
 	pp "net/http/pprof"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/pkg/profile"
@@ -19,80 +21,75 @@ import (
 	"next.orly.dev/pkg/acl"
 	"next.orly.dev/pkg/crypto/keys"
 	"next.orly.dev/pkg/database"
+	_ "next.orly.dev/pkg/dgraph" // Import to register dgraph factory
 	"next.orly.dev/pkg/encoders/hex"
-	"next.orly.dev/pkg/spider"
+	"next.orly.dev/pkg/utils/interrupt"
 	"next.orly.dev/pkg/version"
 )
 
-// openBrowser attempts to open the specified URL in the default browser.
-// It supports multiple platforms including Linux, macOS, and Windows.
-func openBrowser(url string) {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
-	case "windows":
-		err = exec.Command(
-			"rundll32", "url.dll,FileProtocolHandler", url,
-		).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	default:
-		log.W.F("unsupported platform for opening browser: %s", runtime.GOOS)
-		return
-	}
-
-	if err != nil {
-		log.E.F("failed to open browser: %v", err)
-	} else {
-		log.I.F("opened browser to %s", url)
-	}
-}
-
 func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU() * 4)
+	runtime.GOMAXPROCS(128)
+	debug.SetGCPercent(10)
 	var err error
 	var cfg *config.C
- if cfg, err = config.New(); chk.T(err) {
- }
- log.I.F("starting %s %s", cfg.AppName, version.V)
-
- // Handle 'identity' subcommand: print relay identity secret and pubkey and exit
- if config.IdentityRequested() {
- 	ctx, cancel := context.WithCancel(context.Background())
- 	defer cancel()
- 	var db *database.D
- 	if db, err = database.New(ctx, cancel, cfg.DataDir, cfg.DBLogLevel); chk.E(err) {
- 		os.Exit(1)
- 	}
- 	defer db.Close()
- 	skb, err := db.GetOrCreateRelayIdentitySecret()
- 	if chk.E(err) {
- 		os.Exit(1)
- 	}
- 	pk, err := keys.SecretBytesToPubKeyHex(skb)
- 	if chk.E(err) {
- 		os.Exit(1)
- 	}
- 	fmt.Printf("identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk)
- 	os.Exit(0)
- }
-
- // If OpenPprofWeb is true and profiling is enabled, we need to ensure HTTP profiling is also enabled
-	if cfg.OpenPprofWeb && cfg.Pprof != "" && !cfg.PprofHTTP {
-		log.I.F("enabling HTTP pprof server to support web viewer")
-		cfg.PprofHTTP = true
+	if cfg, err = config.New(); chk.T(err) {
 	}
+	log.I.F("starting %s %s", cfg.AppName, version.V)
+
+	// Handle 'identity' subcommand: print relay identity secret and pubkey and exit
+	if config.IdentityRequested() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var db database.Database
+		if db, err = database.NewDatabase(
+			ctx, cancel, cfg.DBType, cfg.DataDir, cfg.DBLogLevel,
+		); chk.E(err) {
+			os.Exit(1)
+		}
+		defer db.Close()
+		skb, err := db.GetOrCreateRelayIdentitySecret()
+		if chk.E(err) {
+			os.Exit(1)
+		}
+		pk, err := keys.SecretBytesToPubKeyHex(skb)
+		if chk.E(err) {
+			os.Exit(1)
+		}
+		fmt.Printf(
+			"identity secret: %s\nidentity pubkey: %s\n", hex.Enc(skb), pk,
+		)
+		os.Exit(0)
+	}
+
+	// Ensure profiling is stopped on interrupts (SIGINT/SIGTERM) as well as on normal exit
+	var profileStopOnce sync.Once
+	profileStop := func() {}
 	switch cfg.Pprof {
 	case "cpu":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.CPUProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("cpu profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.CPUProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("cpu profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "memory":
 		if cfg.PprofPath != "" {
@@ -100,10 +97,26 @@ func main() {
 				profile.MemProfile, profile.MemProfileRate(32),
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("memory profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("memory profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "allocation":
 		if cfg.PprofPath != "" {
@@ -111,30 +124,78 @@ func main() {
 				profile.MemProfileAllocs, profile.MemProfileRate(32),
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("allocation profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileAllocs)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("allocation profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "heap":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.MemProfileHeap, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("heap profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MemProfileHeap)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("heap profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "mutex":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.MutexProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("mutex profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.MutexProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("mutex profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "threadcreate":
 		if cfg.PprofPath != "" {
@@ -142,51 +203,103 @@ func main() {
 				profile.ThreadcreationProfile,
 				profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("threadcreate profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.ThreadcreationProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("threadcreate profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "goroutine":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.GoroutineProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("goroutine profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.GoroutineProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("goroutine profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 	case "block":
 		if cfg.PprofPath != "" {
 			prof := profile.Start(
 				profile.BlockProfile, profile.ProfilePath(cfg.PprofPath),
 			)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("block profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		} else {
 			prof := profile.Start(profile.BlockProfile)
-			defer prof.Stop()
+			profileStop = func() {
+				profileStopOnce.Do(
+					func() {
+						prof.Stop()
+						log.I.F("block profiling stopped and flushed")
+					},
+				)
+			}
+			defer profileStop()
 		}
 
 	}
+
+	// Register a handler so profiling is stopped when an interrupt is received
+	interrupt.AddHandler(
+		func() {
+			log.I.F("interrupt received: stopping profiling")
+			profileStop()
+		},
+	)
 	ctx, cancel := context.WithCancel(context.Background())
-	var db *database.D
-	if db, err = database.New(
-		ctx, cancel, cfg.DataDir, cfg.DBLogLevel,
+	var db database.Database
+	log.I.F("initializing %s database at %s", cfg.DBType, cfg.DataDir)
+	if db, err = database.NewDatabase(
+		ctx, cancel, cfg.DBType, cfg.DataDir, cfg.DBLogLevel,
 	); chk.E(err) {
 		os.Exit(1)
 	}
+	log.I.F("%s database initialized successfully", cfg.DBType)
 	acl.Registry.Active.Store(cfg.ACLMode)
 	if err = acl.Registry.Configure(cfg, db, ctx); chk.E(err) {
 		os.Exit(1)
 	}
 	acl.Registry.Syncer()
-
-	// Initialize and start spider functionality if enabled
-	spiderCtx, spiderCancel := context.WithCancel(ctx)
-	spiderInstance := spider.New(db, cfg, spiderCtx, spiderCancel)
-	spiderInstance.Start()
-	defer spiderInstance.Stop()
 
 	// Start HTTP pprof server if enabled
 	if cfg.PprofHTTP {
@@ -217,16 +330,6 @@ func main() {
 			defer cancelShutdown()
 			_ = ppSrv.Shutdown(shutdownCtx)
 		}()
-
-		// Open the pprof web viewer if enabled
-		if cfg.OpenPprofWeb && cfg.Pprof != "" {
-			pprofURL := fmt.Sprintf("http://localhost:6060/debug/pprof/")
-			go func() {
-				// Wait a moment for the server to start
-				time.Sleep(500 * time.Millisecond)
-				openBrowser(pprofURL)
-			}()
-		}
 	}
 
 	// Start health check HTTP server if configured
@@ -277,21 +380,24 @@ func main() {
 
 	quit := app.Run(ctx, cfg, db)
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 	for {
 		select {
 		case <-sigs:
 			fmt.Printf("\r")
-			cancel()
+			log.I.F("received shutdown signal, starting graceful shutdown")
+			cancel() // This will trigger HTTP server shutdown
+			<-quit   // Wait for HTTP server to shut down
 			chk.E(db.Close())
 			log.I.F("exiting")
 			return
 		case <-quit:
+			log.I.F("application quit signal received")
 			cancel()
 			chk.E(db.Close())
 			log.I.F("exiting")
 			return
 		}
 	}
-	log.I.F("exiting")
+	// log.I.F("exiting")
 }

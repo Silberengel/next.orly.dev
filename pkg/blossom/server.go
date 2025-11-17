@@ -1,0 +1,210 @@
+package blossom
+
+import (
+	"net/http"
+	"strings"
+
+	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/database"
+)
+
+// Server provides a Blossom server implementation
+type Server struct {
+	db      *database.D
+	storage *Storage
+	acl     *acl.S
+	baseURL string
+
+	// Configuration
+	maxBlobSize      int64
+	allowedMimeTypes map[string]bool
+	requireAuth      bool
+}
+
+// Config holds configuration for the Blossom server
+type Config struct {
+	BaseURL          string
+	MaxBlobSize      int64
+	AllowedMimeTypes []string
+	RequireAuth      bool
+}
+
+// NewServer creates a new Blossom server instance
+func NewServer(db *database.D, aclRegistry *acl.S, cfg *Config) *Server {
+	if cfg == nil {
+		cfg = &Config{
+			MaxBlobSize: 100 * 1024 * 1024, // 100MB default
+			RequireAuth: false,
+		}
+	}
+
+	storage := NewStorage(db)
+
+	// Build allowed MIME types map
+	allowedMap := make(map[string]bool)
+	if len(cfg.AllowedMimeTypes) > 0 {
+		for _, mime := range cfg.AllowedMimeTypes {
+			allowedMap[mime] = true
+		}
+	}
+
+	return &Server{
+		db:               db,
+		storage:          storage,
+		acl:              aclRegistry,
+		baseURL:          cfg.BaseURL,
+		maxBlobSize:      cfg.MaxBlobSize,
+		allowedMimeTypes: allowedMap,
+		requireAuth:      cfg.RequireAuth,
+	}
+}
+
+// Handler returns an http.Handler that can be attached to a router
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set CORS headers (BUD-01 requirement)
+		s.setCORSHeaders(w, r)
+
+		// Handle preflight OPTIONS requests
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Route based on path and method
+		path := r.URL.Path
+
+		// Remove leading slash
+		path = strings.TrimPrefix(path, "/")
+
+		// Handle specific endpoints
+		switch {
+		case r.Method == http.MethodGet && path == "upload":
+			// This shouldn't happen, but handle gracefully
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+
+		case r.Method == http.MethodHead && path == "upload":
+			s.handleUploadRequirements(w, r)
+			return
+
+		case r.Method == http.MethodPut && path == "upload":
+			s.handleUpload(w, r)
+			return
+
+		case r.Method == http.MethodHead && path == "media":
+			s.handleMediaHead(w, r)
+			return
+
+		case r.Method == http.MethodPut && path == "media":
+			s.handleMediaUpload(w, r)
+			return
+
+		case r.Method == http.MethodPut && path == "mirror":
+			s.handleMirror(w, r)
+			return
+
+		case r.Method == http.MethodPut && path == "report":
+			s.handleReport(w, r)
+			return
+
+		case strings.HasPrefix(path, "list/"):
+			if r.Method == http.MethodGet {
+				s.handleListBlobs(w, r)
+				return
+			}
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+
+		case r.Method == http.MethodGet:
+			// Handle GET /<sha256>
+			s.handleGetBlob(w, r)
+			return
+
+		case r.Method == http.MethodHead:
+			// Handle HEAD /<sha256>
+			s.handleHeadBlob(w, r)
+			return
+
+		case r.Method == http.MethodDelete:
+			// Handle DELETE /<sha256>
+			s.handleDeleteBlob(w, r)
+			return
+
+		default:
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+	})
+}
+
+// setCORSHeaders sets CORS headers as required by BUD-01
+func (s *Server) setCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, PUT, DELETE")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, *")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+}
+
+// setErrorResponse sets an error response with X-Reason header (BUD-01)
+func (s *Server) setErrorResponse(w http.ResponseWriter, status int, reason string) {
+	w.Header().Set("X-Reason", reason)
+	http.Error(w, reason, status)
+}
+
+// getRemoteAddr extracts the remote address from the request
+func (s *Server) getRemoteAddr(r *http.Request) string {
+	// Check X-Forwarded-For header
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		if len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+
+	// Check X-Real-IP header
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return realIP
+	}
+
+	// Fall back to RemoteAddr
+	return r.RemoteAddr
+}
+
+// checkACL checks if the user has the required access level
+func (s *Server) checkACL(
+	pubkey []byte, remoteAddr string, requiredLevel string,
+) bool {
+	if s.acl == nil {
+		return true // No ACL configured, allow all
+	}
+
+	level := s.acl.GetAccessLevel(pubkey, remoteAddr)
+
+	// Map ACL levels to permissions
+	levelMap := map[string]int{
+		"none":  0,
+		"read":  1,
+		"write": 2,
+		"admin": 3,
+		"owner": 4,
+	}
+
+	required := levelMap[requiredLevel]
+	actual := levelMap[level]
+
+	return actual >= required
+}
+
+// getBaseURL returns the base URL, preferring request context if available
+func (s *Server) getBaseURL(r *http.Request) string {
+	type baseURLKey struct{}
+	if baseURL := r.Context().Value(baseURLKey{}); baseURL != nil {
+		if url, ok := baseURL.(string); ok && url != "" {
+			return url
+		}
+	}
+	return s.baseURL
+}

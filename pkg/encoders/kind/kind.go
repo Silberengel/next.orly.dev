@@ -73,7 +73,8 @@ var Privileged = []*K{
 	JWTBinding,
 	ApplicationSpecificData,
 	Seal,
-	PrivateDirectMessage,
+	DirectMessage,
+	FileMessage,
 }
 
 // IsPrivileged returns true if the type is the kind of message nobody else than
@@ -165,37 +166,50 @@ var (
 	// TextNote is a standard short text note of plain text a la twitter
 	TextNote = &K{1}
 	// RecommendServer is an event type that...
-	RecommendServer = &K{2}
-	RecommendRelay  = &K{2}
+	RecommendRelay = &K{2}
 	// FollowList an event containing a list of pubkeys of users that should be
 	// shown as follows in a timeline.
 	FollowList = &K{3}
 	Follows    = &K{3}
 	// EncryptedDirectMessage is an event type that...
 	EncryptedDirectMessage = &K{4}
-	// Deletion is an event type that...
-	Deletion      = &K{5}
+	// EventDeletion is an event type that...
 	EventDeletion = &K{5}
+	Deletion      = &K{5}
 	// Repost is an event type that...
 	Repost = &K{6}
 	// Reaction is an event type that...
 	Reaction = &K{7}
 	// BadgeAward is an event type
 	BadgeAward = &K{8}
+	// ChatMessage is an event type for NIP-C7 chat messages
+	ChatMessage = &K{9}
+	// GroupChatThreadedReply is deprecated
+	GroupChatThreadedReply = &K{10}
+	// Thread is an event type for NIP-7D threads
+	Thread = &K{11}
+	// GroupThreadReply is deprecated
+	GroupThreadReply = &K{12}
 	// Seal is an event that wraps a PrivateDirectMessage and is placed inside a
 	// GiftWrap or GiftWrapWithKind4
 	Seal = &K{13}
-	// PrivateDirectMessage is a nip-17 direct message with a different
+	// DirectMessage is a nip-17 direct message with a different
 	// construction. It doesn't actually appear as an event a relay might receive
 	// but only as the stringified content of a GiftWrap or GiftWrapWithKind4 inside
 	// a
-	PrivateDirectMessage = &K{14}
-	// ReadReceipt is a type of event that marks a list of tagged events (e
-	// tags) as being seen by the client, its distinctive feature is the
-	// "expiration" tag which indicates a time after which the marking expires
-	ReadReceipt = &K{15}
+	DirectMessage = &K{14}
+	// FileMessage is a NIP-17 file message
+	FileMessage = &K{15}
 	// GenericRepost is an event type that...
 	GenericRepost = &K{16}
+	// ReactionToWebsite is a reaction to a website
+	ReactionToWebsite = &K{17}
+	// Picture is an event type for NIP-68 picture-first feeds
+	Picture = &K{20}
+	// VideoEventHorizontal is for horizontal video events
+	VideoEventHorizontal = &K{34235}
+	// VideoEventVertical is for vertical video events
+	VideoEventVertical = &K{34236}
 	// ChannelCreation is an event type that...
 	ChannelCreation = &K{40}
 	// ChannelMetadata is an event type that...
@@ -257,6 +271,7 @@ var (
 	PublicChatsList       = &K{10005}
 	BlockedRelaysList     = &K{10006}
 	SearchRelaysList      = &K{10007}
+	RelayGroupConfig      = &K{10008}
 	InterestsList         = &K{10015}
 	UserEmojiList         = &K{10030}
 	DMRelaysList          = &K{10050}
@@ -338,87 +353,97 @@ var (
 
 var MapMx sync.RWMutex
 var Map = map[uint16]string{
-	ProfileMetadata.K:             "ProfileMetadata",
-	TextNote.K:                    "TextNote",
-	RecommendRelay.K:              "RecommendRelay",
-	FollowList.K:                  "FollowList",
-	EncryptedDirectMessage.K:      "EncryptedDirectMessage",
-	EventDeletion.K:               "EventDeletion",
-	Repost.K:                      "Repost",
-	Reaction.K:                    "Reaction",
-	BadgeAward.K:                  "BadgeAward",
-	ReadReceipt.K:                 "ReadReceipt",
-	GenericRepost.K:               "GenericRepost",
-	ChannelCreation.K:             "ChannelCreation",
-	ChannelMetadata.K:             "ChannelMetadata",
-	ChannelMessage.K:              "ChannelMessage",
-	ChannelHideMessage.K:          "ChannelHideMessage",
-	ChannelMuteUser.K:             "ChannelMuteUser",
-	Bid.K:                         "Bid",
-	BidConfirmation.K:             "BidConfirmation",
-	OpenTimestamps.K:              "OpenTimestamps",
-	FileMetadata.K:                "FileMetadata",
-	LiveChatMessage.K:             "LiveChatMessage",
-	ProblemTracker.K:              "ProblemTracker",
-	Reporting.K:                   "Reporting",
-	Label.K:                       "Label",
-	CommunityPostApproval.K:       "CommunityPostApproval",
-	JobRequestStart.K:             "JobRequestStart",
-	JobRequestEnd.K:               "JobRequestEnd",
-	JobResultStart.K:              "JobResultStart",
-	JobResultEnd.K:                "JobResultEnd",
-	JobFeedback.K:                 "JobFeedback",
-	ZapGoal.K:                     "ZapGoal",
-	ZapRequest.K:                  "ZapRequest",
-	Zap.K:                         "Zap",
-	Highlights.K:                  "Highlights",
-	BlockList.K:                   "BlockList",
-	PinList.K:                     "PinList",
-	RelayListMetadata.K:           "RelayListMetadata",
-	BookmarkList.K:                "BookmarkList",
-	CommunitiesList.K:             "CommunitiesList",
-	PublicChatsList.K:             "PublicChatsList",
-	BlockedRelaysList.K:           "BlockedRelaysList",
-	SearchRelaysList.K:            "SearchRelaysList",
-	InterestsList.K:               "InterestsList",
-	UserEmojiList.K:               "UserEmojiList",
-	DMRelaysList.K:                "DMRelaysList",
-	FileStorageServerList.K:       "FileStorageServerList",
-	NWCWalletServiceInfo.K:        "NWCWalletServiceInfo",
-	LightningPubRPC.K:             "LightningPubRPC",
-	ClientAuthentication.K:        "ClientAuthentication",
-	WalletRequest.K:               "WalletRequest",
-	WalletResponse.K:              "WalletResponse",
-	WalletNotificationNip4.K:      "WalletNotificationNip4",
-	WalletNotification.K:          "WalletNotification",
-	NostrConnect.K:                "NostrConnect",
-	HTTPAuth.K:                    "HTTPAuth",
-	FollowSets.K:                  "FollowSets",
-	GenericLists.K:                "GenericLists",
-	RelaySets.K:                   "RelaySets",
-	BookmarkSets.K:                "BookmarkSets",
-	CurationSets.K:                "CurationSets",
-	ProfileBadges.K:               "ProfileBadges",
-	BadgeDefinition.K:             "BadgeDefinition",
-	InterestSets.K:                "InterestSets",
-	StallDefinition.K:             "StallDefinition",
-	ProductDefinition.K:           "ProductDefinition",
-	MarketplaceUIUX.K:             "MarketplaceUIUX",
-	ProductSoldAsAuction.K:        "ProductSoldAsAuction",
-	LongFormContent.K:             "LongFormContent",
-	DraftLongFormContent.K:        "DraftLongFormContent",
-	EmojiSets.K:                   "EmojiSets",
-	ApplicationSpecificData.K:     "ApplicationSpecificData",
-	ParameterizedReplaceableEnd.K: "ParameterizedReplaceableEnd",
-	LiveEvent.K:                   "LiveEvent",
-	UserStatuses.K:                "UserStatuses",
-	ClassifiedListing.K:           "ClassifiedListing",
-	DraftClassifiedListing.K:      "DraftClassifiedListing",
-	DateBasedCalendarEvent.K:      "DateBasedCalendarEvent",
-	TimeBasedCalendarEvent.K:      "TimeBasedCalendarEvent",
-	Calendar.K:                    "Calendar",
-	CalendarEventRSVP.K:           "CalendarEventRSVP",
-	HandlerRecommendation.K:       "HandlerRecommendation",
-	HandlerInformation.K:          "HandlerInformation",
-	CommunityDefinition.K:         "CommunityDefinition",
+	ProfileMetadata.K:         "User Metadata",
+	TextNote.K:                "Short Text Note",
+	RecommendRelay.K:          "Recommend Relay",
+	FollowList.K:              "Follows",
+	EncryptedDirectMessage.K:  "Encrypted Direct Messages",
+	EventDeletion.K:           "Event Deletion Request",
+	Repost.K:                  "Repost",
+	Reaction.K:                "Reaction",
+	BadgeAward.K:              "Badge Award",
+	ChatMessage.K:             "Chat Message",
+	GroupChatThreadedReply.K:  "Group Chat Threaded Reply",
+	Thread.K:                  "Thread",
+	GroupThreadReply.K:        "Group Thread Reply",
+	Seal.K:                    "Seal",
+	DirectMessage.K:           "Direct Message",
+	FileMessage.K:             "File Message",
+	GenericRepost.K:           "Generic Repost",
+	ReactionToWebsite.K:       "Reaction to a website",
+	Picture.K:                 "Picture",
+	ChannelCreation.K:         "Channel Creation",
+	ChannelMetadata.K:         "Channel Metadata",
+	ChannelMessage.K:          "Channel Message",
+	ChannelHideMessage.K:      "Channel Hide Message",
+	ChannelMuteUser.K:         "Channel Mute User",
+	Bid.K:                     "Bid",
+	BidConfirmation.K:         "Bid Confirmation",
+	OpenTimestamps.K:          "OpenTimestamps",
+	FileMetadata.K:            "File Metadata",
+	LiveChatMessage.K:         "Live Chat Message",
+	ProblemTracker.K:          "Problem Tracker",
+	Reporting.K:               "Reporting",
+	Label.K:                   "Label",
+	CommunityPostApproval.K:   "Community Post Approval",
+	JobRequestStart.K:         "Job Request",
+	JobRequestEnd.K:           "Job Request",
+	JobResultStart.K:          "Job Result",
+	JobResultEnd.K:            "Job Result",
+	JobFeedback.K:             "Job Feedback",
+	ZapGoal.K:                 "Zap Goal",
+	ZapRequest.K:              "Zap Request",
+	Zap.K:                     "Zap",
+	Highlights.K:              "Highlights",
+	BlockList.K:               "Mute list",
+	PinList.K:                 "Pin list",
+	RelayListMetadata.K:       "Relay List Metadata",
+	BookmarkList.K:            "Bookmarks list",
+	CommunitiesList.K:         "Communities list",
+	PublicChatsList.K:         "Public Chats list",
+	BlockedRelaysList.K:       "Blocked Relays list",
+	SearchRelaysList.K:        "Search Relays list",
+	RelayGroupConfig.K:        "Relay Group Configuration",
+	InterestsList.K:           "Interests",
+	UserEmojiList.K:           "User Emoji list",
+	DMRelaysList.K:            "DM relays",
+	FileStorageServerList.K:   "File Storage Server List",
+	NWCWalletServiceInfo.K:    "Wallet Service Info",
+	LightningPubRPC.K:         "Lightning pub RPC",
+	ClientAuthentication.K:    "Client Authentication",
+	WalletRequest.K:           "Wallet Request",
+	WalletResponse.K:          "Wallet Response",
+	WalletNotificationNip4.K:  "Wallet Notification",
+	WalletNotification.K:      "Wallet Notification",
+	NostrConnect.K:            "Nostr Connect",
+	HTTPAuth.K:                "HTTP Auth",
+	FollowSets.K:              "Follow sets",
+	GenericLists.K:            "Generic lists",
+	RelaySets.K:               "Relay sets",
+	BookmarkSets.K:            "Bookmark sets",
+	CurationSets.K:            "Curation sets",
+	ProfileBadges.K:           "Profile Badges",
+	BadgeDefinition.K:         "Badge Definition",
+	InterestSets.K:            "Interest sets",
+	StallDefinition.K:         "Stall Definition",
+	ProductDefinition.K:       "Product Definition",
+	MarketplaceUIUX.K:         "Marketplace UI/UX",
+	ProductSoldAsAuction.K:    "Product sold as an auction",
+	LongFormContent.K:         "Long-form Content",
+	DraftLongFormContent.K:    "Draft Long-form Content",
+	EmojiSets.K:               "Emoji sets",
+	ApplicationSpecificData.K: "Application-specific Data",
+	LiveEvent.K:               "Live Event",
+	UserStatuses.K:            "User Statuses",
+	ClassifiedListing.K:       "Classified Listing",
+	DraftClassifiedListing.K:  "Draft Classified Listing",
+	DateBasedCalendarEvent.K:  "Date-Based Calendar Event",
+	TimeBasedCalendarEvent.K:  "Time-Based Calendar Event",
+	Calendar.K:                "Calendar",
+	CalendarEventRSVP.K:       "Calendar Event RSVP",
+	HandlerRecommendation.K:   "Handler recommendation",
+	HandlerInformation.K:      "Handler information",
+	CommunityDefinition.K:     "Community Definition",
+	VideoEventHorizontal.K:    "Video Event Horizontal",
+	VideoEventVertical.K:      "Video Event Vertical",
 }

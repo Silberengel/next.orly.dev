@@ -17,14 +17,19 @@ import (
 	"lol.mleku.dev/chk"
 	"next.orly.dev/app/config"
 	"next.orly.dev/pkg/acl"
+	"next.orly.dev/pkg/blossom"
 	"next.orly.dev/pkg/database"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
 	"next.orly.dev/pkg/encoders/hex"
 	"next.orly.dev/pkg/encoders/tag"
+	"next.orly.dev/pkg/policy"
 	"next.orly.dev/pkg/protocol/auth"
 	"next.orly.dev/pkg/protocol/httpauth"
+	"next.orly.dev/pkg/protocol/nip43"
 	"next.orly.dev/pkg/protocol/publish"
+	"next.orly.dev/pkg/spider"
+	dsync "next.orly.dev/pkg/sync"
 )
 
 type Server struct {
@@ -34,7 +39,7 @@ type Server struct {
 	publishers *publish.S
 	Admins     [][]byte
 	Owners     [][]byte
-	*database.D
+	DB         database.Database // Changed from embedded *database.D to interface field
 
 	// optional reverse proxy for dev web server
 	devProxy *httputil.ReverseProxy
@@ -45,22 +50,50 @@ type Server struct {
 
 	paymentProcessor *PaymentProcessor
 	sprocketManager  *SprocketManager
+	policyManager    *policy.P
+	spiderManager    *spider.Spider
+	syncManager      *dsync.Manager
+	relayGroupMgr    *dsync.RelayGroupManager
+	clusterManager   *dsync.ClusterManager
+	blossomServer    *blossom.Server
+	InviteManager    *nip43.InviteManager
+	cfg              *config.C
+	db               database.Database // Changed from *database.D to interface
+}
+
+// isIPBlacklisted checks if an IP address is blacklisted using the managed ACL system
+func (s *Server) isIPBlacklisted(remote string) bool {
+	// Extract IP from remote address (e.g., "192.168.1.1:12345" -> "192.168.1.1")
+	remoteIP := strings.Split(remote, ":")[0]
+
+	// Check static IP blacklist from config first
+	if len(s.Config.IPBlacklist) > 0 {
+		for _, blocked := range s.Config.IPBlacklist {
+			// Allow simple prefix matching for subnets (e.g., "192.168" matches 192.168.0.0/16)
+			if blocked != "" && strings.HasPrefix(remoteIP, blocked) {
+				return true
+			}
+		}
+	}
+
+	// Check if managed ACL is available and active
+	if s.Config.ACLMode == "managed" {
+		for _, aclInstance := range acl.Registry.ACL {
+			if aclInstance.Type() == "managed" {
+				if managed, ok := aclInstance.(*acl.Managed); ok {
+					return managed.IsIPBlocked(remoteIP)
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Set comprehensive CORS headers for proxy compatibility
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers",
-		"Origin, X-Requested-With, Content-Type, Accept, Authorization, "+
-			"X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host, X-Real-IP, "+
-			"Upgrade, Connection, Sec-WebSocket-Key, Sec-WebSocket-Version, "+
-			"Sec-WebSocket-Protocol, Sec-WebSocket-Extensions")
-	w.Header().Set("Access-Control-Allow-Credentials", "true")
-	w.Header().Set("Access-Control-Max-Age", "86400")
-
-	// Add proxy-friendly headers
-	w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+	// CORS headers should be handled by the reverse proxy (Caddy/nginx)
+	// to avoid duplicate headers. If running without a reverse proxy,
+	// uncomment the CORS configuration below or configure via environment variable.
 
 	// Handle preflight OPTIONS requests
 	if r.Method == "OPTIONS" {
@@ -133,7 +166,7 @@ func (s *Server) WebSocketURL(req *http.Request) (url string) {
 	if host == "" {
 		host = req.Host
 	}
-	return proto + "://" + host
+	return proto + "://" + strings.TrimRight(host, "/") + "/"
 }
 
 func (s *Server) DashboardURL(req *http.Request) (url string) {
@@ -202,8 +235,34 @@ func (s *Server) UserInterface() {
 	s.mux.HandleFunc("/api/sprocket/update", s.handleSprocketUpdate)
 	s.mux.HandleFunc("/api/sprocket/restart", s.handleSprocketRestart)
 	s.mux.HandleFunc("/api/sprocket/versions", s.handleSprocketVersions)
-	s.mux.HandleFunc("/api/sprocket/delete-version", s.handleSprocketDeleteVersion)
+	s.mux.HandleFunc(
+		"/api/sprocket/delete-version", s.handleSprocketDeleteVersion,
+	)
 	s.mux.HandleFunc("/api/sprocket/config", s.handleSprocketConfig)
+	// NIP-86 management endpoint
+	s.mux.HandleFunc("/api/nip86", s.handleNIP86Management)
+	// ACL mode endpoint
+	s.mux.HandleFunc("/api/acl-mode", s.handleACLMode)
+
+	// Sync endpoints for distributed synchronization
+	if s.syncManager != nil {
+		s.mux.HandleFunc("/api/sync/current", s.handleSyncCurrent)
+		s.mux.HandleFunc("/api/sync/event-ids", s.handleSyncEventIDs)
+		log.Printf("Distributed sync API enabled at /api/sync")
+	}
+
+	// Blossom blob storage API endpoint
+	if s.blossomServer != nil {
+		s.mux.HandleFunc("/blossom/", s.blossomHandler)
+		log.Printf("Blossom blob storage API enabled at /blossom")
+	}
+
+	// Cluster replication API endpoints
+	if s.clusterManager != nil {
+		s.mux.HandleFunc("/cluster/latest", s.clusterManager.HandleLatestSerial)
+		s.mux.HandleFunc("/cluster/events", s.clusterManager.HandleEventsRange)
+		log.Printf("Cluster replication API enabled at /cluster")
+	}
 }
 
 // handleFavicon serves orly-favicon.png as favicon.ico
@@ -276,7 +335,9 @@ func (s *Server) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 
 	jsonData, err := json.Marshal(response)
 	if chk.E(err) {
-		http.Error(w, "Error generating challenge", http.StatusInternalServerError)
+		http.Error(
+			w, "Error generating challenge", http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -494,7 +555,10 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	// Check permissions - require write, admin, or owner level
 	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
 	if accessLevel != "write" && accessLevel != "admin" && accessLevel != "owner" {
-		http.Error(w, "Write, admin, or owner permission required", http.StatusForbidden)
+		http.Error(
+			w, "Write, admin, or owner permission required",
+			http.StatusForbidden,
+		)
 		return
 	}
 
@@ -543,10 +607,12 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	w.Header().Set(
+		"Content-Disposition", "attachment; filename=\""+filename+"\"",
+	)
 
 	// Stream export
-	s.D.Export(s.Ctx, w, pks...)
+	s.DB.Export(s.Ctx, w, pks...)
 }
 
 // handleEventsMine returns the authenticated user's events in JSON format with pagination using NIP-98 authentication.
@@ -589,7 +655,7 @@ func (s *Server) handleEventsMine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("DEBUG: Querying events for pubkey: %s", hex.Enc(pubkey))
-	events, err := s.D.QueryEvents(s.Ctx, f)
+	events, err := s.DB.QueryEvents(s.Ctx, f)
 	if chk.E(err) {
 		log.Printf("DEBUG: QueryEvents failed: %v", err)
 		http.Error(w, "Failed to query events", http.StatusInternalServerError)
@@ -658,7 +724,9 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 	// Check permissions - require admin or owner level
 	accessLevel := acl.Registry.GetAccessLevel(pubkey, r.RemoteAddr)
 	if accessLevel != "admin" && accessLevel != "owner" {
-		http.Error(w, "Admin or owner permission required", http.StatusForbidden)
+		http.Error(
+			w, "Admin or owner permission required", http.StatusForbidden,
+		)
 		return
 	}
 
@@ -674,13 +742,13 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer file.Close()
-		s.D.Import(file)
+		s.DB.Import(file)
 	} else {
 		if r.Body == nil {
 			http.Error(w, "Empty request body", http.StatusBadRequest)
 			return
 		}
-		s.D.Import(r.Body)
+		s.DB.Import(r.Body)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -718,7 +786,9 @@ func (s *Server) handleSprocketStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jsonData, err := json.Marshal(status)
 	if chk.E(err) {
-		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		http.Error(
+			w, "Error generating response", http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -759,7 +829,10 @@ func (s *Server) handleSprocketUpdate(w http.ResponseWriter, r *http.Request) {
 
 	// Update the sprocket script
 	if err := s.sprocketManager.UpdateSprocket(string(body)); chk.E(err) {
-		http.Error(w, fmt.Sprintf("Failed to update sprocket: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w, fmt.Sprintf("Failed to update sprocket: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -794,7 +867,10 @@ func (s *Server) handleSprocketRestart(w http.ResponseWriter, r *http.Request) {
 
 	// Restart the sprocket script
 	if err := s.sprocketManager.RestartSprocket(); chk.E(err) {
-		http.Error(w, fmt.Sprintf("Failed to restart sprocket: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w, fmt.Sprintf("Failed to restart sprocket: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -803,7 +879,9 @@ func (s *Server) handleSprocketRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSprocketVersions returns all sprocket script versions
-func (s *Server) handleSprocketVersions(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSprocketVersions(
+	w http.ResponseWriter, r *http.Request,
+) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -829,14 +907,19 @@ func (s *Server) handleSprocketVersions(w http.ResponseWriter, r *http.Request) 
 
 	versions, err := s.sprocketManager.GetSprocketVersions()
 	if chk.E(err) {
-		http.Error(w, fmt.Sprintf("Failed to get sprocket versions: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w, fmt.Sprintf("Failed to get sprocket versions: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	jsonData, err := json.Marshal(versions)
 	if chk.E(err) {
-		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		http.Error(
+			w, "Error generating response", http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -844,7 +927,9 @@ func (s *Server) handleSprocketVersions(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleSprocketDeleteVersion deletes a specific sprocket version
-func (s *Server) handleSprocketDeleteVersion(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleSprocketDeleteVersion(
+	w http.ResponseWriter, r *http.Request,
+) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -890,7 +975,10 @@ func (s *Server) handleSprocketDeleteVersion(w http.ResponseWriter, r *http.Requ
 
 	// Delete the sprocket version
 	if err := s.sprocketManager.DeleteSprocketVersion(request.Filename); chk.E(err) {
-		http.Error(w, fmt.Sprintf("Failed to delete sprocket version: %v", err), http.StatusInternalServerError)
+		http.Error(
+			w, fmt.Sprintf("Failed to delete sprocket version: %v", err),
+			http.StatusInternalServerError,
+		)
 		return
 	}
 
@@ -915,9 +1003,133 @@ func (s *Server) handleSprocketConfig(w http.ResponseWriter, r *http.Request) {
 
 	jsonData, err := json.Marshal(response)
 	if chk.E(err) {
-		http.Error(w, "Error generating response", http.StatusInternalServerError)
+		http.Error(
+			w, "Error generating response", http.StatusInternalServerError,
+		)
 		return
 	}
 
 	w.Write(jsonData)
+}
+
+// handleACLMode returns the current ACL mode
+func (s *Server) handleACLMode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	response := struct {
+		ACLMode string `json:"acl_mode"`
+	}{
+		ACLMode: acl.Registry.Type(),
+	}
+
+	jsonData, err := json.Marshal(response)
+	if chk.E(err) {
+		http.Error(
+			w, "Error generating response", http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Write(jsonData)
+}
+
+// handleSyncCurrent handles requests for the current serial number
+func (s *Server) handleSyncCurrent(w http.ResponseWriter, r *http.Request) {
+	if s.syncManager == nil {
+		http.Error(
+			w, "Sync manager not initialized", http.StatusServiceUnavailable,
+		)
+		return
+	}
+
+	// Validate NIP-98 authentication and check peer authorization
+	if !s.validatePeerRequest(w, r) {
+		return
+	}
+
+	s.syncManager.HandleCurrentRequest(w, r)
+}
+
+// handleSyncEventIDs handles requests for event IDs with their serial numbers
+func (s *Server) handleSyncEventIDs(w http.ResponseWriter, r *http.Request) {
+	if s.syncManager == nil {
+		http.Error(
+			w, "Sync manager not initialized", http.StatusServiceUnavailable,
+		)
+		return
+	}
+
+	// Validate NIP-98 authentication and check peer authorization
+	if !s.validatePeerRequest(w, r) {
+		return
+	}
+
+	s.syncManager.HandleEventIDsRequest(w, r)
+}
+
+// validatePeerRequest validates NIP-98 authentication and checks if the requesting peer is authorized
+func (s *Server) validatePeerRequest(
+	w http.ResponseWriter, r *http.Request,
+) bool {
+	// Validate NIP-98 authentication
+	valid, pubkey, err := httpauth.CheckAuth(r)
+	if err != nil {
+		log.Printf("NIP-98 auth validation error: %v", err)
+		http.Error(
+			w, "Authentication validation failed", http.StatusUnauthorized,
+		)
+		return false
+	}
+	if !valid {
+		http.Error(w, "NIP-98 authentication required", http.StatusUnauthorized)
+		return false
+	}
+
+	if s.syncManager == nil {
+		log.Printf("Sync manager not available for peer validation")
+		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+		return false
+	}
+
+	// Extract the relay URL from the request (this should be in the request body)
+	// For now, we'll check against all configured peers
+	peerPubkeyHex := hex.Enc(pubkey)
+
+	// Check if this pubkey matches any of our configured peer relays' NIP-11 pubkeys
+	for _, peerURL := range s.syncManager.GetPeers() {
+		if s.syncManager.IsAuthorizedPeer(peerURL, peerPubkeyHex) {
+			// Also update ACL to grant admin access to this peer pubkey
+			s.updatePeerAdminACL(pubkey)
+			return true
+		}
+	}
+
+	log.Printf("Unauthorized sync request from pubkey: %s", peerPubkeyHex)
+	http.Error(w, "Unauthorized peer", http.StatusForbidden)
+	return false
+}
+
+// updatePeerAdminACL grants admin access to peer relay identity pubkeys
+func (s *Server) updatePeerAdminACL(peerPubkey []byte) {
+	// Find the managed ACL instance and update peer admins
+	for _, aclInstance := range acl.Registry.ACL {
+		if aclInstance.Type() == "managed" {
+			if managed, ok := aclInstance.(*acl.Managed); ok {
+				// Collect all current peer pubkeys
+				var peerPubkeys [][]byte
+				for _, peerURL := range s.syncManager.GetPeers() {
+					if pubkey, err := s.syncManager.GetPeerPubkey(peerURL); err == nil {
+						peerPubkeys = append(peerPubkeys, []byte(pubkey))
+					}
+				}
+				managed.UpdatePeerAdmins(peerPubkeys)
+				break
+			}
+		}
+	}
 }

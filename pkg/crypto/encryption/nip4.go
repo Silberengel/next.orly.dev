@@ -53,14 +53,23 @@ func DecryptNip4(content, key []byte) (msg []byte, err error) {
 			"error parsing encrypted message: no initialization vector",
 		)
 	}
-	ciphertext := make([]byte, base64.StdEncoding.EncodedLen(len(parts[0])))
-	if _, err = base64.StdEncoding.Decode(ciphertext, parts[0]); chk.E(err) {
+	ciphertextBuf := make([]byte, base64.StdEncoding.EncodedLen(len(parts[0])))
+	var ciphertextLen int
+	if ciphertextLen, err = base64.StdEncoding.Decode(ciphertextBuf, parts[0]); chk.E(err) {
 		err = errorf.E("error decoding ciphertext from base64: %w", err)
 		return
 	}
-	iv := make([]byte, base64.StdEncoding.EncodedLen(len(parts[1])))
-	if _, err = base64.StdEncoding.Decode(iv, parts[1]); chk.E(err) {
+	ciphertext := ciphertextBuf[:ciphertextLen]
+
+	ivBuf := make([]byte, base64.StdEncoding.EncodedLen(len(parts[1])))
+	var ivLen int
+	if ivLen, err = base64.StdEncoding.Decode(ivBuf, parts[1]); chk.E(err) {
 		err = errorf.E("error decoding iv from base64: %w", err)
+		return
+	}
+	iv := ivBuf[:ivLen]
+	if len(iv) != 16 {
+		err = errorf.E("invalid IV length: %d, expected 16", len(iv))
 		return
 	}
 	var block cipher.Block

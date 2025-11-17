@@ -1,6 +1,9 @@
 # This workflow will build a golang project
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
 #
+# NOTE: All builds use CGO_ENABLED=0 since p8k library uses purego (not CGO)
+#       The library dynamically loads libsecp256k1 at runtime via purego
+#
 # Release Process:
 # 1. Update the version in the pkg/version/version file (e.g. v1.2.3)
 # 2. Create and push a tag matching the version:
@@ -29,78 +32,57 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install libsecp256k1
-        run: ./scripts/ubuntu_install_libsecp256k1.sh
+      - name: Build (Pure Go + purego)
+        run: CGO_ENABLED=0 go build -v ./...
 
-      - name: Build with cgo
-        run: go build -v ./...
+      - name: Test (Pure Go + purego)
+        run: |
+          # Copy the libsecp256k1.so to root directory so tests can find it
+          cp pkg/crypto/p8k/libsecp256k1.so .
+          CGO_ENABLED=0 go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
 
-      - name: Test with cgo
-        run: go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
-      
-      - name: Set CGO off
-        run: echo "CGO_ENABLED=0" >> $GITHUB_ENV
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build
-        run: go build -v ./...
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.25'
 
-      - name: Test
-        run: go test -v $(go list ./... | xargs -n1 sh -c 'ls $0/*_test.go 1>/dev/null 2>&1 && echo $0' | grep .)
-      #  release:
-#    needs: build
-#    runs-on: ubuntu-latest
-#    permissions:
-#      contents: write
-#      packages: write
-#
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - name: Set up Go
-#        uses: actions/setup-go@v4
-#        with:
-#          go-version: '1.25'
-#
-#      - name: Install libsecp256k1
-#        run:  ./scripts/ubuntu_install_libsecp256k1.sh
-#
-#      - name: Build Release Binaries
-#        if: startsWith(github.ref, 'refs/tags/v')
-#        run: |
-#          # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
-#          VERSION=${GITHUB_REF#refs/tags/v}
-#          echo "Building release binaries for version $VERSION"
-#
-#          # Create directory for binaries
-#          mkdir -p release-binaries
-#
-#          # Build for different platforms
-#          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o release-binaries/orly-${VERSION}-linux-amd64 .
-#          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-linux-arm64 .
-#          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-darwin-amd64 .
-#          GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-darwin-arm64 .
-#          GOEXPERIMENT=greenteagc,jsonv2 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o release-binaries/orly-${VERSION}-windows-amd64.exe .
-#
-#          # Build cmd executables
-#          for cmd in lerproxy nauth nurl vainstr walletcli; do
-#            echo "Building $cmd"
-#            GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o release-binaries/${cmd}-${VERSION}-linux-amd64 ./cmd/${cmd}
-#            GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/${cmd}-${VERSION}-linux-arm64 ./cmd/${cmd}
-#            GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -o release-binaries/${cmd}-${VERSION}-darwin-amd64 ./cmd/${cmd}
-#            GOEXPERIMENT=greenteagc,jsonv2 GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -o release-binaries/${cmd}-${VERSION}-darwin-arm64 ./cmd/${cmd}
-#            GOEXPERIMENT=greenteagc,jsonv2 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o release-binaries/${cmd}-${VERSION}-windows-amd64.exe ./cmd/${cmd}
-#          done
-#
-#          # Create checksums
-#          cd release-binaries
-#          sha256sum * > SHA256SUMS.txt
-#          cd ..
-#
-#      - name: Create GitHub Release
-#        if: startsWith(github.ref, 'refs/tags/v')
-#        uses: softprops/action-gh-release@v1
-#        with:
-#          files: release-binaries/*
-#          draft: false
-#          prerelease: false
-#          generate_release_notes: true
+      - name: Build Release Binaries (Pure Go + purego)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Extract version from tag (e.g., v1.2.3 -> 1.2.3)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Building release binaries for version $VERSION (pure Go + purego)"
+
+          # Create directory for binaries
+          mkdir -p release-binaries
+
+          # Copy the pre-compiled libsecp256k1.so for Linux AMD64
+          cp pkg/crypto/p8k/libsecp256k1.so release-binaries/libsecp256k1-linux-amd64.so
+
+          # Build for Linux AMD64 (pure Go + purego dynamic loading)
+          echo "Building Linux AMD64 (pure Go + purego dynamic loading)..."
+          GOEXPERIMENT=greenteagc,jsonv2 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -ldflags "-s -w" -o release-binaries/orly-${VERSION}-linux-amd64 .
+          
+          # Create checksums
+          cd release-binaries
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-binaries/*
+          draft: false
+          prerelease: false
+          generate_release_notes: true

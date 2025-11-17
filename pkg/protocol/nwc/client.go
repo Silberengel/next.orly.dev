@@ -58,13 +58,13 @@ func (cl *Client) Request(
 		return
 	}
 
-	var content []byte
-	if content, err = encryption.Encrypt(req, cl.conversationKey); chk.E(err) {
+	var content string
+	if content, err = encryption.Encrypt(cl.conversationKey, req, nil); chk.E(err) {
 		return
 	}
 
 	ev := &event.E{
-		Content:   content,
+		Content:   []byte(content),
 		CreatedAt: time.Now().Unix(),
 		Kind:      23194,
 		Tags: tag.NewS(
@@ -111,9 +111,9 @@ func (cl *Client) Request(
 		if len(e.Content) == 0 {
 			return fmt.Errorf("empty response content")
 		}
-		var raw []byte
+		var raw string
 		if raw, err = encryption.Decrypt(
-			e.Content, cl.conversationKey,
+			cl.conversationKey, string(e.Content),
 		); chk.E(err) {
 			return fmt.Errorf(
 				"decryption failed (invalid conversation key): %w", err,
@@ -121,7 +121,7 @@ func (cl *Client) Request(
 		}
 
 		var resp map[string]any
-		if err = json.Unmarshal(raw, &resp); chk.E(err) {
+		if err = json.Unmarshal([]byte(raw), &resp); chk.E(err) {
 			return
 		}
 
@@ -235,16 +235,16 @@ func (cl *Client) processNotificationEvent(
 	ev *event.E, handler NotificationHandler,
 ) (err error) {
 	// Decrypt the notification content
-	var decrypted []byte
+	var decrypted string
 	if decrypted, err = encryption.Decrypt(
-		ev.Content, cl.conversationKey,
+		cl.conversationKey, string(ev.Content),
 	); err != nil {
 		return fmt.Errorf("failed to decrypt notification: %w", err)
 	}
 
 	// Parse the notification JSON
 	var notification map[string]any
-	if err = json.Unmarshal(decrypted, &notification); err != nil {
+	if err = json.Unmarshal([]byte(decrypted), &notification); err != nil {
 		return fmt.Errorf("failed to parse notification JSON: %w", err)
 	}
 

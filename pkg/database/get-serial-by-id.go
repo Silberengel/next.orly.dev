@@ -82,8 +82,8 @@ func (d *D) GetSerialsByIdsWithFilter(
 ) (serials map[string]*types.Uint40, err error) {
 	log.T.F("GetSerialsByIdsWithFilter: input ids count=%d", ids.Len())
 
-	// Initialize the result map
-	serials = make(map[string]*types.Uint40)
+	// Initialize the result map with estimated capacity to reduce reallocations
+	serials = make(map[string]*types.Uint40, ids.Len())
 
 	// Return early if no IDs are provided
 	if ids.Len() == 0 {

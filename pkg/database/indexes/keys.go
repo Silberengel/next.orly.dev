@@ -55,9 +55,12 @@ type I string
 func (i I) Write(w io.Writer) (n int, err error) { return w.Write([]byte(i)) }
 
 const (
-	EventPrefix        = I("evt")
-	IdPrefix           = I("eid")
-	FullIdPubkeyPrefix = I("fpc") // full id, pubkey, created at
+	EventPrefix            = I("evt")
+	SmallEventPrefix       = I("sev") // small event with inline data (<=384 bytes)
+	ReplaceableEventPrefix = I("rev") // replaceable event (kinds 0,3,10000-19999) with inline data
+	AddressableEventPrefix = I("aev") // addressable event (kinds 30000-39999) with inline data
+	IdPrefix               = I("eid")
+	FullIdPubkeyPrefix     = I("fpc") // full id, pubkey, created at
 
 	CreatedAtPrefix  = I("c--") // created at
 	KindPrefix       = I("kc-") // kind, created at
@@ -69,7 +72,14 @@ const (
 	TagPubkeyPrefix     = I("tpc") // tag, pubkey, created at
 	TagKindPubkeyPrefix = I("tkp") // tag, kind, pubkey, created at
 
-	WordPrefix      = I("wrd") // word hash, serial
+	TagLongPrefix           = I("tL-") // multi-letter tag, created at
+	TagLongKindPrefix       = I("tLk") // multi-letter tag, kind, created at
+	TagLongPubkeyPrefix     = I("tLp") // multi-letter tag, pubkey, created at
+	TagLongKindPubkeyPrefix = I("tLK") // multi-letter tag, kind, pubkey, created at
+
+	TagBookstrPrefix = I("tLb") // composite bookstr index: kind | type | book | chapter | verse | version | timestamp | serial
+
+	WordPrefix       = I("wrd") // word hash, serial
 	ExpirationPrefix = I("exp") // timestamp of expiration
 	VersionPrefix    = I("ver") // database version number, for triggering reindexes when new keys are added (policy is add-only).
 )
@@ -80,6 +90,12 @@ func Prefix(prf int) (i I) {
 	switch prf {
 	case Event:
 		return EventPrefix
+	case SmallEvent:
+		return SmallEventPrefix
+	case ReplaceableEvent:
+		return ReplaceableEventPrefix
+	case AddressableEvent:
+		return AddressableEventPrefix
 	case Id:
 		return IdPrefix
 	case FullIdPubkey:
@@ -103,6 +119,18 @@ func Prefix(prf int) (i I) {
 	case TagKindPubkey:
 		return TagKindPubkeyPrefix
 
+	case TagLong:
+		return TagLongPrefix
+	case TagLongKind:
+		return TagLongKindPrefix
+	case TagLongPubkey:
+		return TagLongPubkeyPrefix
+	case TagLongKindPubkey:
+		return TagLongKindPubkeyPrefix
+
+	case TagBookstr:
+		return TagBookstrPrefix
+
 	case Expiration:
 		return ExpirationPrefix
 	case Version:
@@ -125,6 +153,12 @@ func Identify(r io.Reader) (i int, err error) {
 	switch I(b[:]) {
 	case EventPrefix:
 		i = Event
+	case SmallEventPrefix:
+		i = SmallEvent
+	case ReplaceableEventPrefix:
+		i = ReplaceableEvent
+	case AddressableEventPrefix:
+		i = AddressableEvent
 	case IdPrefix:
 		i = Id
 	case FullIdPubkeyPrefix:
@@ -147,6 +181,18 @@ func Identify(r io.Reader) (i int, err error) {
 		i = TagPubkey
 	case TagKindPubkeyPrefix:
 		i = TagKindPubkey
+
+	case TagLongPrefix:
+		i = TagLong
+	case TagLongKindPrefix:
+		i = TagLongKind
+	case TagLongPubkeyPrefix:
+		i = TagLongPubkey
+	case TagLongKindPubkeyPrefix:
+		i = TagLongKindPubkey
+
+	case TagBookstrPrefix:
+		i = TagBookstr
 
 	case ExpirationPrefix:
 		i = Expiration
@@ -199,6 +245,53 @@ func EventEnc(ser *types.Uint40) (enc *T) {
 	return New(NewPrefix(Event), ser)
 }
 func EventDec(ser *types.Uint40) (enc *T) { return New(NewPrefix(), ser) }
+
+// SmallEvent stores events <=384 bytes with inline data to avoid double lookup.
+// This is a Reiser4-inspired optimization for small event packing.
+// 384 bytes covers: ID(32) + Pubkey(32) + Sig(64) + basic fields + small content
+//
+//	prefix|5 serial|2 size_uint16|data (variable length, max 384 bytes)
+var SmallEvent = next()
+
+func SmallEventVars() (ser *types.Uint40) { return new(types.Uint40) }
+func SmallEventEnc(ser *types.Uint40) (enc *T) {
+	return New(NewPrefix(SmallEvent), ser)
+}
+func SmallEventDec(ser *types.Uint40) (enc *T) { return New(NewPrefix(), ser) }
+
+// ReplaceableEvent stores replaceable events (kinds 0,3,10000-19999) with inline data.
+// Optimized storage for metadata events that are frequently replaced.
+// Key format enables direct lookup by pubkey+kind without additional index traversal.
+//
+//	prefix|8 pubkey_hash|2 kind|2 size_uint16|data (variable length, max 384 bytes)
+var ReplaceableEvent = next()
+
+func ReplaceableEventVars() (p *types.PubHash, ki *types.Uint16) {
+	return new(types.PubHash), new(types.Uint16)
+}
+func ReplaceableEventEnc(p *types.PubHash, ki *types.Uint16) (enc *T) {
+	return New(NewPrefix(ReplaceableEvent), p, ki)
+}
+func ReplaceableEventDec(p *types.PubHash, ki *types.Uint16) (enc *T) {
+	return New(NewPrefix(), p, ki)
+}
+
+// AddressableEvent stores parameterized replaceable events (kinds 30000-39999) with inline data.
+// Optimized storage for addressable events identified by pubkey+kind+d-tag.
+// Key format enables direct lookup without additional index traversal.
+//
+//	prefix|8 pubkey_hash|2 kind|8 dtag_hash|2 size_uint16|data (variable length, max 384 bytes)
+var AddressableEvent = next()
+
+func AddressableEventVars() (p *types.PubHash, ki *types.Uint16, d *types.Ident) {
+	return new(types.PubHash), new(types.Uint16), new(types.Ident)
+}
+func AddressableEventEnc(p *types.PubHash, ki *types.Uint16, d *types.Ident) (enc *T) {
+	return New(NewPrefix(AddressableEvent), p, ki, d)
+}
+func AddressableEventDec(p *types.PubHash, ki *types.Uint16, d *types.Ident) (enc *T) {
+	return New(NewPrefix(), p, ki, d)
+}
 
 // Id contains a truncated 8-byte hash of an event index. This is the secondary
 // key of an event, the primary key is the serial found in the Event.
@@ -414,6 +507,153 @@ func TagKindPubkeyDec(
 	ser *types.Uint40,
 ) (enc *T) {
 	return New(NewPrefix(), ki, p, k, v, ca, ser)
+}
+
+// TagLong allows searching for a multi-letter tag (e.g., "type", "book", "chapter", "verse", "version") and filter by timestamp.
+//
+//	3 prefix|8 key hash|8 value hash|8 timestamp|5 serial
+var TagLong = next()
+
+func TagLongVars() (
+	k *types.TagKeyHash, v *types.Ident, ca *types.Uint64, ser *types.Uint40,
+) {
+	return new(types.TagKeyHash), new(types.Ident), new(types.Uint64), new(types.Uint40)
+}
+func TagLongEnc(
+	k *types.TagKeyHash, v *types.Ident, ca *types.Uint64, ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(TagLong), k, v, ca, ser)
+}
+func TagLongDec(
+	k *types.TagKeyHash, v *types.Ident, ca *types.Uint64, ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(), k, v, ca, ser)
+}
+
+// TagLongKind
+//
+//	3 prefix|8 key hash|8 value hash|2 kind|8 timestamp|5 serial
+var TagLongKind = next()
+
+func TagLongKindVars() (
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, ca *types.Uint64,
+	ser *types.Uint40,
+) {
+	return new(types.TagKeyHash), new(types.Ident), new(types.Uint16), new(types.Uint64), new(types.Uint40)
+}
+func TagLongKindEnc(
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(TagLongKind), ki, k, v, ca, ser)
+}
+func TagLongKindDec(
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(), ki, k, v, ca, ser)
+}
+
+// TagLongPubkey allows searching for a pubkey, multi-letter tag and timestamp.
+//
+//	3 prefix|8 key hash|8 value hash|8 pubkey hash|8 timestamp|5 serial
+var TagLongPubkey = next()
+
+func TagLongPubkeyVars() (
+	k *types.TagKeyHash, v *types.Ident, p *types.PubHash, ca *types.Uint64,
+	ser *types.Uint40,
+) {
+	return new(types.TagKeyHash), new(types.Ident), new(types.PubHash), new(types.Uint64), new(types.Uint40)
+}
+func TagLongPubkeyEnc(
+	k *types.TagKeyHash, v *types.Ident, p *types.PubHash, ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(TagLongPubkey), p, k, v, ca, ser)
+}
+func TagLongPubkeyDec(
+	k *types.TagKeyHash, v *types.Ident, p *types.PubHash, ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(), p, k, v, ca, ser)
+}
+
+// TagLongKindPubkey
+//
+//	3 prefix|8 key hash|8 value hash|2 kind|8 pubkey hash|8 bytes timestamp|5 serial
+var TagLongKindPubkey = next()
+
+func TagLongKindPubkeyVars() (
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, p *types.PubHash,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) {
+	return new(types.TagKeyHash), new(types.Ident), new(types.Uint16), new(types.PubHash), new(types.Uint64), new(types.Uint40)
+}
+func TagLongKindPubkeyEnc(
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, p *types.PubHash,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(TagLongKindPubkey), ki, p, k, v, ca, ser)
+}
+func TagLongKindPubkeyDec(
+	k *types.TagKeyHash, v *types.Ident, ki *types.Uint16, p *types.PubHash,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(), ki, p, k, v, ca, ser)
+}
+
+// TagBookstr is a composite index for bookstr tags (type, book, chapter, verse, version)
+// This allows efficient queries that filter by multiple bookstr tags simultaneously.
+// Missing tags are represented as all zeros (sentinel value).
+//
+//	3 prefix|2 kind|8 type hash|8 book hash|8 chapter hash|8 verse hash|8 version hash|8 timestamp|5 serial
+var TagBookstr = next()
+
+func TagBookstrVars() (
+	ki *types.Uint16,
+	typeHash *types.Ident,
+	bookHash *types.Ident,
+	chapterHash *types.Ident,
+	verseHash *types.Ident,
+	versionHash *types.Ident,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) {
+	return new(types.Uint16),
+		new(types.Ident),
+		new(types.Ident),
+		new(types.Ident),
+		new(types.Ident),
+		new(types.Ident),
+		new(types.Uint64),
+		new(types.Uint40)
+}
+func TagBookstrEnc(
+	ki *types.Uint16,
+	typeHash *types.Ident,
+	bookHash *types.Ident,
+	chapterHash *types.Ident,
+	verseHash *types.Ident,
+	versionHash *types.Ident,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(TagBookstr), ki, typeHash, bookHash, chapterHash, verseHash, versionHash, ca, ser)
+}
+func TagBookstrDec(
+	ki *types.Uint16,
+	typeHash *types.Ident,
+	bookHash *types.Ident,
+	chapterHash *types.Ident,
+	verseHash *types.Ident,
+	versionHash *types.Ident,
+	ca *types.Uint64,
+	ser *types.Uint40,
+) (enc *T) {
+	return New(NewPrefix(), ki, typeHash, bookHash, chapterHash, verseHash, versionHash, ca, ser)
 }
 
 // Expiration

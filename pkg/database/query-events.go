@@ -9,7 +9,7 @@ import (
 
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
-	"next.orly.dev/pkg/crypto/sha256"
+	"github.com/minio/sha256-simd"
 	"next.orly.dev/pkg/database/indexes/types"
 	"next.orly.dev/pkg/encoders/event"
 	"next.orly.dev/pkg/encoders/filter"
@@ -38,12 +38,23 @@ func CheckExpiration(ev *event.E) (expired bool) {
 func (d *D) QueryEvents(c context.Context, f *filter.F) (
 	evs event.S, err error,
 ) {
-	return d.QueryEventsWithOptions(c, f, true)
+	return d.QueryEventsWithOptions(c, f, true, false)
 }
 
-func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool) (
+// QueryAllVersions queries events and returns all versions of replaceable events
+func (d *D) QueryAllVersions(c context.Context, f *filter.F) (
 	evs event.S, err error,
 ) {
+	return d.QueryEventsWithOptions(c, f, true, true)
+}
+
+func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDeleteEvents bool, showAllVersions bool) (
+	evs event.S, err error,
+) {
+	// Determine if we should return multiple versions of replaceable events
+	// based on the limit parameter
+	wantMultipleVersions := showAllVersions || (f.Limit != nil && *f.Limit > 1)
+
 	// if there is Ids in the query, this overrides anything else
 	var expDeletes types.Uint40s
 	var expEvs event.S
@@ -60,7 +71,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 
 		// Convert serials map to slice for batch fetch
 		var serialsSlice []*types.Uint40
-		idHexToSerial := make(map[uint64]string) // Map serial value back to original ID hex
+		serialsSlice = make([]*types.Uint40, 0, len(serials))
+		idHexToSerial := make(map[uint64]string, len(serials)) // Map serial value back to original ID hex
 		for idHex, ser := range serials {
 			serialsSlice = append(serialsSlice, ser)
 			idHexToSerial[ser.Get()] = idHex
@@ -99,7 +111,7 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 
 			// skip events that have been deleted by a proper deletion event
 			if derr := d.CheckForDeleted(ev, nil); derr != nil {
-				// log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", idHex, derr)
+				log.T.F("QueryEvents: id=%s filtered out due to deletion: %v", idHex, derr)
 				continue
 			}
 
@@ -114,6 +126,10 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				return evs[i].CreatedAt > evs[j].CreatedAt
 			},
 		)
+		// Apply limit after processing
+		if f.Limit != nil && len(evs) > int(*f.Limit) {
+			evs = evs[:*f.Limit]
+		}
 	} else {
 		// non-IDs path
 		var idPkTs []*store.IdPkTs
@@ -124,11 +140,15 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			return
 		}
 		// log.T.F("QueryEvents: QueryForIds returned %d candidates", len(idPkTs))
-		// Create a map to store the latest version of replaceable events
+		// Create a map to store versions of replaceable events
+		// If wantMultipleVersions is true, we keep multiple versions (sorted by timestamp)
+		// Otherwise, we keep only the latest
 		replaceableEvents := make(map[string]*event.E)
+		replaceableEventVersions := make(map[string]event.S) // For multiple versions
 		// Create a map to store the latest version of parameterized replaceable
 		// events
 		paramReplaceableEvents := make(map[string]map[string]*event.E)
+		paramReplaceableEventVersions := make(map[string]map[string]event.S) // For multiple versions
 		// Regular events that are not replaceable
 		var regularEvents event.S
 		// Map to track deletion events by kind and pubkey (for replaceable
@@ -140,6 +160,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 		// Map to track specific event IDs that have been deleted
 		deletedEventIds := make(map[string]bool)
 		// Query for deletion events separately if we have authors in the filter
+		// We always need to fetch deletion events to build deletion maps, even if
+		// they're not explicitly requested in the kind filter
 		if f.Authors != nil && f.Authors.Len() > 0 {
 			// Create a filter for deletion events with the same authors
 			deletionFilter := &filter.F{
@@ -159,7 +181,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 		}
 		// Prepare serials for batch fetch
 		var allSerials []*types.Uint40
-		serialToIdPk := make(map[uint64]*store.IdPkTs)
+		allSerials = make([]*types.Uint40, 0, len(idPkTs))
+		serialToIdPk := make(map[uint64]*store.IdPkTs, len(idPkTs))
 		for _, idpk := range idPkTs {
 			ser := new(types.Uint40)
 			if err = ser.Set(idpk.Ser); err != nil {
@@ -296,36 +319,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					}
 					// Mark the specific event ID as deleted
 					deletedEventIds[hex.Enc(targetEv.ID)] = true
-					// If the event is replaceable, mark it as deleted, but only
-					// for events older than this one
-					if kind.IsReplaceable(targetEv.Kind) {
-						key := hex.Enc(targetEv.Pubkey) + ":" + strconv.Itoa(int(targetEv.Kind))
-						// We will still use deletionsByKindPubkey, but we'll
-						// check timestamps in the second pass
-						deletionsByKindPubkey[key] = true
-					} else if kind.IsParameterizedReplaceable(targetEv.Kind) {
-						// For parameterized replaceable events, we need to
-						// consider the 'd' tag
-						key := hex.Enc(targetEv.Pubkey) + ":" + strconv.Itoa(int(targetEv.Kind))
-
-						// Get the 'd' tag value
-						dTag := targetEv.Tags.GetFirst([]byte("d"))
-						var dValue string
-						if dTag != nil && dTag.Len() > 1 {
-							dValue = string(dTag.Value())
-						} else {
-							// If no 'd' tag, use empty string
-							dValue = ""
-						}
-						// Initialize the inner map if it doesn't exist
-						if _, exists := deletionsByKindPubkeyDTag[key]; !exists {
-							deletionsByKindPubkeyDTag[key] = make(map[string]int64)
-						}
-						// Record the newest delete timestamp for this d-tag
-						if ts, ok := deletionsByKindPubkeyDTag[key][dValue]; !ok || ev.CreatedAt > ts {
-							deletionsByKindPubkeyDTag[key][dValue] = ev.CreatedAt
-						}
-					}
+					// Note: For e-tag deletions, we only mark the specific event as deleted,
+					// not all events of the same kind/pubkey
 				}
 			}
 		}
@@ -407,9 +402,21 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				// )
 			}
 
-			// Skip events with kind 5 (Deletion) unless explicitly requested
-			if ev.Kind == kind.Deletion.K && !includeDeleteEvents {
-				continue
+			// Skip events with kind 5 (Deletion) unless explicitly requested in the filter
+			if ev.Kind == kind.Deletion.K {
+				// Check if kind 5 (deletion) is explicitly requested in the filter
+				kind5Requested := false
+				if f.Kinds != nil && f.Kinds.Len() > 0 {
+					for i := 0; i < f.Kinds.Len(); i++ {
+						if f.Kinds.K[i].K == kind.Deletion.K {
+							kind5Requested = true
+							break
+						}
+					}
+				}
+				if !kind5Requested {
+					continue
+				}
 			}
 			// Check if this event's ID is in the filter
 			isIdInFilter := false
@@ -423,9 +430,8 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 			// Check if this specific event has been deleted
 			eventIdHex := hex.Enc(ev.ID)
-			if deletedEventIds[eventIdHex] && !isIdInFilter {
-				// Skip this event if it has been specifically deleted and is
-				// not in the filter
+			if deletedEventIds[eventIdHex] {
+				// Skip this event if it has been specifically deleted
 				continue
 			}
 			if kind.IsReplaceable(ev.Kind) {
@@ -439,8 +445,11 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				if deletionsByKindPubkey[key] && !isIdInFilter {
 					// This replaceable event has been deleted, skip it
 					continue
+				} else if wantMultipleVersions {
+					// If wantMultipleVersions is true, collect all versions
+					replaceableEventVersions[key] = append(replaceableEventVersions[key], ev)
 				} else {
-					// Normal replaceable event handling
+					// Normal replaceable event handling - keep only the newest
 					existing, exists := replaceableEvents[key]
 					if !exists || ev.CreatedAt > existing.CreatedAt {
 						replaceableEvents[key] = ev
@@ -466,25 +475,32 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 					// If there is a deletion timestamp and this event is older than the deletion,
 					// and this event is not specifically requested by ID, skip it
 					if delTs, ok := deletionMap[dValue]; ok && ev.CreatedAt < delTs && !isIdInFilter {
-						log.T.F("Debug: Event deleted by a-tag (older than delete) - skipping")
 						continue
 					}
 				}
 
-				// Initialize the inner map if it doesn't exist
-				if _, exists := paramReplaceableEvents[key]; !exists {
-					paramReplaceableEvents[key] = make(map[string]*event.E)
-				}
+				if wantMultipleVersions {
+					// If wantMultipleVersions is true, collect all versions
+					if _, exists := paramReplaceableEventVersions[key]; !exists {
+						paramReplaceableEventVersions[key] = make(map[string]event.S)
+					}
+					paramReplaceableEventVersions[key][dValue] = append(paramReplaceableEventVersions[key][dValue], ev)
+				} else {
+					// Initialize the inner map if it doesn't exist
+					if _, exists := paramReplaceableEvents[key]; !exists {
+						paramReplaceableEvents[key] = make(map[string]*event.E)
+					}
 
-				// Check if we already have an event with this 'd' tag value
-				existing, exists := paramReplaceableEvents[key][dValue]
-				// Only keep the newer event, regardless of processing order
-				if !exists {
-					// No existing event, add this one
-					paramReplaceableEvents[key][dValue] = ev
-				} else if ev.CreatedAt > existing.CreatedAt {
-					// This event is newer than the existing one, replace it
-					paramReplaceableEvents[key][dValue] = ev
+					// Check if we already have an event with this 'd' tag value
+					existing, exists := paramReplaceableEvents[key][dValue]
+					// Only keep the newer event, regardless of processing order
+					if !exists {
+						// No existing event, add this one
+						paramReplaceableEvents[key][dValue] = ev
+					} else if ev.CreatedAt > existing.CreatedAt {
+						// This event is newer than the existing one, replace it
+						paramReplaceableEvents[key][dValue] = ev
+					}
 				}
 				// If this event is older than the existing one, ignore it
 			} else {
@@ -493,14 +509,57 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 		}
 		// Add all the latest replaceable events to the result
-		for _, ev := range replaceableEvents {
-			evs = append(evs, ev)
+		if wantMultipleVersions {
+			// Add all versions (sorted by timestamp, newest first)
+			for key, versions := range replaceableEventVersions {
+				// Sort versions by timestamp (newest first)
+				sort.Slice(versions, func(i, j int) bool {
+					return versions[i].CreatedAt > versions[j].CreatedAt
+				})
+				// Add versions up to the limit
+				limit := len(versions)
+				if f.Limit != nil && int(*f.Limit) < limit {
+					limit = int(*f.Limit)
+				}
+				for i := 0; i < limit && i < len(versions); i++ {
+					evs = append(evs, versions[i])
+				}
+				_ = key // Use key to avoid unused variable warning
+			}
+		} else {
+			// Add only the newest version of each replaceable event
+			for _, ev := range replaceableEvents {
+				evs = append(evs, ev)
+			}
 		}
 
 		// Add all the latest parameterized replaceable events to the result
-		for _, innerMap := range paramReplaceableEvents {
-			for _, ev := range innerMap {
-				evs = append(evs, ev)
+		if wantMultipleVersions {
+			// Add all versions (sorted by timestamp, newest first)
+			for key, dTagMap := range paramReplaceableEventVersions {
+				for dTag, versions := range dTagMap {
+					// Sort versions by timestamp (newest first)
+					sort.Slice(versions, func(i, j int) bool {
+						return versions[i].CreatedAt > versions[j].CreatedAt
+					})
+					// Add versions up to the limit
+					limit := len(versions)
+					if f.Limit != nil && int(*f.Limit) < limit {
+						limit = int(*f.Limit)
+					}
+					for i := 0; i < limit && i < len(versions); i++ {
+						evs = append(evs, versions[i])
+					}
+					_ = key  // Use key to avoid unused variable warning
+					_ = dTag // Use dTag to avoid unused variable warning
+				}
+			}
+		} else {
+			// Add only the newest version of each parameterized replaceable event
+			for _, innerMap := range paramReplaceableEvents {
+				for _, ev := range innerMap {
+					evs = append(evs, ev)
+				}
 			}
 		}
 		// Add all regular events to the result
@@ -511,6 +570,10 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 				return evs[i].CreatedAt > evs[j].CreatedAt
 			},
 		)
+		// Apply limit after processing replaceable/addressable events
+		if f.Limit != nil && len(evs) > int(*f.Limit) {
+			evs = evs[:*f.Limit]
+		}
 		// delete the expired events in a background thread
 		go func() {
 			for i, ser := range expDeletes {
@@ -520,6 +583,7 @@ func (d *D) QueryEventsWithOptions(c context.Context, f *filter.F, includeDelete
 			}
 		}()
 	}
+
 	return
 }
 
@@ -536,7 +600,7 @@ func (d *D) QueryDeleteEventsByTargetId(c context.Context, targetEventId []byte)
 	}
 
 	// Query for the delete events
-	if evs, err = d.QueryEventsWithOptions(c, f, true); chk.E(err) {
+	if evs, err = d.QueryEventsWithOptions(c, f, true, false); chk.E(err) {
 		return
 	}
 

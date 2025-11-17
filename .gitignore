@@ -76,7 +76,6 @@ cmd/benchmark/data
 !*.css
 !*.ts
 !*.html
-!contrib/stella/Dockerfile
 !*.lock
 !*.nix
 !license
@@ -88,18 +87,25 @@ cmd/benchmark/data
 !.gitignore
 !version
 !out.jsonl
-!contrib/stella/Dockerfile
 !strfry.conf
 !config.toml
-!contrib/stella/.dockerignore
 !*.jsx
 !*.tsx
-!app/web/dist
-!/app/web/dist
-!/app/web/dist/*
-!/app/web/dist/**
 !bun.lock
 !*.svelte
+!.github/**
+!.github/workflows/**
+!app/web/dist/**
+!app/web/dist/*.js
+!app/web/dist/*.js.map
+!app/web/dist/*.css
+!app/web/dist/*.html
+!app/web/dist/*.ico
+!app/web/dist/*.png
+!app/web/dist/*.svg
+!Dockerfile
+!.dockerignore
+!libsecp256k1.so
 # ...even if they are in subdirectories
 !*/
 /blocklist.json
@@ -122,4 +128,11 @@ pkg/database/testrealy
 /.idea/.name
 /ctxproxy.config.yml
 cmd/benchmark/external/**
-app/web/dist/**
+private*
+pkg/protocol/directory-client/node_modules
+
+# Build outputs
+build/orly-*
+build/libsecp256k1-*
+build/SHA256SUMS-*
+Dockerfile

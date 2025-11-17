@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/minio/sha256-simd"
 	"github.com/templexxx/xhex"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/errorf"
-	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/crypto/ec/schnorr"
-	"next.orly.dev/pkg/crypto/sha256"
 	"next.orly.dev/pkg/encoders/ints"
 	"next.orly.dev/pkg/encoders/kind"
 	"next.orly.dev/pkg/encoders/tag"
@@ -24,9 +23,6 @@ import (
 // encode <, >, and & characters due to legacy bullcrap in the encoding/json
 // library. Either call MarshalJSON directly or use a json.Encoder with html
 // escaping disabled.
-//
-// Or import "next.orly.dev/pkg/encoders/json" and use json.Marshal which is the
-// same as go 1.25 json v1 except with this one stupidity removed.
 type E struct {
 
 	// ID is the SHA256 hash of the canonical encoding of the event in binary
@@ -89,7 +85,7 @@ func (ev *E) Clone() *E {
 		CreatedAt: ev.CreatedAt,
 		Kind:      ev.Kind,
 	}
-	
+
 	// Deep copy all byte slices with independent memory
 	if ev.ID != nil {
 		clone.ID = make([]byte, len(ev.ID))
@@ -107,7 +103,7 @@ func (ev *E) Clone() *E {
 		clone.Sig = make([]byte, len(ev.Sig))
 		copy(clone.Sig, ev.Sig)
 	}
-	
+
 	// Deep copy tags
 	if ev.Tags != nil {
 		clone.Tags = tag.NewS()
@@ -124,7 +120,7 @@ func (ev *E) Clone() *E {
 			}
 		}
 	}
-	
+
 	return clone
 }
 
@@ -145,17 +141,27 @@ func (ev *E) EstimateSize() (size int) {
 
 func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = dst
+	// Pre-allocate buffer if nil to reduce reallocations
+	if b == nil {
+		estimatedSize := ev.EstimateSize()
+		// Add overhead for JSON structure (keys, quotes, commas, etc.)
+		estimatedSize += 100
+		b = make([]byte, 0, estimatedSize)
+	}
 	b = append(b, '{')
 	b = append(b, '"')
 	b = append(b, jId...)
 	b = append(b, `":"`...)
+	// Pre-allocate hex encoding space
+	hexStart := len(b)
 	b = append(b, make([]byte, 2*sha256.Size)...)
-	xhex.Encode(b[len(b)-2*sha256.Size:], ev.ID)
+	xhex.Encode(b[hexStart:], ev.ID)
 	b = append(b, `","`...)
 	b = append(b, jPubkey...)
 	b = append(b, `":"`...)
-	b = b[:len(b)+2*schnorr.PubKeyBytesLen]
-	xhex.Encode(b[len(b)-2*schnorr.PubKeyBytesLen:], ev.Pubkey)
+	hexStart = len(b)
+	b = append(b, make([]byte, 2*schnorr.PubKeyBytesLen)...)
+	xhex.Encode(b[hexStart:], ev.Pubkey)
 	b = append(b, `","`...)
 	b = append(b, jCreatedAt...)
 	b = append(b, `":`...)
@@ -180,8 +186,9 @@ func (ev *E) Marshal(dst []byte) (b []byte) {
 	b = append(b, `","`...)
 	b = append(b, jSig...)
 	b = append(b, `":"`...)
+	hexStart = len(b)
 	b = append(b, make([]byte, 2*schnorr.SignatureSize)...)
-	xhex.Encode(b[len(b)-2*schnorr.SignatureSize:], ev.Sig)
+	xhex.Encode(b[hexStart:], ev.Sig)
 	b = append(b, `"}`...)
 	return
 }
@@ -378,7 +385,7 @@ AfterClose:
 	return
 invalid:
 	err = fmt.Errorf(
-		"invalid key,\n'%s'\n'%s'\n'%s'", string(b), string(b[:len(b)]),
+		"invalid key,\n'%s'\n'%s'\n'%s'", string(b), string(b[:]),
 		string(b),
 	)
 	return
@@ -391,7 +398,7 @@ eof:
 //
 // Call ev.Free() to return the provided buffer to the bufpool afterwards.
 func (ev *E) UnmarshalJSON(b []byte) (err error) {
-	log.I.F("UnmarshalJSON: '%s'", b)
+	// log.I.F("UnmarshalJSON: '%s'", b)
 	_, err = ev.Unmarshal(b)
 	return
 }

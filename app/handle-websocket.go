@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coder/websocket"
+	"github.com/gorilla/websocket"
 	"lol.mleku.dev/chk"
 	"lol.mleku.dev/log"
 	"next.orly.dev/pkg/encoders/envelopes/authenvelope"
 	"next.orly.dev/pkg/encoders/hex"
+	"next.orly.dev/pkg/protocol/publish"
 	"next.orly.dev/pkg/utils/units"
 )
 
@@ -20,21 +21,19 @@ const (
 	DefaultPongWait       = 60 * time.Second
 	DefaultPingWait       = DefaultPongWait / 2
 	DefaultWriteTimeout   = 3 * time.Second
-	DefaultMaxMessageSize = 100 * units.Mb
-
-	// CloseMessage denotes a close control message. The optional message
-	// payload contains a numeric code and text. Use the FormatCloseMessage
-	// function to format a close message payload.
-	CloseMessage = 8
-
-	// PingMessage denotes a ping control message. The optional message payload
-	// is UTF-8 encoded text.
-	PingMessage = 9
-
-	// PongMessage denotes a pong control message. The optional message payload
-	// is UTF-8 encoded text.
-	PongMessage = 10
+	DefaultMaxMessageSize = 512000 // Match khatru's MaxMessageSize
+	// ClientMessageSizeLimit is the maximum message size that clients can handle
+	// This is set to 100MB to allow large messages
+	ClientMessageSizeLimit = 100 * 1024 * 1024 // 100MB
 )
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for proxy compatibility
+	},
+}
 
 func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 	remote := GetRemoteFromReq(r)
@@ -53,20 +52,18 @@ func (s *Server) HandleWebsocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 whitelist:
+	// Create an independent context for this connection
+	// This context will be cancelled when the connection closes or server shuts down
 	ctx, cancel := context.WithCancel(s.Ctx)
 	defer cancel()
 	var err error
 	var conn *websocket.Conn
-	// Configure WebSocket accept options for proxy compatibility
-	acceptOptions := &websocket.AcceptOptions{
-		OriginPatterns: []string{"*"}, // Allow all origins for proxy compatibility
-		// Don't check origin when behind a proxy - let the proxy handle it
-		InsecureSkipVerify: true,
-		// Try to set a higher compression threshold to allow larger messages
-		CompressionMode: websocket.CompressionDisabled,
-	}
 
-	if conn, err = websocket.Accept(w, r, acceptOptions); chk.E(err) {
+	// Configure upgrader for this connection
+	upgrader.ReadBufferSize = int(DefaultMaxMessageSize)
+	upgrader.WriteBufferSize = int(DefaultMaxMessageSize)
+
+	if conn, err = upgrader.Upgrade(w, r, nil); chk.E(err) {
 		log.E.F("websocket accept failed from %s: %v", remote, err)
 		return
 	}
@@ -75,14 +72,48 @@ whitelist:
 	// Set read limit immediately after connection is established
 	conn.SetReadLimit(DefaultMaxMessageSize)
 	log.D.F("set read limit to %d bytes (%d MB) for %s", DefaultMaxMessageSize, DefaultMaxMessageSize/units.Mb, remote)
-	defer conn.CloseNow()
+
+	// Set initial read deadline - pong handler will extend it when pongs are received
+	conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
+
+	// Add pong handler to extend read deadline when client responds to pings
+	conn.SetPongHandler(func(string) error {
+		log.T.F("received PONG from %s, extending read deadline", remote)
+		return conn.SetReadDeadline(time.Now().Add(DefaultPongWait))
+	})
+
+	defer conn.Close()
 	listener := &Listener{
-		ctx:       ctx,
-		Server:    s,
-		conn:      conn,
-		remote:    remote,
-		req:       r,
-		startTime: time.Now(),
+		ctx:            ctx,
+		cancel:         cancel,
+		Server:         s,
+		conn:           conn,
+		remote:         remote,
+		req:            r,
+		startTime:      time.Now(),
+		writeChan:      make(chan publish.WriteRequest, 100), // Buffered channel for writes
+		writeDone:      make(chan struct{}),
+		messageQueue:   make(chan messageRequest, 100), // Buffered channel for message processing
+		processingDone: make(chan struct{}),
+		subscriptions:  make(map[string]context.CancelFunc),
+	}
+
+	// Start write worker goroutine
+	go listener.writeWorker()
+
+	// Start message processor goroutine
+	go listener.messageProcessor()
+
+	// Register write channel with publisher
+	if socketPub := listener.publishers.GetSocketPublisher(); socketPub != nil {
+		socketPub.SetWriteChan(conn, listener.writeChan)
+	}
+
+	// Check for blacklisted IPs
+	listener.isBlacklisted = s.isIPBlacklisted(remote)
+	if listener.isBlacklisted {
+		log.W.F("detected blacklisted IP %s, marking connection for timeout", remote)
+		listener.blacklistTimeout = time.Now().Add(time.Minute) // Timeout after 1 minute
 	}
 	chal := make([]byte, 32)
 	rand.Read(chal)
@@ -97,24 +128,38 @@ whitelist:
 		log.D.F("AUTH challenge sent successfully to %s", remote)
 	}
 	ticker := time.NewTicker(DefaultPingWait)
-	go s.Pinger(ctx, conn, ticker, cancel)
+	// Don't pass cancel to Pinger - it should not be able to cancel the connection context
+	go s.Pinger(ctx, listener, ticker)
 	defer func() {
 		log.D.F("closing websocket connection from %s", remote)
+
+		// Cancel all active subscriptions first
+		listener.subscriptionsMu.Lock()
+		for subID, cancelFunc := range listener.subscriptions {
+			log.D.F("cancelling subscription %s for %s", subID, remote)
+			cancelFunc()
+		}
+		listener.subscriptions = nil
+		listener.subscriptionsMu.Unlock()
 
 		// Cancel context and stop pinger
 		cancel()
 		ticker.Stop()
 
-		// Cancel all subscriptions for this connection
-		log.D.F("cancelling subscriptions for %s", remote)
-		listener.publishers.Receive(&W{Cancel: true})
+		// Cancel all subscriptions for this connection at publisher level
+		log.D.F("removing subscriptions from publisher for %s", remote)
+		listener.publishers.Receive(&W{
+			Cancel: true,
+			Conn:   listener.conn,
+			remote: listener.remote,
+		})
 
 		// Log detailed connection statistics
 		dur := time.Since(listener.startTime)
 		log.D.F(
-			"ws connection closed %s: msgs=%d, REQs=%d, EVENTs=%d, duration=%v",
+			"ws connection closed %s: msgs=%d, REQs=%d, EVENTs=%d, dropped=%d, duration=%v",
 			remote, listener.msgCount, listener.reqCount, listener.eventCount,
-			dur,
+			listener.DroppedMessages(), dur,
 		)
 
 		// Log any remaining connection state
@@ -123,6 +168,22 @@ whitelist:
 		} else {
 			log.D.F("ws connection %s was not authenticated", remote)
 		}
+
+		// Close message queue to signal processor to exit
+		close(listener.messageQueue)
+		// Wait for message processor to finish
+		<-listener.processingDone
+
+		// Wait for all spawned message handlers to complete
+		// This is critical to prevent "send on closed channel" panics
+		log.D.F("ws->%s waiting for message handlers to complete", remote)
+		listener.handlerWg.Wait()
+		log.D.F("ws->%s all message handlers completed", remote)
+
+		// Close write channel to signal worker to exit
+		close(listener.writeChan)
+		// Wait for write worker to finish
+		<-listener.writeDone
 	}()
 	for {
 		select {
@@ -130,79 +191,48 @@ whitelist:
 			return
 		default:
 		}
-		var typ websocket.MessageType
+
+		// Check if blacklisted connection has timed out
+		if listener.isBlacklisted && time.Now().After(listener.blacklistTimeout) {
+			log.W.F("blacklisted IP %s timeout reached, closing connection", remote)
+			return
+		}
+
+		var typ int
 		var msg []byte
 		log.T.F("waiting for message from %s", remote)
 
-		// Block waiting for message; rely on pings and context cancellation to detect dead peers
-		typ, msg, err = conn.Read(ctx)
-
-		if err != nil {
-			if strings.Contains(
-				err.Error(), "use of closed network connection",
-			) {
-				return
-			}
-			// Handle EOF errors gracefully - these occur when client closes connection
-			// or sends incomplete/malformed WebSocket frames
-			if strings.Contains(err.Error(), "EOF") ||
-				strings.Contains(err.Error(), "failed to read frame header") {
-				log.T.F("connection from %s closed: %v", remote, err)
-				return
-			}
-			// Handle message too big errors specifically
-			if strings.Contains(err.Error(), "MessageTooBig") ||
-				strings.Contains(err.Error(), "read limited at") {
-				log.D.F("client %s hit message size limit: %v", remote, err)
-				// Don't log this as an error since it's a client-side limit
-				// Just close the connection gracefully
-				return
-			}
-			status := websocket.CloseStatus(err)
-			switch status {
-			case websocket.StatusNormalClosure,
-				websocket.StatusGoingAway,
-				websocket.StatusNoStatusRcvd,
-				websocket.StatusAbnormalClosure,
-				websocket.StatusProtocolError:
-				log.T.F(
-					"connection from %s closed with status: %v", remote, status,
-				)
-			case websocket.StatusMessageTooBig:
-				log.D.F("client %s sent message too big: %v", remote, err)
-			default:
-				log.E.F("unexpected close error from %s: %v", remote, err)
-			}
+		// Don't set read deadline here - it's set initially and extended by pong handler
+		// This prevents premature timeouts on idle connections with active subscriptions
+		if ctx.Err() != nil {
 			return
 		}
-		if typ == PingMessage {
+
+		// Block waiting for message; rely on pings and context cancellation to detect dead peers
+		// The read deadline is managed by the pong handler which extends it when pongs are received
+		typ, msg, err = conn.ReadMessage()
+
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(
+				err,
+				websocket.CloseNormalClosure,    // 1000
+				websocket.CloseGoingAway,        // 1001
+				websocket.CloseNoStatusReceived, // 1005
+				websocket.CloseAbnormalClosure,  // 1006
+				4537,                            // some client seems to send many of these
+			) {
+				log.I.F("websocket connection closed from %s: %v", remote, err)
+			}
+			cancel() // Cancel context like khatru does
+			return
+		}
+		if typ == websocket.PingMessage {
 			log.D.F("received PING from %s, sending PONG", remote)
-			// Create a write context with timeout for pong response
-			writeCtx, writeCancel := context.WithTimeout(
-				ctx, DefaultWriteTimeout,
-			)
-			pongStart := time.Now()
-			if err = conn.Write(writeCtx, PongMessage, msg); chk.E(err) {
-				pongDuration := time.Since(pongStart)
-				log.E.F(
-					"failed to send PONG to %s after %v: %v", remote,
-					pongDuration, err,
-				)
-				if writeCtx.Err() != nil {
-					log.E.F(
-						"PONG write timeout to %s after %v (limit=%v)", remote,
-						pongDuration, DefaultWriteTimeout,
-					)
-				}
-				writeCancel()
+			// Send pong directly (like khatru does)
+			if err = conn.WriteMessage(websocket.PongMessage, nil); err != nil {
+				log.E.F("failed to send PONG to %s: %v", remote, err)
 				return
 			}
-			pongDuration := time.Since(pongStart)
-			log.D.F("sent PONG to %s successfully in %v", remote, pongDuration)
-			if pongDuration > time.Millisecond*50 {
-				log.D.F("SLOW PONG to %s: %v (>50ms)", remote, pongDuration)
-			}
-			writeCancel()
 			continue
 		}
 		// Log message size for debugging
@@ -210,61 +240,43 @@ whitelist:
 			log.D.F("received large message from %s: %d bytes", remote, len(msg))
 		}
 		// log.T.F("received message from %s: %s", remote, string(msg))
-		listener.HandleMessage(msg, remote)
+
+		// Queue message for asynchronous processing
+		if !listener.QueueMessage(msg, remote) {
+			log.W.F("ws->%s message queue full, dropping message (capacity=%d)", remote, cap(listener.messageQueue))
+		}
 	}
 }
 
 func (s *Server) Pinger(
-	ctx context.Context, conn *websocket.Conn, ticker *time.Ticker,
-	cancel context.CancelFunc,
+	ctx context.Context, listener *Listener, ticker *time.Ticker,
 ) {
 	defer func() {
 		log.D.F("pinger shutting down")
-		cancel()
 		ticker.Stop()
+		// Recover from panic if channel is closed
+		if r := recover(); r != nil {
+			log.D.F("pinger recovered from panic (channel likely closed): %v", r)
+		}
 	}()
-	var err error
 	pingCount := 0
 	for {
 		select {
-		case <-ticker.C:
-			pingCount++
-			log.D.F("sending PING #%d", pingCount)
-
-			// Create a write context with timeout for ping operation
-			pingCtx, pingCancel := context.WithTimeout(ctx, DefaultWriteTimeout)
-			pingStart := time.Now()
-
-			if err = conn.Ping(pingCtx); err != nil {
-				pingDuration := time.Since(pingStart)
-				log.E.F(
-					"PING #%d FAILED after %v: %v", pingCount, pingDuration,
-					err,
-				)
-
-				if pingCtx.Err() != nil {
-					log.E.F(
-						"PING #%d timeout after %v (limit=%v)", pingCount,
-						pingDuration, DefaultWriteTimeout,
-					)
-				}
-
-				chk.E(err)
-				pingCancel()
-				return
-			}
-
-			pingDuration := time.Since(pingStart)
-			log.D.F("PING #%d sent successfully in %v", pingCount, pingDuration)
-
-			if pingDuration > time.Millisecond*100 {
-				log.D.F("SLOW PING #%d: %v (>100ms)", pingCount, pingDuration)
-			}
-
-			pingCancel()
 		case <-ctx.Done():
 			log.T.F("pinger context cancelled after %d pings", pingCount)
 			return
+		case <-ticker.C:
+			pingCount++
+			// Send ping request through write channel - this allows pings to interrupt other writes
+			select {
+			case <-ctx.Done():
+				return
+			case listener.writeChan <- publish.WriteRequest{IsPing: true, MsgType: pingCount}:
+				// Ping request queued successfully
+			case <-time.After(DefaultWriteTimeout):
+				log.E.F("ping #%d channel timeout - connection may be overloaded", pingCount)
+				return
+			}
 		}
 	}
 }
