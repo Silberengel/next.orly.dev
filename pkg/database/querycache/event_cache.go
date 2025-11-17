@@ -99,6 +99,8 @@ func NewEventCache(maxSize int64, maxAge time.Duration) *EventCache {
 
 // Get retrieves cached serialized events for a filter (decompresses on the fly)
 func (c *EventCache) Get(f *filter.F) (serializedJSON [][]byte, found bool) {
+	// Normalize filter by sorting to ensure consistent cache keys
+	f.Sort()
 	filterKey := string(f.Serialize())
 
 	c.mu.RLock()
@@ -173,6 +175,8 @@ func (c *EventCache) PutJSON(f *filter.F, marshaledJSON [][]byte) {
 		return
 	}
 
+	// Normalize filter by sorting to ensure consistent cache keys
+	f.Sort()
 	filterKey := string(f.Serialize())
 
 	// Concatenate all JSON events with newline delimiters for compression
