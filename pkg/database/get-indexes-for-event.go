@@ -77,62 +77,168 @@ func GetIndexesForEvent(ev *event.E, serial uint64) (
 	// Process tags for tag-related indexes
 	if ev.Tags != nil && ev.Tags.Len() > 0 {
 		for _, t := range *ev.Tags {
-			// only index tags with a value field and the key is a single character
+			// only index tags with a value field
 			if t.Len() >= 2 {
 				// Get the key and value from the tag
 				keyBytes := t.Key()
-				// require single-letter key
-				if len(keyBytes) != 1 {
-					continue
-				}
-				// if the key is not a-zA-Z skip
-				if (keyBytes[0] < 'a' || keyBytes[0] > 'z') &&
-					(keyBytes[0] < 'A' || keyBytes[0] > 'Z') {
-					continue
-				}
 				valueBytes := t.Value()
-				// Create tag key and value
-				key := new(Letter)
-				key.Set(keyBytes[0])
 				valueHash := new(Ident)
 				valueHash.FromIdent(valueBytes)
-				// TagPubkey index
-				pubkeyTagIndex := indexes.TagPubkeyEnc(
-					key, valueHash, pubHash, createdAt, ser,
-				)
-				if err = appendIndexBytes(
-					&idxs, pubkeyTagIndex,
-				); chk.E(err) {
-					return
-				}
-				// Tag index
-				tagIndex := indexes.TagEnc(
-					key, valueHash, createdAt, ser,
-				)
-				if err = appendIndexBytes(
-					&idxs, tagIndex,
-				); chk.E(err) {
-					return
-				}
-				// Kind-related tag indexes
 				kind := new(Uint16)
 				kind.Set(ev.Kind)
-				// TagKind index
-				kindTagIndex := indexes.TagKindEnc(
-					key, valueHash, kind, createdAt, ser,
-				)
-				if err = appendIndexBytes(
-					&idxs, kindTagIndex,
-				); chk.E(err) {
-					return
+
+				// Handle single-letter keys (existing behavior)
+				if len(keyBytes) == 1 {
+					// if the key is not a-zA-Z skip
+					if (keyBytes[0] < 'a' || keyBytes[0] > 'z') &&
+						(keyBytes[0] < 'A' || keyBytes[0] > 'Z') {
+						continue
+					}
+					// Create tag key and value
+					key := new(Letter)
+					key.Set(keyBytes[0])
+					// TagPubkey index
+					pubkeyTagIndex := indexes.TagPubkeyEnc(
+						key, valueHash, pubHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, pubkeyTagIndex,
+					); chk.E(err) {
+						return
+					}
+					// Tag index
+					tagIndex := indexes.TagEnc(
+						key, valueHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, tagIndex,
+					); chk.E(err) {
+						return
+					}
+					// TagKind index
+					kindTagIndex := indexes.TagKindEnc(
+						key, valueHash, kind, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, kindTagIndex,
+					); chk.E(err) {
+						return
+					}
+					// TagKindPubkey index
+					kindPubkeyTagIndex := indexes.TagKindPubkeyEnc(
+						key, valueHash, kind, pubHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, kindPubkeyTagIndex,
+					); chk.E(err) {
+						return
+					}
+				} else {
+					// Handle multi-letter keys (e.g., "type", "book", "chapter", "verse", "version")
+					// Only index specific multi-letter keys to avoid indexing everything
+					allowedKeys := map[string]bool{
+						"type":    true,
+						"book":    true,
+						"chapter": true,
+						"verse":   true,
+						"version": true,
+					}
+					keyStr := string(keyBytes)
+					if !allowedKeys[keyStr] {
+						continue
+					}
+					// Create tag key hash
+					keyHash := new(TagKeyHash)
+					keyHash.FromTagKey(keyBytes)
+					// TagLongPubkey index
+					pubkeyTagLongIndex := indexes.TagLongPubkeyEnc(
+						keyHash, valueHash, pubHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, pubkeyTagLongIndex,
+					); chk.E(err) {
+						return
+					}
+					// TagLong index
+					tagLongIndex := indexes.TagLongEnc(
+						keyHash, valueHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, tagLongIndex,
+					); chk.E(err) {
+						return
+					}
+					// TagLongKind index
+					kindTagLongIndex := indexes.TagLongKindEnc(
+						keyHash, valueHash, kind, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, kindTagLongIndex,
+					); chk.E(err) {
+						return
+					}
+					// TagLongKindPubkey index
+					kindPubkeyTagLongIndex := indexes.TagLongKindPubkeyEnc(
+						keyHash, valueHash, kind, pubHash, createdAt, ser,
+					)
+					if err = appendIndexBytes(
+						&idxs, kindPubkeyTagLongIndex,
+					); chk.E(err) {
+						return
+					}
 				}
-				// TagKindPubkey index
-				kindPubkeyTagIndex := indexes.TagKindPubkeyEnc(
-					key, valueHash, kind, pubHash, createdAt, ser,
+			}
+		}
+		// Create composite bookstr index if event has bookstr tags
+		// This allows efficient queries filtering by multiple bookstr tags simultaneously
+		if ev.Tags != nil && ev.Tags.Len() > 0 {
+			var typeHash, bookHash, chapterHash, verseHash, versionHash *Ident
+			// Collect bookstr tag values
+			for _, t := range *ev.Tags {
+				if t.Len() >= 2 {
+					keyBytes := t.Key()
+					keyStr := string(keyBytes)
+					valueBytes := t.Value()
+					switch keyStr {
+					case "type":
+						typeHash = new(Ident)
+						typeHash.FromIdent(valueBytes)
+					case "book":
+						bookHash = new(Ident)
+						bookHash.FromIdent(valueBytes)
+					case "chapter":
+						chapterHash = new(Ident)
+						chapterHash.FromIdent(valueBytes)
+					case "verse":
+						verseHash = new(Ident)
+						verseHash.FromIdent(valueBytes)
+					case "version":
+						versionHash = new(Ident)
+						versionHash.FromIdent(valueBytes)
+					}
+				}
+			}
+			// Create composite index if we have at least type and book (minimum for bookstr)
+			if typeHash != nil && bookHash != nil {
+				// Use zero hashes for missing tags
+				zeroHash := new(Ident)
+				zeroHash.FromIdent([]byte{}) // Empty byte slice creates zero hash
+				if chapterHash == nil {
+					chapterHash = zeroHash
+				}
+				if verseHash == nil {
+					verseHash = zeroHash
+				}
+				if versionHash == nil {
+					versionHash = zeroHash
+				}
+				// Create composite bookstr index
+				evKind := new(Uint16)
+				evKind.Set(ev.Kind)
+				bookstrIndex := indexes.TagBookstrEnc(
+					evKind, typeHash, bookHash, chapterHash, verseHash, versionHash, createdAt, ser,
 				)
-				if err = appendIndexBytes(
-					&idxs, kindPubkeyTagIndex,
-				); chk.E(err) {
+				if err = appendIndexBytes(&idxs, bookstrIndex); chk.E(err) {
 					return
 				}
 			}
